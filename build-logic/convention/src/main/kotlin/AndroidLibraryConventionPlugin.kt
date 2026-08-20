@@ -11,7 +11,10 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
         extensions.configure<LibraryExtension> {
             compileSdk = ProjectConfig.COMPILE_SDK
 
-            defaultConfig { minSdk = ProjectConfig.MIN_SDK }
+            defaultConfig {
+                minSdk = ProjectConfig.MIN_SDK
+                testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+            }
 
             compileOptions {
                 sourceCompatibility = ProjectConfig.JAVA_VERSION
