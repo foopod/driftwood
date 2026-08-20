@@ -1,18 +1,14 @@
 plugins {
-  alias(libs.plugins.android.application)
-  alias(libs.plugins.compose.compiler)
+  alias(libs.plugins.gossip.android.application)
+  alias(libs.plugins.gossip.android.compose)
   alias(libs.plugins.kotlin.serialization)
 }
 
 android {
     namespace = "com.jonoshields.gossip"
-    compileSdk = 36
+
     defaultConfig {
         applicationId = "com.jonoshields.gossip"
-        minSdk = 33
-        targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
     }
 
     buildTypes {
@@ -21,29 +17,11 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
-    }
-    buildFeatures {
-      compose = true
-      aidl = false
-      buildConfig = false
-      shaders = false
-    }
-
-    packaging {
-      resources {
-        excludes += "/META-INF/{AL2.0,LGPL2.1}"
-      }
-    }
-}
-
-kotlin {
-    jvmToolchain(21)
 }
 
 dependencies {
+  implementation(project(":core:model"))
+
   val composeBom = platform(libs.androidx.compose.bom)
   implementation(composeBom)
   androidTestImplementation(composeBom)

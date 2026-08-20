@@ -1,4 +1,5 @@
 pluginManagement {
+    includeBuild("build-logic")
     repositories {
         google {
             content {
@@ -31,3 +32,5 @@ plugins {
 
 rootProject.name = "Gossip"
 include(":app")
+include(":core:model")
+include(":core:crypto")
