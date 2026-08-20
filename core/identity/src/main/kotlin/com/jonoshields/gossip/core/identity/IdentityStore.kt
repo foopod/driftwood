@@ -17,9 +17,24 @@ sealed interface IdentityState {
     data class Ready(val author: AuthorId) : IdentityState
 }
 
+/**
+ * Why a typed phrase was refused, in terms the UI can act on without knowing anything about
+ * how phrases are encoded. Someone copying 24 words off paper needs to be told *which* word
+ * to re-check, not that a checksum failed.
+ */
+sealed interface PhraseProblem {
+    data class WrongWordCount(val actual: Int, val expected: Int) : PhraseProblem
+
+    /** [position] is zero-based. */
+    data class UnknownWord(val position: Int, val word: String) : PhraseProblem
+
+    /** Every word is real, but they do not belong together — usually one is wrong or misordered. */
+    data object DoesNotCheckOut : PhraseProblem
+}
+
 sealed interface RestoreResult {
     data class Success(val author: AuthorId) : RestoreResult
-    data class InvalidPhrase(val reason: MnemonicResult) : RestoreResult
+    data class InvalidPhrase(val problem: PhraseProblem) : RestoreResult
     data object AlreadyExists : RestoreResult
 }
 
@@ -57,6 +72,9 @@ class IdentityStore(
         return AuthorId.of(Ed25519.publicKeyFromSeed(seed))
     }
 
+    /** Restores from whatever the user typed; whitespace and case are not their problem. */
+    fun restore(typed: String): RestoreResult = restore(Mnemonic.normalize(typed))
+
     fun restore(words: List<String>): RestoreResult {
         if (readRecord() != null) return RestoreResult.AlreadyExists
         return when (val decoded = Mnemonic.decode(words)) {
@@ -66,7 +84,14 @@ class IdentityStore(
                 writeRecord(Record(seed = decoded.seed, backedUp = true))
                 RestoreResult.Success(AuthorId.of(Ed25519.publicKeyFromSeed(decoded.seed)))
             }
-            else -> RestoreResult.InvalidPhrase(decoded)
+            is MnemonicResult.WrongWordCount ->
+                RestoreResult.InvalidPhrase(
+                    PhraseProblem.WrongWordCount(decoded.actual, Mnemonic.WORD_COUNT)
+                )
+            is MnemonicResult.UnknownWord ->
+                RestoreResult.InvalidPhrase(PhraseProblem.UnknownWord(decoded.position, decoded.word))
+            MnemonicResult.ChecksumMismatch ->
+                RestoreResult.InvalidPhrase(PhraseProblem.DoesNotCheckOut)
         }
     }
 

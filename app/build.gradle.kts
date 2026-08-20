@@ -2,6 +2,8 @@ plugins {
   alias(libs.plugins.gossip.android.application)
   alias(libs.plugins.gossip.android.compose)
   alias(libs.plugins.kotlin.serialization)
+  alias(libs.plugins.ksp)
+  alias(libs.plugins.hilt)
 }
 
 android {
@@ -21,6 +23,15 @@ android {
 
 dependencies {
   implementation(project(":core:model"))
+  implementation(project(":core:store"))
+  implementation(project(":core:identity"))
+  implementation(project(":core:data"))
+
+  // DI. Only :app applies Hilt — the core modules stay dependency-injection agnostic and
+  // are constructed by the modules below.
+  implementation(libs.hilt.android)
+  ksp(libs.hilt.compiler)
+  implementation(libs.androidx.hilt.navigation.compose)
 
   val composeBom = platform(libs.androidx.compose.bom)
   implementation(composeBom)
