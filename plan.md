@@ -145,9 +145,16 @@ verify that should not. Decode to *inspect* the fields; hash and verify the *rec
 - **Verify on ingest — cheap checks before expensive ones**, so a peer can't make us burn CPU
   on signature verification for obvious garbage. In order:
   1. **Decode strictly** (below).
-  2. **Structural checks:** `text` length within `MSG_MAX_CHARS` after NFC; text is
-     well-formed Unicode; `v` recognized; `root`/`parent` are 32-byte ids or empty;
-     `author` is 32 bytes; `timestamp` is non-negative.
+  2. **Structural checks:** `text` decodes as strict UTF-8 (no replacement characters);
+     text is well-formed Unicode (no unpaired surrogates); **text is already NFC** — a
+     peer's non-normalised text is rejected, not repaired; `text` length within
+     `MSG_MAX_CHARS`; `v` recognized; `root`/`parent` are 32-byte ids or empty; `author` is
+     32 bytes; `timestamp` is non-negative.
+     - *Why reject rather than accept non-NFC:* the whole point of normalising is that
+       visually identical text cannot produce two different ids. If ingest accepted
+       non-normalised text, the same visible message would have two valid ids and two
+       valid signatures — exactly the duplication NFC exists to prevent. Repairing it is
+       worse still: that would change the bytes the id was computed over.
   3. `sha256(received preimage) == id`.
   4. `sig` verifies against `author` over the received preimage.
 - **Strict decoding — reject, never repair.** Any of these is a rejection: a declared length
