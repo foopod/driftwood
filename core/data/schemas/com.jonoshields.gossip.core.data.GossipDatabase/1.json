@@ -1,0 +1,288 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "499209381c1c37c81efd7141dd6e8745",
+    "entities": [
+      {
+        "tableName": "messages",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` BLOB NOT NULL, `version` INTEGER NOT NULL, `author` BLOB NOT NULL, `root` BLOB, `parent` BLOB, `thread_root` BLOB NOT NULL, `timestamp_millis` INTEGER NOT NULL, `text` TEXT NOT NULL, `signature` BLOB NOT NULL, `first_received_time` INTEGER NOT NULL, `effective_time` INTEGER NOT NULL, `favourite` INTEGER NOT NULL, `read` INTEGER NOT NULL, `tier` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "version",
+            "columnName": "version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "author",
+            "columnName": "author",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "root",
+            "columnName": "root",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "parent",
+            "columnName": "parent",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "threadRoot",
+            "columnName": "thread_root",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestampMillis",
+            "columnName": "timestamp_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "text",
+            "columnName": "text",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "signature",
+            "columnName": "signature",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firstReceivedTime",
+            "columnName": "first_received_time",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "effectiveTime",
+            "columnName": "effective_time",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "favourite",
+            "columnName": "favourite",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "read",
+            "columnName": "read",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tier",
+            "columnName": "tier",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_messages_thread_root",
+            "unique": false,
+            "columnNames": [
+              "thread_root"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_thread_root` ON `${TABLE_NAME}` (`thread_root`)"
+          },
+          {
+            "name": "index_messages_author",
+            "unique": false,
+            "columnNames": [
+              "author"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_author` ON `${TABLE_NAME}` (`author`)"
+          },
+          {
+            "name": "index_messages_effective_time",
+            "unique": false,
+            "columnNames": [
+              "effective_time"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_effective_time` ON `${TABLE_NAME}` (`effective_time`)"
+          },
+          {
+            "name": "index_messages_author_effective_time",
+            "unique": false,
+            "columnNames": [
+              "author",
+              "effective_time"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_author_effective_time` ON `${TABLE_NAME}` (`author`, `effective_time`)"
+          },
+          {
+            "name": "index_messages_thread_root_effective_time",
+            "unique": false,
+            "columnNames": [
+              "thread_root",
+              "effective_time"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_thread_root_effective_time` ON `${TABLE_NAME}` (`thread_root`, `effective_time`)"
+          }
+        ]
+      },
+      {
+        "tableName": "listen_list",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`author` BLOB NOT NULL, `added_at` INTEGER NOT NULL, PRIMARY KEY(`author`))",
+        "fields": [
+          {
+            "fieldPath": "author",
+            "columnName": "author",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addedAt",
+            "columnName": "added_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "author"
+          ]
+        }
+      },
+      {
+        "tableName": "blocklist",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`author` BLOB NOT NULL, `blocked_at` INTEGER NOT NULL, PRIMARY KEY(`author`))",
+        "fields": [
+          {
+            "fieldPath": "author",
+            "columnName": "author",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "blockedAt",
+            "columnName": "blocked_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "author"
+          ]
+        }
+      },
+      {
+        "tableName": "blocked_roots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`root` BLOB NOT NULL, `blocked_at` INTEGER NOT NULL, PRIMARY KEY(`root`))",
+        "fields": [
+          {
+            "fieldPath": "root",
+            "columnName": "root",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "blockedAt",
+            "columnName": "blocked_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "root"
+          ]
+        }
+      },
+      {
+        "tableName": "want_list",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`parent` BLOB NOT NULL, `first_wanted_at` INTEGER NOT NULL, `unsatisfied_syncs` INTEGER NOT NULL, PRIMARY KEY(`parent`))",
+        "fields": [
+          {
+            "fieldPath": "parent",
+            "columnName": "parent",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firstWantedAt",
+            "columnName": "first_wanted_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unsatisfiedSyncs",
+            "columnName": "unsatisfied_syncs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "parent"
+          ]
+        }
+      },
+      {
+        "tableName": "contacts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`author` BLOB NOT NULL, `display_name` TEXT NOT NULL, `added_at` INTEGER NOT NULL, PRIMARY KEY(`author`))",
+        "fields": [
+          {
+            "fieldPath": "author",
+            "columnName": "author",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "display_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addedAt",
+            "columnName": "added_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "author"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '499209381c1c37c81efd7141dd6e8745')"
+    ]
+  }
+}

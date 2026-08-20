@@ -46,6 +46,7 @@ bouncycastle = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "boun
 
 androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
 androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+androidx-room-testing = { module = "androidx.room:room-testing", version.ref = "room" }
 
 # Gradle plugin artifacts, resolved onto the build-logic classpath so convention
 # plugins can configure the AGP and Kotlin DSLs. Not applied to any module.
