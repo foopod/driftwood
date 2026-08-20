@@ -19,6 +19,12 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
+
+    testOptions {
+        // Compose behaviour tests run locally under Robolectric (testing-setup Step 6),
+        // which needs the real resources rather than stubbed ones.
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -56,9 +62,14 @@ dependencies {
   androidTestImplementation(libs.androidx.compose.ui.test.junit4)
   debugImplementation(libs.androidx.compose.ui.test.manifest)
 
-  // Local tests: jUnit, coroutines, Android runner
+  // Local tests: jUnit, coroutines, and Compose behaviour tests under Robolectric
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
+  testImplementation(composeBom)
+  testImplementation(libs.robolectric)
+  testImplementation(libs.androidx.compose.ui.test.junit4)
+  testImplementation(libs.androidx.test.ext.junit)
+  debugImplementation(libs.androidx.compose.ui.test.manifest)
 
   // Instrumented tests: jUnit rules and runners
   androidTestImplementation(libs.androidx.test.core)
