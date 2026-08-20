@@ -34,3 +34,4 @@ rootProject.name = "Gossip"
 include(":app")
 include(":core:model")
 include(":core:crypto")
+include(":core:database")
