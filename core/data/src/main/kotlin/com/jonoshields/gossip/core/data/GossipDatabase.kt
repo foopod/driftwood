@@ -42,9 +42,6 @@ internal interface MessageDao {
     @Query("DELETE FROM messages WHERE id IN (:ids)")
     suspend fun delete(ids: List<MessageId>)
 
-    @Query("UPDATE messages SET favourite = :favourite WHERE id = :id")
-    suspend fun setFavourite(id: MessageId, favourite: Boolean)
-
     @Query("UPDATE messages SET read = :read WHERE id = :id")
     suspend fun setRead(id: MessageId, read: Boolean)
 
@@ -86,6 +83,24 @@ internal interface BlocklistDao {
 }
 
 @Dao
+internal interface FavouriteDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun star(entry: FavouriteRootEntity)
+
+    @Query("DELETE FROM favourite_roots WHERE root = :root")
+    suspend fun unstar(root: MessageId)
+
+    @Query("SELECT root FROM favourite_roots")
+    suspend fun starredRoots(): List<MessageId>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM favourite_roots WHERE root = :root)")
+    fun observeIsStarred(root: MessageId): Flow<Boolean>
+
+    @Query("SELECT root FROM favourite_roots")
+    fun observeStarredRoots(): Flow<List<MessageId>>
+}
+
+@Dao
 internal interface ContactDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(contact: ContactEntity)
@@ -100,6 +115,7 @@ internal interface ContactDao {
         ListenEntity::class,
         BlockedAuthorEntity::class,
         BlockedRootEntity::class,
+        FavouriteRootEntity::class,
         WantEntity::class,
         ContactEntity::class,
     ],
@@ -111,6 +127,7 @@ internal abstract class GossipDatabase : RoomDatabase() {
     abstract fun messages(): MessageDao
     abstract fun listen(): ListenDao
     abstract fun blocklist(): BlocklistDao
+    abstract fun favourites(): FavouriteDao
     abstract fun contacts(): ContactDao
 }
 

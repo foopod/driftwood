@@ -56,9 +56,18 @@ internal class MessageEntity(
     val signature: ByteArray,
     @ColumnInfo(name = "first_received_time") val firstReceivedTime: Long,
     @ColumnInfo(name = "effective_time") val effectiveTime: Long,
-    val favourite: Boolean,
     val read: Boolean,
     val tier: Tier,
+)
+
+/**
+ * Threads the user has starred. Keyed by root **id**, so a thread can be kept even when its
+ * root message is not held — the mirror image of [BlockedRootEntity].
+ */
+@Entity(tableName = "favourite_roots")
+internal class FavouriteRootEntity(
+    @PrimaryKey val root: MessageId,
+    @ColumnInfo(name = "favourited_at") val favouritedAt: Long,
 )
 
 @Entity(tableName = "listen_list")

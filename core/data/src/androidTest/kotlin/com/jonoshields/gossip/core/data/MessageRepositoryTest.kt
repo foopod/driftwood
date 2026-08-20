@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -154,13 +155,34 @@ class MessageRepositoryTest {
     }
 
     @Test
-    fun favouriteIsPersisted() = runTest {
+    fun starringAThreadIsPersistedAndReversible() = runTest {
         val repository = repository()
-        val posted = repository.post("pin me").getOrThrow()
+        val root = repository.post("star this thread").getOrThrow()
 
-        repository.setFavourite(posted.id, true).getOrThrow()
+        assertFalse(repository.observeThreadFavourite(root.id).first())
 
-        assertTrue(requireNotNull(database.messages().find(posted.id)).favourite)
+        repository.setThreadFavourite(root.id, true).getOrThrow()
+        assertTrue(repository.observeThreadFavourite(root.id).first())
+        assertEquals(setOf(root.id), repository.observeFavouriteRoots().first())
+
+        repository.setThreadFavourite(root.id, false).getOrThrow()
+        assertFalse(repository.observeThreadFavourite(root.id).first())
+    }
+
+    @Test
+    fun aThreadCanBeStarredEvenWhenItsRootIsNotHeld() = runTest {
+        // The star keys on the root id, which survives its message. Someone reading a
+        // fragment of an old conversation can still choose to keep it.
+        val repository = repository()
+        val root = repository.post("about to disappear").getOrThrow()
+        now += 1000
+        val reply = repository.reply(root.id, root.id, "the part that remains").getOrThrow()
+        database.messages().delete(listOf(root.id))
+
+        repository.setThreadFavourite(root.id, true).getOrThrow()
+        repository.prune().getOrThrow()
+
+        assertNotNull("the surviving reply must be kept", database.messages().find(reply.id))
     }
 
     @Test
@@ -206,17 +228,39 @@ class MessageRepositoryTest {
     }
 
     @Test
-    fun favouritesSurvivePruning() = runTest {
+    fun aStarredThreadSurvivesPruningWholeIncludingItsReplies() = runTest {
         val repository = repository(
             StorageConfig(totalBudgetBytes = 512, split = PartitionSplit(0.0, 0.0, 1.0))
         )
-        val pinned = repository.post("keep me").getOrThrow()
-        repository.setFavourite(pinned.id, true).getOrThrow()
+        val kept = repository.post("keep this whole conversation").getOrThrow()
+        repository.setThreadFavourite(kept.id, true).getOrThrow()
+        now += 1000
+        val keptReply = repository.reply(kept.id, kept.id, "including this reply").getOrThrow()
         (1..5).forEach { now += 1000; repository.post("filler $it").getOrThrow() }
 
         repository.prune().getOrThrow()
 
-        assertNotNull(database.messages().find(pinned.id))
+        // The star covers the thread, not the one message that was starred.
+        assertNotNull(database.messages().find(kept.id))
+        assertNotNull(database.messages().find(keptReply.id))
+    }
+
+    @Test
+    fun aReplyArrivingAfterTheStarIsAlsoKept() = runTest {
+        // Starring is forward-looking: it exempts the thread, so replies written later are
+        // covered too. This is also the reason a starred thread has no cap at all.
+        val repository = repository(
+            StorageConfig(totalBudgetBytes = 512, split = PartitionSplit(0.0, 0.0, 1.0))
+        )
+        val root = repository.post("starred before the reply existed").getOrThrow()
+        repository.setThreadFavourite(root.id, true).getOrThrow()
+        (1..5).forEach { now += 1000; repository.post("filler $it").getOrThrow() }
+
+        now += 1000
+        val later = repository.reply(root.id, root.id, "written after starring").getOrThrow()
+        repository.prune().getOrThrow()
+
+        assertNotNull(database.messages().find(later.id))
     }
 
     @Test

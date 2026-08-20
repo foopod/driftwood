@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -68,6 +71,8 @@ internal fun ComposeContent(
             Modifier.padding(padding).padding(16.dp).fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            ReplyContext(state.target)
+
             OutlinedTextField(
                 value = state.text,
                 onValueChange = onTextChange,
@@ -108,10 +113,69 @@ internal fun ComposeContent(
     }
 }
 
+/**
+ * Shows what the reply attaches to. A reply always belongs to a thread and *may* also name
+ * one message inside it; the two cases read differently, so they are shown differently.
+ */
+@Composable
+private fun ReplyContext(target: ReplyTarget) {
+    when (target) {
+        ReplyTarget.None -> Unit
+
+        is ReplyTarget.Message -> Card(
+            Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "Replying to",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    target.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        ReplyTarget.Thread -> Card(
+            Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Replying to this thread", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    "Not to any one message — which is fine, and is what happens when the " +
+                        "message you're answering isn't carried here.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 private fun ComposePreview() {
     GossipTheme {
         ComposeContent(ComposeUiState(text = "Trying out this gossip thing."), {}, {}, {})
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun ReplyPreview() {
+    GossipTheme {
+        ComposeContent(
+            ComposeUiState(
+                text = "Yes, exactly this.",
+                target = ReplyTarget.Message("The start of the conversation, which we are answering."),
+            ),
+            {}, {}, {},
+        )
     }
 }

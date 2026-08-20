@@ -28,14 +28,36 @@ enum class Tier { LISTEN, CONTEXT, GOSSIP }
  * Just enough about a stored message to decide its fate. Deliberately *not* the message
  * itself: pruning is a pure function over metadata, so it can be tested exhaustively
  * without a database.
+ *
+ * There is no `favourite` field: favouriting is a property of a *thread*, not of a message
+ * (see [Favourites]).
  */
 data class HeldMessage(
     val id: MessageId,
     val author: AuthorId,
     val threadRoot: MessageId,
     val effectiveTime: Long,
-    val favourite: Boolean,
 )
+
+/**
+ * Threads the user has starred. Everything in a favourited thread is exempt from the caps
+ * — including replies that arrive later, and replies from strangers.
+ *
+ * Keyed by **root id rather than by the root message**, which matters because you can be
+ * reading a thread whose root you no longer hold (plan.md §3.2). The id is the thing that
+ * always exists, so the star always works.
+ *
+ * This is the mirror image of [Blocklist.roots]: one set of thread ids that can never be
+ * dropped, one that must always be.
+ */
+@JvmInline
+value class Favourites(val roots: Set<MessageId>) {
+    operator fun contains(threadRoot: MessageId): Boolean = threadRoot in roots
+
+    companion object {
+        val NONE = Favourites(emptySet())
+    }
+}
 
 /**
  * Local and private (plan.md §3.3) — never declared to a peer, never part of a hash-list

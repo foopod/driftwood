@@ -23,10 +23,11 @@ class PrunerTest {
         held: List<HeldMessage>,
         listen: Set<AuthorId> = setOf(listened),
         blocklist: Blocklist = noBlocks(),
+        favourites: Favourites = Favourites.NONE,
         budgets: PartitionBudgets = UNLIMITED,
         windowMillis: Long = window,
         nowMillis: Long = now,
-    ) = Pruner.plan(held, listen, blocklist, budgets, windowMillis, nowMillis)
+    ) = Pruner.plan(held, listen, blocklist, favourites, budgets, windowMillis, nowMillis)
 
     private fun survivorsOf(held: List<HeldMessage>, plan: PruningPlan) =
         held.filterNot { it.id in plan.evict }
@@ -34,12 +35,18 @@ class PrunerTest {
     // ---- ordering of the rules -------------------------------------------------------
 
     @Test
-    fun `blocked authors are dropped even when favourited`() {
-        // Blocking wins over favourite: "never show me this person again" cannot be
-        // overridden by having once pinned something of theirs.
-        val theirs = held(stranger, now, favourite = true)
-        val mine = held(listened, now, favourite = true)
-        val result = plan(listOf(theirs, mine), blocklist = Blocklist(setOf(stranger), emptySet()))
+    fun `blocking beats starring`() {
+        // "Never show me this person again" cannot be overridden by having starred a thread
+        // they happen to be in.
+        val starredThread = msgId(700)
+        val theirs = held(stranger, now, starredThread)
+        val mine = held(listened, now, starredThread)
+
+        val result = plan(
+            listOf(theirs, mine),
+            blocklist = Blocklist(setOf(stranger), emptySet()),
+            favourites = starred(starredThread),
+        )
 
         assertEquals(setOf(theirs.id), result.evict)
         assertEquals(EvictionReason.BLOCKED, result.reasons[theirs.id])
@@ -83,10 +90,12 @@ class PrunerTest {
     }
 
     @Test
-    fun `a favourite survives ageing out of the window`() {
-        // Favourites are exempt from the caps; the window is part of how the caps are kept.
-        val old = held(listened, now - window - 1, favourite = true)
-        assertTrue(plan(listOf(old)).evict.isEmpty())
+    fun `a starred thread survives ageing out of the window`() {
+        // Starred threads are exempt from the caps, and the window is part of how the caps
+        // are kept — so a thread you have deliberately kept does not quietly expire.
+        val thread = msgId(800)
+        val old = held(listened, now - window - 1, thread)
+        assertTrue(plan(listOf(old), favourites = starred(thread)).evict.isEmpty())
     }
 
     // ---- fair share ------------------------------------------------------------------
@@ -151,14 +160,58 @@ class PrunerTest {
     }
 
     @Test
-    fun `favourites do not consume anyone's share`() {
-        val pinned = messagesBy(listened, 10, startingAt = now - 20, favourite = true)
-        val ordinary = messagesBy(listened, 10, startingAt = now - 10)
-        val result = plan(pinned + ordinary, budgets = budgets(listen = 4, context = 0, gossip = 0))
+    fun `a starred thread consumes nobody's share`() {
+        val starredThread = msgId(900)
+        val kept = messagesBy(listened, 10, threadRoot = starredThread, startingAt = now - 20)
+        val ordinary = messagesBy(listened, 10, threadRoot = msgId(901), startingAt = now - 10)
 
-        val survivors = survivorsOf(pinned + ordinary, result)
-        assertEquals("10 favourites plus the 4 the budget allows", 14, survivors.size)
-        assertTrue(pinned.none { it.id in result.evict })
+        val result = plan(
+            kept + ordinary,
+            favourites = starred(starredThread),
+            budgets = budgets(listen = 4, context = 0, gossip = 0),
+        )
+
+        val survivors = survivorsOf(kept + ordinary, result)
+        assertEquals("10 starred plus the 4 the budget allows", 14, survivors.size)
+        assertTrue(kept.none { it.id in result.evict })
+    }
+
+    @Test
+    fun `starring a thread protects everyone in it, not just the person you follow`() {
+        // This is the point of moving the star to the thread: you keep the conversation,
+        // which means keeping the strangers' half of it too.
+        val starredThread = msgId(910)
+        val mine = messagesBy(listened, 5, threadRoot = starredThread, startingAt = now - 50)
+        val theirs = messagesBy(stranger, 5, threadRoot = starredThread, startingAt = now - 50)
+
+        val result = plan(
+            mine + theirs,
+            favourites = starred(starredThread),
+            budgets = budgets(listen = 0, context = 0, gossip = 0),
+        )
+
+        assertTrue("a zero budget must not touch a starred thread", result.evict.isEmpty())
+    }
+
+    @Test
+    fun `starring works on a thread whose root is not held`() {
+        // The star is keyed on the root *id*, which always exists, rather than on the root
+        // message, which may well have been pruned (plan.md §3.2).
+        val absentRoot = msgId(920)
+        val replies = messagesBy(stranger, 4, threadRoot = absentRoot, startingAt = now - window - 10)
+
+        val result = plan(replies, favourites = starred(absentRoot), budgets = budgets(0, 0, 0))
+
+        assertTrue(result.evict.isEmpty())
+    }
+
+    @Test
+    fun `unstarring a thread returns it to the ordinary rules`() {
+        val thread = msgId(930)
+        val messages = messagesBy(listened, 6, threadRoot = thread, startingAt = now - 20)
+
+        assertTrue(plan(messages, favourites = starred(thread), budgets = budgets(2, 0, 0)).evict.isEmpty())
+        assertEquals(4, plan(messages, budgets = budgets(2, 0, 0)).evict.size)
     }
 
     @Test
@@ -204,10 +257,13 @@ class PrunerTest {
     }
 
     @Test
-    fun `a zero budget empties a partition of non-favourites`() {
-        val messages = messagesBy(listened, 5, startingAt = now - 5)
-        val pinned = messagesBy(listened, 1, startingAt = now - 5, favourite = true)
-        val result = plan(messages + pinned, budgets = budgets(0, 0, 0))
+    fun `a zero budget empties a partition apart from starred threads`() {
+        val starredThread = msgId(940)
+        val messages = messagesBy(listened, 5, threadRoot = msgId(941), startingAt = now - 5)
+        val kept = messagesBy(listened, 1, threadRoot = starredThread, startingAt = now - 5)
+
+        val result = plan(messages + kept, favourites = starred(starredThread), budgets = budgets(0, 0, 0))
+
         assertEquals(messages.map { it.id }.toSet(), result.evict)
     }
 
@@ -235,7 +291,6 @@ class PrunerTest {
                     author = authors.random(random),
                     effectiveTime = now - random.nextLong(0, window * 2),
                     threadRoot = threads.random(random),
-                    favourite = random.nextInt(10) == 0,
                 )
             }
             val listen = authors.filter { random.nextBoolean() }.toSet()
@@ -243,19 +298,24 @@ class PrunerTest {
                 authors = authors.filter { random.nextInt(8) == 0 }.toSet(),
                 roots = threads.filter { random.nextInt(8) == 0 }.toSet(),
             )
+            val favourites = Favourites(threads.filter { random.nextInt(5) == 0 }.toSet())
             val caps = budgets(random.nextInt(0, 20), random.nextInt(0, 20), random.nextInt(0, 20))
 
-            val result = plan(messages, listen = listen, blocklist = blocked, budgets = caps)
+            val result = plan(
+                messages,
+                listen = listen,
+                blocklist = blocked,
+                favourites = favourites,
+                budgets = caps,
+            )
             val survivors = survivorsOf(messages, result)
 
             fun fail(why: String): Nothing = throw AssertionError("iteration $iteration: $why")
 
-            // A favourite is only ever evicted for being blocked.
-            survivors.let {
-                messages.filter { m -> m.favourite && m.id in result.evict }.forEach { m ->
-                    if (result.reasons[m.id] != EvictionReason.BLOCKED) {
-                        fail("favourite ${m.id} evicted for ${result.reasons[m.id]}")
-                    }
+            // Anything in a starred thread is only ever evicted for being blocked.
+            messages.filter { it.threadRoot in favourites && it.id in result.evict }.forEach { m ->
+                if (result.reasons[m.id] != EvictionReason.BLOCKED) {
+                    fail("starred ${m.id} evicted for ${result.reasons[m.id]}")
                 }
             }
             // Nothing blocked survives, ever.
@@ -263,11 +323,11 @@ class PrunerTest {
                 if (m.author in blocked.authors) fail("blocked author survived")
                 if (m.threadRoot in blocked.roots) fail("blocked root survived")
             }
-            // Every non-favourite survivor is in window.
-            survivors.filterNot { it.favourite }.forEach { m ->
+            // Every survivor outside a starred thread is in window.
+            survivors.filterNot { it.threadRoot in favourites }.forEach { m ->
                 if (m.effectiveTime < now - window) fail("stale message survived")
             }
-            // No partition exceeds its cap, counting non-favourites only.
+            // No partition exceeds its cap, counting only unstarred threads.
             val tiers = result.tiers
             Tier.entries.forEach { tier ->
                 val cap = when (tier) {
@@ -275,7 +335,7 @@ class PrunerTest {
                     Tier.CONTEXT -> caps.context
                     Tier.GOSSIP -> caps.gossip
                 }
-                val kept = survivors.count { !it.favourite && tiers[it.id] == tier }
+                val kept = survivors.count { it.threadRoot !in favourites && tiers[it.id] == tier }
                 if (kept > cap) fail("$tier kept $kept over cap $cap")
             }
             // Evicting is never gratuitous: an id is evicted at most once, with a reason.

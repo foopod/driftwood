@@ -10,6 +10,7 @@ import com.jonoshields.gossip.core.model.MessageId
 import com.jonoshields.gossip.core.store.Blocklist
 import com.jonoshields.gossip.core.store.Clock
 import com.jonoshields.gossip.core.model.EffectiveTime
+import com.jonoshields.gossip.core.store.Favourites
 import com.jonoshields.gossip.core.store.HeldMessage
 import com.jonoshields.gossip.core.store.PruningPlan
 import com.jonoshields.gossip.core.store.Pruner
@@ -38,7 +39,20 @@ interface MessageRepository {
 
     suspend fun reply(rootId: MessageId, parent: MessageId?, text: String): Result<Message>
 
-    suspend fun setFavourite(id: MessageId, favourite: Boolean): Result<Unit>
+    /** One message, for showing what a reply is replying to. */
+    suspend fun message(id: MessageId): Result<Message?>
+
+    /**
+     * Stars or unstars a whole thread, exempting everything in it from the caps.
+     *
+     * Keyed on the root id rather than the root message, so a thread can be kept even when
+     * its opening message is long gone.
+     */
+    suspend fun setThreadFavourite(rootId: MessageId, favourite: Boolean): Result<Unit>
+
+    fun observeThreadFavourite(rootId: MessageId): Flow<Boolean>
+
+    fun observeFavouriteRoots(): Flow<Set<MessageId>>
 
     /** Drops their messages and the threads they started, immediately (plan.md §4). */
     suspend fun block(author: AuthorId): Result<Unit>
@@ -103,8 +117,23 @@ class RoomMessageRepository internal constructor(
             message
         }.mapLocalErrors()
 
-    override suspend fun setFavourite(id: MessageId, favourite: Boolean): Result<Unit> =
-        runCatching { messages.setFavourite(id, favourite) }.mapLocalErrors()
+    override suspend fun message(id: MessageId): Result<Message?> =
+        runCatching { messages.find(id)?.toMessage() }.mapLocalErrors()
+
+    override suspend fun setThreadFavourite(rootId: MessageId, favourite: Boolean): Result<Unit> =
+        runCatching {
+            if (favourite) {
+                database.favourites().star(FavouriteRootEntity(rootId, clock.nowMillis()))
+            } else {
+                database.favourites().unstar(rootId)
+            }
+        }.mapLocalErrors()
+
+    override fun observeThreadFavourite(rootId: MessageId): Flow<Boolean> =
+        database.favourites().observeIsStarred(rootId)
+
+    override fun observeFavouriteRoots(): Flow<Set<MessageId>> =
+        database.favourites().observeStarredRoots().map { it.toSet() }
 
     override suspend fun block(author: AuthorId): Result<Unit> = runCatching {
         val now = clock.nowMillis()
@@ -133,6 +162,7 @@ class RoomMessageRepository internal constructor(
                 authors = database.blocklist().blockedAuthors().toSet(),
                 roots = database.blocklist().blockedRoots().toSet(),
             ),
+            favourites = Favourites(database.favourites().starredRoots().toSet()),
             budgets = config.budgets(),
             windowMillis = config.windowMillis,
             nowMillis = clock.nowMillis(),
@@ -150,7 +180,7 @@ class RoomMessageRepository internal constructor(
     private suspend fun insert(message: Message, firstReceivedTime: Long) {
         val listen = database.listen().authors().toSet()
         val tier = TierClassifier
-            .classify(listOf(message.toHeldMessage(firstReceivedTime, favourite = false)), listen)
+            .classify(listOf(message.toHeldMessage(firstReceivedTime)), listen)
             .getValue(message.id)
         messages.insert(message.toEntity(firstReceivedTime, tier))
     }
@@ -176,15 +206,13 @@ private fun MessageEntity.toHeldMessage() = HeldMessage(
     author = author,
     threadRoot = threadRoot,
     effectiveTime = effectiveTime,
-    favourite = favourite,
 )
 
-private fun Message.toHeldMessage(firstReceivedTime: Long, favourite: Boolean) = HeldMessage(
+private fun Message.toHeldMessage(firstReceivedTime: Long) = HeldMessage(
     id = id,
     author = body.author,
     threadRoot = threadRoot,
     effectiveTime = EffectiveTime.of(body.timestampMillis, firstReceivedTime),
-    favourite = favourite,
 )
 
 private fun Message.toEntity(firstReceivedTime: Long, tier: Tier) = MessageEntity(
@@ -199,7 +227,6 @@ private fun Message.toEntity(firstReceivedTime: Long, tier: Tier) = MessageEntit
     signature = signature,
     firstReceivedTime = firstReceivedTime,
     effectiveTime = EffectiveTime.of(body.timestampMillis, firstReceivedTime),
-    favourite = false,
     read = true, // your own message, and you have obviously read it
     tier = tier,
 )

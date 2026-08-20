@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "499209381c1c37c81efd7141dd6e8745",
+    "identityHash": "67717d30fc00e58c46b45fa220ebf715",
     "entities": [
       {
         "tableName": "messages",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` BLOB NOT NULL, `version` INTEGER NOT NULL, `author` BLOB NOT NULL, `root` BLOB, `parent` BLOB, `thread_root` BLOB NOT NULL, `timestamp_millis` INTEGER NOT NULL, `text` TEXT NOT NULL, `signature` BLOB NOT NULL, `first_received_time` INTEGER NOT NULL, `effective_time` INTEGER NOT NULL, `favourite` INTEGER NOT NULL, `read` INTEGER NOT NULL, `tier` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` BLOB NOT NULL, `version` INTEGER NOT NULL, `author` BLOB NOT NULL, `root` BLOB, `parent` BLOB, `thread_root` BLOB NOT NULL, `timestamp_millis` INTEGER NOT NULL, `text` TEXT NOT NULL, `signature` BLOB NOT NULL, `first_received_time` INTEGER NOT NULL, `effective_time` INTEGER NOT NULL, `read` INTEGER NOT NULL, `tier` TEXT NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -69,12 +69,6 @@
           {
             "fieldPath": "effectiveTime",
             "columnName": "effective_time",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "favourite",
-            "columnName": "favourite",
             "affinity": "INTEGER",
             "notNull": true
           },
@@ -220,6 +214,30 @@
         }
       },
       {
+        "tableName": "favourite_roots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`root` BLOB NOT NULL, `favourited_at` INTEGER NOT NULL, PRIMARY KEY(`root`))",
+        "fields": [
+          {
+            "fieldPath": "root",
+            "columnName": "root",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "favouritedAt",
+            "columnName": "favourited_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "root"
+          ]
+        }
+      },
+      {
         "tableName": "want_list",
         "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`parent` BLOB NOT NULL, `first_wanted_at` INTEGER NOT NULL, `unsatisfied_syncs` INTEGER NOT NULL, PRIMARY KEY(`parent`))",
         "fields": [
@@ -282,7 +300,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '499209381c1c37c81efd7141dd6e8745')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '67717d30fc00e58c46b45fa220ebf715')"
     ]
   }
 }

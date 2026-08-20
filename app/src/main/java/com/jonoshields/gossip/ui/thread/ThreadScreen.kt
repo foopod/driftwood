@@ -7,10 +7,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -20,9 +20,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.jonoshields.gossip.core.model.Message
 import com.jonoshields.gossip.core.model.MessageId
 import com.jonoshields.gossip.core.store.ThreadNode
 import com.jonoshields.gossip.core.store.ThreadView
@@ -42,7 +46,7 @@ fun ThreadScreen(
         state = state,
         onReply = onReply,
         onBack = onBack,
-        onFavourite = viewModel::setFavourite,
+        onToggleStar = viewModel::toggleStar,
         modifier = modifier,
     )
 }
@@ -53,7 +57,7 @@ internal fun ThreadContent(
     state: ThreadUiState,
     onReply: (MessageId, MessageId?) -> Unit,
     onBack: () -> Unit,
-    onFavourite: (MessageId, Boolean) -> Unit,
+    onToggleStar: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -62,19 +66,35 @@ internal fun ThreadContent(
             TopAppBar(
                 title = { Text("Thread") },
                 navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                actions = {
+                    if (state is ThreadUiState.Loaded) {
+                        // One star for the whole conversation: keeping a thread means
+                        // keeping all of it, including the parts other people wrote.
+                        TextButton(
+                            onClick = onToggleStar,
+                            modifier = Modifier.semantics {
+                                contentDescription =
+                                    if (state.starred) "Unstar this thread" else "Star this thread"
+                            },
+                        ) {
+                            Text(
+                                text = if (state.starred) "★" else "☆",
+                                style = MaterialTheme.typography.headlineSmall,
+                            )
+                        }
+                    }
+                },
             )
-        },
-        floatingActionButton = {
-            if (state is ThreadUiState.Loaded) {
-                FloatingActionButton(onClick = { onReply(state.thread.rootId, state.thread.root?.id) }) {
-                    Text("Reply", Modifier.padding(horizontal = 12.dp))
-                }
-            }
         },
     ) { padding ->
         when (state) {
             ThreadUiState.Loading -> Unit
-            is ThreadUiState.Loaded -> ThreadBody(state.thread, onFavourite, Modifier.padding(padding))
+            is ThreadUiState.Loaded -> ThreadBody(
+                thread = state.thread,
+                starred = state.starred,
+                onReply = onReply,
+                modifier = Modifier.padding(padding),
+            )
         }
     }
 }
@@ -82,7 +102,8 @@ internal fun ThreadContent(
 @Composable
 private fun ThreadBody(
     thread: ThreadView,
-    onFavourite: (MessageId, Boolean) -> Unit,
+    starred: Boolean,
+    onReply: (MessageId, MessageId?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -90,58 +111,88 @@ private fun ThreadBody(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        if (starred) {
+            item {
+                Text(
+                    "Starred — this whole thread is kept, including replies that arrive later.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+
         item {
             val root = thread.root
             if (root == null) {
                 // Calm, not an error: a thread outliving its root is a normal end state.
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                    Column(Modifier.padding(16.dp)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
                             "The start of this conversation isn't carried here.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Text(
-                            thread.rootId.toHex().take(16) + "…",
+                            "You can still reply to it — a reply only needs the thread's id.",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
             } else {
-                MessageCard(root.body.text, depth = 0, detached = false) {
-                    onFavourite(root.id, true)
-                }
+                MessageCard(
+                    message = root,
+                    depth = 0,
+                    detached = false,
+                    label = "opens the thread",
+                    onReply = { onReply(thread.rootId, root.id) },
+                )
             }
         }
 
-        renderNodes(thread.replies, depth = 1, onFavourite = onFavourite)
+        // Replying to the thread itself, when you want to answer the conversation rather
+        // than any particular message in it.
+        item {
+            TextButton(onClick = { onReply(thread.rootId, thread.root?.id) }) {
+                Text("Reply to the thread")
+            }
+        }
+
+        renderNodes(thread.replies, depth = 1, rootId = thread.rootId, onReply = onReply)
     }
 }
 
 /** Flattens the tree into list items, carrying depth through as an indent. */
-private fun androidx.compose.foundation.lazy.LazyListScope.renderNodes(
+private fun LazyListScope.renderNodes(
     nodes: List<ThreadNode>,
     depth: Int,
-    onFavourite: (MessageId, Boolean) -> Unit,
+    rootId: MessageId,
+    onReply: (MessageId, MessageId?) -> Unit,
 ) {
     nodes.forEach { node ->
         item(key = node.message.id.toHex()) {
-            MessageCard(node.message.body.text, depth = depth, detached = node.detached) {
-                onFavourite(node.message.id, true)
-            }
+            MessageCard(
+                message = node.message,
+                depth = depth,
+                detached = node.detached,
+                label = null,
+                // Every message is a reply target, and the reply carries both the thread's
+                // root id and this specific message as its parent.
+                onReply = { onReply(rootId, node.message.id) },
+            )
         }
-        renderNodes(node.children, depth + 1, onFavourite)
+        renderNodes(node.children, depth + 1, rootId, onReply)
     }
 }
 
 @Composable
 private fun MessageCard(
-    text: String,
+    message: Message,
     depth: Int,
     detached: Boolean,
-    onFavourite: () -> Unit,
+    label: String?,
+    onReply: () -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth().padding(start = (depth * 16).dp)) {
+    Row(Modifier.fillMaxWidth().padding(start = (depth.coerceAtMost(5) * 14).dp)) {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (detached) {
@@ -151,9 +202,22 @@ private fun MessageCard(
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                } else if (label != null) {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-                Text(text, style = MaterialTheme.typography.bodyLarge)
-                TextButton(onClick = onFavourite) { Text("Favourite") }
+
+                Text(message.body.text, style = MaterialTheme.typography.bodyLarge)
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = onReply) { Text("Reply", textAlign = TextAlign.End) }
+                }
             }
         }
     }

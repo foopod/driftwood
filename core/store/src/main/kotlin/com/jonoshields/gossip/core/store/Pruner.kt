@@ -36,11 +36,13 @@ data class PruningPlan(
  * The order of the rules is load-bearing, because each stage changes what the next one
  * sees:
  *
- *  1. **Blocked** — unconditional, ahead of everything, and favourite does not protect it.
- *  2. **Out of window** — anything older than the window, unless favourited.
- *  3. **Favourites** — removed from the arithmetic entirely: always kept, never counted.
- *  4. **Classify** what remains into tiers (favourites included, since a favourited message
- *     from a listened author still bumps its thread into context for everyone else).
+ *  1. **Blocked** — unconditional, ahead of everything, and a star does not protect it.
+ *  2. **Out of window** — anything older than the window, unless its thread is starred.
+ *  3. **Favourited threads** — removed from the arithmetic entirely: always kept, never
+ *     counted. Note this exempts the *whole* thread, including replies that arrive later
+ *     and replies from strangers, so a starred thread can grow without any cap on it.
+ *  4. **Classify** what remains into tiers (starred threads included, since a favourited
+ *     message from a listened author still bumps its thread into context for everyone else).
  *  5. **Fair share** within each partition, evicting oldest-first.
  *
  * Pruning is local. Two devices are never required to agree on what they keep, so the
@@ -52,20 +54,23 @@ object Pruner {
         held: List<HeldMessage>,
         listen: Set<AuthorId>,
         blocklist: Blocklist,
+        favourites: Favourites,
         budgets: PartitionBudgets,
         windowMillis: Long,
         nowMillis: Long,
     ): PruningPlan {
         val reasons = mutableMapOf<MessageId, EvictionReason>()
 
-        // 1 & 2. Blocked, then stale. Favourite exempts from the window but never from a block.
+        // 1 & 2. Blocked, then stale. A favourited thread survives the window, but nothing
+        // survives a block — starring a thread cannot resurrect someone you have blocked.
         val surviving = held.filter { message ->
+            val starred = message.threadRoot in favourites
             when {
                 message.author in blocklist.authors || message.threadRoot in blocklist.roots -> {
                     reasons[message.id] = EvictionReason.BLOCKED
                     false
                 }
-                !message.favourite && message.effectiveTime < nowMillis - windowMillis -> {
+                !starred && message.effectiveTime < nowMillis - windowMillis -> {
                     reasons[message.id] = EvictionReason.OUT_OF_WINDOW
                     false
                 }
@@ -73,12 +78,12 @@ object Pruner {
             }
         }
 
-        // 4. Classify everything still held, favourites included.
+        // 4. Classify everything still held, favourited threads included.
         val tiers = TierClassifier.classify(surviving, listen)
 
-        // 5. Fair share, per partition, over non-favourites only.
+        // 5. Fair share, per partition, ignoring favourited threads entirely.
         surviving
-            .filterNot { it.favourite }
+            .filterNot { it.threadRoot in favourites }
             .groupBy { tiers.getValue(it.id) }
             .forEach { (tier, messages) ->
                 evictOverQuota(messages, budgets[tier]).forEach { id ->

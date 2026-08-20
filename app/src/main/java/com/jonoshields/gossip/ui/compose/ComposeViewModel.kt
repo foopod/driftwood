@@ -31,7 +31,24 @@ class ComposeViewModel @Inject constructor(
     fun bind(root: MessageId?, parent: MessageId?) {
         replyToRoot = root
         replyToParent = parent
-        _uiState.update { it.copy(isReply = root != null) }
+
+        if (root == null) {
+            _uiState.update { it.copy(target = ReplyTarget.None) }
+            return
+        }
+
+        viewModelScope.launch {
+            // Quote the parent back so it is obvious what this reply attaches to. When the
+            // parent is missing — pruned, or never held — the reply is still perfectly
+            // valid; it just belongs to the thread rather than to a message.
+            val quoted = parent?.let { repository.message(it).getOrNull() }
+            _uiState.update {
+                it.copy(
+                    target = quoted?.let { message -> ReplyTarget.Message(message.body.text) }
+                        ?: ReplyTarget.Thread
+                )
+            }
+        }
     }
 
     fun updateText(text: String) {

@@ -98,9 +98,10 @@ class TierClassifierTest {
     }
 
     @Test
-    fun `a favourited message is still classified normally`() {
-        // Favourite exempts from the budget, not from having a tier.
-        val message = held(stranger, 1, threadB, favourite = true)
+    fun `classification does not know or care about starring`() {
+        // Starring exempts a thread from the budget; it does not change what tier its
+        // messages are in, and the classifier is not told about it at all.
+        val message = held(stranger, 1, threadB)
         assertEquals(Tier.GOSSIP, classify(listOf(message), setOf(listened))[message.id])
     }
 

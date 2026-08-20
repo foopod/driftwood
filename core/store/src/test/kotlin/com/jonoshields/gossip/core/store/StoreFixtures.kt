@@ -19,14 +19,12 @@ internal fun held(
     author: AuthorId,
     effectiveTime: Long,
     threadRoot: MessageId = msgId(0),
-    favourite: Boolean = false,
     id: MessageId = msgId(nextId++),
 ): HeldMessage = HeldMessage(
     id = id,
     author = author,
     threadRoot = threadRoot,
     effectiveTime = effectiveTime,
-    favourite = favourite,
 )
 
 /** [count] messages by one author, with effective times 1, 2, 3 … so "oldest" is obvious. */
@@ -35,9 +33,8 @@ internal fun messagesBy(
     count: Int,
     threadRoot: MessageId = msgId(0),
     startingAt: Long = 1,
-    favourite: Boolean = false,
 ): List<HeldMessage> = (0 until count).map {
-    held(author = author, effectiveTime = startingAt + it, threadRoot = threadRoot, favourite = favourite)
+    held(author = author, effectiveTime = startingAt + it, threadRoot = threadRoot)
 }
 
 /** Budgets big enough that fair share never bites, for tests aimed at something else. */
@@ -47,3 +44,5 @@ internal fun budgets(listen: Int, context: Int, gossip: Int) =
     PartitionBudgets(listen = listen, context = context, gossip = gossip)
 
 internal fun noBlocks() = Blocklist(authors = emptySet(), roots = emptySet())
+
+internal fun starred(vararg roots: MessageId) = Favourites(roots.toSet())
