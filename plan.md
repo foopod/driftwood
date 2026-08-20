@@ -85,7 +85,7 @@ unclear, resolve it back to these.
 | `root` | Id of the thread root. **Empty on a root message** — a root is *defined* as a message with an empty `root` field, and its own `id` then serves as the thread's root id everywhere else. Always present (possibly empty) on replies. See construction order below. |
 | `parent` | Id of the specific message being replied to. **Optional** (enrichment). Empty/absent on roots and on replies where the author didn't hold/target a specific parent. |
 | `timestamp` | Author-claimed time, Unix milliseconds UTC. **Untrusted.** See `effective_time` in §4 for ordering/windowing. |
-| `text` | UTF-8 text, **max 320 characters** (count Unicode scalar values, not bytes; enforce on create and on ingest — reject over-length). |
+| `text` | UTF-8 text, **max 320 characters** — Unicode scalar values (code points), not bytes and not UTF-16 units. **NFC-normalize first, then count** (see below). Enforced on create and on ingest; over-length is rejected. |
 | `sig` | Ed25519 signature over the canonical preimage (see below). Not part of the hash preimage. |
 
 **Canonical serialization (the foundation — two impls must agree byte-for-byte).**
@@ -98,6 +98,15 @@ unclear, resolve it back to these.
 - `text` is serialized as UTF-8 with **Unicode NFC normalization applied before hashing/
   signing** (so visually identical text can't produce two ids). Normalize once, at create
   time, and store the normalized form.
+- **Normalize before counting — the order is load-bearing.** NFC changes code-point count:
+  `e` + combining acute is two code points, the composed `é` is one. If the author counts
+  before normalizing and a receiving peer counts after, the two disagree about whether
+  identical bytes are valid. The sequence is fixed: **normalize → count → serialize**, and
+  ingest re-counts the normalized form it received.
+- **Unpaired surrogates are rejected** at create and at ingest. A UTF-16 string can hold one,
+  and encoding it to UTF-8 silently substitutes `?` (U+003F) — which would make
+  encode→decode→encode non-idempotent and let two peers derive different ids from "the same"
+  text. Text that is not well-formed Unicode never enters the store.
 - No JSON in the preimage — JSON field ordering/whitespace is not guaranteed stable and
   must never be what gets hashed. (JSON/CBOR may be used on the wire *around* messages, but
   the hash/signature are always over this canonical binary preimage.)
@@ -119,10 +128,34 @@ unclear, resolve it back to these.
 
 - **Hash:** SHA-256 over the canonical preimage. `id` is the raw 32 bytes (hex-encoded
   only for display/QR).
-- **Verify on ingest:** recompute the canonical preimage from received fields, check
-  `hash == id`, check `sig` against `author`, check `text` length, check `root`/`parent`
-  are well-formed ids or empty. **Any failure → reject: the message is not stored, not
-  counted, and not forwarded** (see §5).
+
+**Wire form (one message on the wire).** The preimage deliberately excludes `id` and `sig`,
+so it is not by itself transmittable. A single message on the wire is:
+
+```
+id (32 bytes) || sig (64 bytes) || canonical preimage (variable)
+```
+
+Fixed-width prefixes, no length header, trivially separable. The important property: a
+receiver **hashes the preimage bytes exactly as received** rather than decoding and
+re-serializing them. Re-serializing would silently repair a hostile or buggy encoding —
+normalizing away the very tampering the hash exists to catch — and could make a message
+verify that should not. Decode to *inspect* the fields; hash and verify the *received bytes*.
+
+- **Verify on ingest — cheap checks before expensive ones**, so a peer can't make us burn CPU
+  on signature verification for obvious garbage. In order:
+  1. **Decode strictly** (below).
+  2. **Structural checks:** `text` length within `MSG_MAX_CHARS` after NFC; text is
+     well-formed Unicode; `v` recognized; `root`/`parent` are 32-byte ids or empty;
+     `author` is 32 bytes; `timestamp` is non-negative.
+  3. `sha256(received preimage) == id`.
+  4. `sig` verifies against `author` over the received preimage.
+- **Strict decoding — reject, never repair.** Any of these is a rejection: a declared length
+  that overruns the buffer; trailing bytes after `text`; `v` field length ≠ 1; `timestamp`
+  field length ≠ 8; `author` length ≠ 32; `root` or `parent` length ∉ {0, 32}; unknown `v`.
+  A decoder is an attack surface — permissiveness here is what turns a format bug into a
+  security bug.
+- **Any failure → reject: the message is not stored, not counted, and not forwarded** (§5).
 
 - **Content-addressing** gives dedup, integrity, and a single identifier that serves as
   both `ask`-target and diff-unit.
@@ -392,8 +425,9 @@ publishes your interests to them** — noted in §9.
    merged set — evaluating tier reclassification, blocked content, and fair-share together.
 
 **Verification policy.**
-- Every received message is checked: canonical-hash matches `id`, `sig` valid for
-  `author`, `text` within length, `v` recognized, `root`/`parent` well-formed.
+- Every received message is checked per §3.2's *Verify on ingest* sequence — strict decode,
+  then structural checks, then `sha256 == id`, then signature — in that order, so garbage is
+  cheap to discard. §3.2 is the single source of truth for the rules; don't restate them here.
 - **A message that fails any check is rejected outright: not stored, not counted against any
   budget, not forwarded, not shown.** There is no `tampered` state in the store.
   - Why not keep and flag them: an unverifiable message's `author` field is by definition
