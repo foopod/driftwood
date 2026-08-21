@@ -26,4 +26,11 @@ class GossipStore(
     val messages: MessageRepository = RoomMessageRepository(database, identity, clock, config)
 
     val directory: DirectoryRepository = RoomDirectoryRepository(database, identity, clock)
+
+    /**
+     * What a sync session reads and writes through. Exposed as the port rather than the
+     * implementation: `:core:sync` drives this identically to the in-memory store the whole
+     * protocol was proven against, which is what makes the convergence suite meaningful.
+     */
+    val sync: com.jonoshields.gossip.core.sync.SyncStore = RoomSyncStore(database, clock, config)
 }

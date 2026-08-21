@@ -61,6 +61,18 @@ internal class MessageEntity(
 )
 
 /**
+ * The projection every sync read returns: what a session needs to decide, and nothing it does
+ * not. Deliberately not a [MessageEntity] — selecting text and signatures to answer "which
+ * ids do you hold for these authors" would load the store to answer a question about its keys.
+ */
+internal class HeldRow(
+    val id: MessageId,
+    val author: AuthorId,
+    @ColumnInfo(name = "thread_root") val threadRoot: MessageId,
+    @ColumnInfo(name = "effective_time") val effectiveTime: Long,
+)
+
+/**
  * Threads the user has starred. Keyed by root **id**, so a thread can be kept even when its
  * root message is not held — the mirror image of [BlockedRootEntity].
  */

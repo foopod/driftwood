@@ -162,7 +162,7 @@ class RoomMessageRepository internal constructor(
     }
 
     private suspend fun applyPlan(plan: PruningPlan) {
-        if (plan.evict.isNotEmpty()) messages.delete(plan.evict.toList())
+        chunkedAction(plan.evict) { messages.deleteChunk(it) }
         // Tiers are recomputed by the same pass, so persist the survivors' new tiers.
         plan.tiers.forEach { (id, tier) ->
             if (id !in plan.evict) messages.setTier(id, tier)
@@ -180,7 +180,7 @@ class RoomMessageRepository internal constructor(
 
 // ---- mapping ---------------------------------------------------------------------------
 
-private fun MessageEntity.toMessage(): Message = Message.unverified(
+internal fun MessageEntity.toMessage(): Message = Message.unverified(
     id = id,
     signature = signature,
     body = com.jonoshields.gossip.core.model.MessageBody(
@@ -193,21 +193,21 @@ private fun MessageEntity.toMessage(): Message = Message.unverified(
     ),
 )
 
-private fun MessageEntity.toHeldMessage() = HeldMessage(
+internal fun MessageEntity.toHeldMessage() = HeldMessage(
     id = id,
     author = author,
     threadRoot = threadRoot,
     effectiveTime = effectiveTime,
 )
 
-private fun Message.toHeldMessage(firstReceivedTime: Long) = HeldMessage(
+internal fun Message.toHeldMessage(firstReceivedTime: Long) = HeldMessage(
     id = id,
     author = body.author,
     threadRoot = threadRoot,
     effectiveTime = EffectiveTime.of(body.timestampMillis, firstReceivedTime),
 )
 
-private fun Message.toEntity(firstReceivedTime: Long, tier: Tier) = MessageEntity(
+internal fun Message.toEntity(firstReceivedTime: Long, tier: Tier) = MessageEntity(
     id = id,
     version = body.version,
     author = body.author,

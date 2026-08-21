@@ -17,8 +17,10 @@ dependencies {
     api(project(":core:model"))
     api(project(":core:store"))
     api(project(":core:identity"))
+    api(project(":core:sync"))
 
     implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
     testImplementation(libs.junit)

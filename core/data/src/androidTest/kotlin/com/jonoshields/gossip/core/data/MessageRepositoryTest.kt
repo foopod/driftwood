@@ -126,7 +126,7 @@ class MessageRepositoryTest {
         now += 1000
         val reply = repository.reply(root.id, root.id, "outlives its root").getOrThrow()
 
-        database.messages().delete(listOf(root.id))
+        database.messages().deleteChunk(listOf(root.id))
 
         val thread = repository.observeThread(root.id).first()
         assertNull(thread.root)
@@ -177,7 +177,7 @@ class MessageRepositoryTest {
         val root = repository.post("about to disappear").getOrThrow()
         now += 1000
         val reply = repository.reply(root.id, root.id, "the part that remains").getOrThrow()
-        database.messages().delete(listOf(root.id))
+        database.messages().deleteChunk(listOf(root.id))
 
         repository.setThreadFavourite(root.id, true).getOrThrow()
         repository.prune().getOrThrow()

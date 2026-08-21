@@ -135,7 +135,7 @@ class RoomDirectoryRepository internal constructor(
             blockedAuthors = database.blocklist().blockedAuthors().toSet(),
             nowMillis = clock.nowMillis(),
         )
-        if (drop.isNotEmpty()) directory.delete(drop.toList())
+        chunkedAction(drop) { directory.deleteChunk(it) }
         drop
     }.mapDirectoryErrors()
 }

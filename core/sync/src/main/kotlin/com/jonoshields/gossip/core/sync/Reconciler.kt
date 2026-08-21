@@ -25,6 +25,16 @@ const val CONTEXT_SEND_CAP: Int = 1000
 const val GOSSIP_INTAKE_CAP: Int = 1000
 
 /**
+ * Fruitless syncs before a want is given up on (plan.md §3.4).
+ *
+ * Wants are opportunistic, never requests: nothing is ever chased, and a parent that no peer
+ * we meet happens to hold is simply forgotten. Content that has aged out of the network
+ * everywhere is gone, and that is an ordinary outcome here rather than a failure to recover
+ * from.
+ */
+const val WANT_TTL: Int = 10
+
+/**
  * What a peer tells us up front (plan.md §5 step 2).
  *
  * [listen] is public in MVP — declaring it *is* the mechanism by which a peer knows what to

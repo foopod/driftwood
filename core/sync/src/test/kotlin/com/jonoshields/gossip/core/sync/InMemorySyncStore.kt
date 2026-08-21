@@ -154,6 +154,3 @@ internal class InMemorySyncStore(
         plan.evict.forEach { messages.remove(it) }
     }
 }
-
-/** plan.md §3.4: fruitless syncs before a want is dropped. */
-const val WANT_TTL: Int = 10
