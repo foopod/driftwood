@@ -31,6 +31,13 @@ internal val dave = Person(180, "dave")
 
 internal const val NOW = 1_700_000_000_000L
 
+/** A device's own identity in a session — distinct from any author of the content it holds. */
+internal val initiatorDevice = author(250)
+internal val responderDevice = author(251)
+
+/** Identity a hand-scripted peer sends in its own `HELLO`, in the tests that write one. */
+internal val scriptedPeerDevice = author(252)
+
 /** A connection that remembers every frame, so claims about the wire can be checked. */
 internal class Recording(private val inner: Connection) : Connection {
     val sent = mutableListOf<Record>()
@@ -71,14 +78,15 @@ internal suspend fun sync(
     initiatorStore: SyncStore,
     responderStore: SyncStore,
     now: Long = NOW,
+    confirm: suspend (AuthorId) -> Boolean = { true },
 ): SyncRun = coroutineScope {
     val (aEnd, bEnd) = Pipe.open()
     val a = Recording(aEnd)
     val b = Recording(bEnd)
     val clock = Clock.fixed(now)
 
-    val initiator = async { Session(initiatorStore, clock).run(Role.INITIATOR, a) }
-    val responder = async { Session(responderStore, clock).run(Role.RESPONDER, b) }
+    val initiator = async { Session(initiatorStore, clock).run(Role.INITIATOR, a, initiatorDevice, confirm) }
+    val responder = async { Session(responderStore, clock).run(Role.RESPONDER, b, responderDevice, confirm) }
     val results = SyncRun(initiator.await(), responder.await(), a, b)
     aEnd.close()
     bEnd.close()
@@ -97,11 +105,12 @@ internal fun SessionResult.summary(): SyncSummary = when (this) {
 internal suspend fun againstScriptedPeer(
     store: SyncStore,
     now: Long = NOW,
+    confirm: suspend (AuthorId) -> Boolean = { true },
     script: suspend (Connection) -> Unit,
 ): SessionResult = coroutineScope {
     val (peerEnd, ourEnd) = Pipe.open()
     val peer = async { runCatching { script(peerEnd) } }
-    val ours = async { Session(store, Clock.fixed(now)).run(Role.RESPONDER, ourEnd) }
+    val ours = async { Session(store, Clock.fixed(now)).run(Role.RESPONDER, ourEnd, responderDevice, confirm) }
     val result = ours.await()
     // Both ends: a Pipe end closes only its outgoing direction, so closing one still leaves
     // the other blocked reading. The session deliberately does not close the connection —
@@ -123,7 +132,7 @@ internal suspend fun againstScriptedPeer(
 internal suspend fun peerDeliveringMessages(connection: Connection, messages: List<ByteArray>) {
     suspend fun send(record: Record) = connection.send(FrameCodec.encode(record))
 
-    send(Record.Hello(PROTOCOL_VERSION))
+    send(Record.Hello(PROTOCOL_VERSION, scriptedPeerDevice))
     connection.receive()
     send(Record.Scope(ScopeDeclaration(emptySet(), 0, emptySet())))
     connection.receive()

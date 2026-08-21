@@ -1,5 +1,6 @@
 package com.jonoshields.gossip.core.sync
 
+import com.jonoshields.gossip.core.model.AuthorId
 import com.jonoshields.gossip.core.model.Ed25519Signer
 import com.jonoshields.gossip.core.model.MessageFactory
 import com.jonoshields.gossip.core.model.ProfileCodec
@@ -16,6 +17,13 @@ import com.jonoshields.gossip.core.model.ProfileCodec
  * it.
  */
 object DebugPeer {
+
+    /**
+     * What the debug peer's own `Session` sends as its `HELLO` identity — a device identity,
+     * distinct from any of the invented people whose content it holds, the same way a real
+     * phone's own key is not any particular author it happens to be carrying.
+     */
+    val device: AuthorId = Ed25519Signer(ByteArray(32) { 0xDE.toByte() }).publicKey
 
     /** One root and a reply in its thread, plus an unrelated root, from three invented people. */
     fun build(nowMillis: Long): InMemorySyncStore {

@@ -1,5 +1,6 @@
 package com.jonoshields.gossip.sync
 
+import com.jonoshields.gossip.core.model.AuthorId
 import com.jonoshields.gossip.core.store.Clock
 import com.jonoshields.gossip.core.sync.DebugPeer
 import com.jonoshields.gossip.core.sync.Pipe
@@ -20,14 +21,16 @@ import kotlinx.coroutines.coroutineScope
  */
 object DebugSync {
 
-    suspend fun run(ourStore: SyncStore, clock: Clock): SessionResult = coroutineScope {
+    suspend fun run(ourStore: SyncStore, ourAuthor: AuthorId, clock: Clock): SessionResult = coroutineScope {
         val peerStore = DebugPeer.build(clock.nowMillis())
         val (ours, theirs) = Pipe.open()
         try {
             // Both sides run concurrently — the session strictly alternates turns on the
             // wire, but the two coroutines driving it still have to be running at once.
-            val peer = async { Session(peerStore, clock).run(Role.RESPONDER, theirs) }
-            val result = Session(ourStore, clock).run(Role.INITIATOR, ours)
+            // There is nobody to ask for confirmation here, so both sides accept — the
+            // debug peer exists precisely so this path can be exercised without a human.
+            val peer = async { Session(peerStore, clock).run(Role.RESPONDER, theirs, DebugPeer.device) }
+            val result = Session(ourStore, clock).run(Role.INITIATOR, ours, ourAuthor)
             peer.await()
             result
         } finally {

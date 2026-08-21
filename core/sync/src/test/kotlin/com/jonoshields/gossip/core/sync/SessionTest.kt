@@ -205,11 +205,57 @@ class SessionTest {
     @Test
     fun `a protocol version mismatch refuses rather than negotiates`() = runTest {
         val result = againstScriptedPeer(InMemorySyncStore()) {
-            it.send(FrameCodec.encode(Record.Hello(99)))
+            it.send(FrameCodec.encode(Record.Hello(99, scriptedPeerDevice)))
             runCatching { while (it.receive() != null) Unit }
         }
 
         assertEquals(AbortReason.VERSION_MISMATCH, (result as SessionResult.Aborted).reason)
+    }
+
+    @Test
+    fun `each side is asked to confirm the identity the peer actually declared`() = runTest {
+        // Wired through HELLO precisely so a human can be shown who they are talking to
+        // before anything moves (plan.md §5 step 1). Distinct booleans per identity, not a
+        // shared counter, so a bug that echoes the wrong author back is caught rather than
+        // hidden behind a count that happens to match.
+        var confirmedResponder = false
+        var confirmedInitiator = false
+
+        sync(
+            InMemorySyncStore(),
+            InMemorySyncStore(),
+            confirm = { peer ->
+                when (peer) {
+                    responderDevice -> confirmedResponder = true
+                    initiatorDevice -> confirmedInitiator = true
+                }
+                true
+            },
+        )
+
+        assertTrue("initiator's side should have been asked about the responder", confirmedResponder)
+        assertTrue("responder's side should have been asked about the initiator", confirmedInitiator)
+    }
+
+    @Test
+    fun `declining the peer's identity aborts before anything is shared`() = runTest {
+        val aliceStore = InMemorySyncStore().listenTo(carol.key)
+        val bobStore = InMemorySyncStore().seed(carol.root("hi", NOW - 1000))
+
+        // Bob's human looks at Alice's identity and says no.
+        val run = sync(aliceStore, bobStore, confirm = { peer -> peer != initiatorDevice })
+
+        val declined = run.responder as? SessionResult.Aborted
+            ?: throw AssertionError("expected the declining side to abort, got ${run.responder}")
+        assertEquals(AbortReason.PEER_DECLINED, declined.reason)
+
+        // The decline happens inside the handshake, before the priority phase — bob's scope
+        // (what he listens to) never went out at all.
+        assertTrue(
+            "bob's scope should never have been sent",
+            run.responderWire.sent.none { it is Record.Scope },
+        )
+        assertEquals(0, declined.summary.messagesAccepted)
     }
 
     @Test

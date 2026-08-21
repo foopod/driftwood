@@ -139,7 +139,7 @@ class FramedConnectionTest {
     @Test(timeout = 5_000)
     fun `a frame written as bytes reads back whole`() = runBlocking {
         val connection = loopback()
-        val frame = FrameCodec.encode(Record.Hello(1))
+        val frame = FrameCodec.encode(Record.Hello(1, author(1)))
 
         connection.send(frame)
 
@@ -150,7 +150,7 @@ class FramedConnectionTest {
     fun `frames are reassembled from a stream that does not respect boundaries`() = runBlocking {
         // A socket delivers bytes, not messages: a read can return half a frame or two.
         val connection = loopback()
-        val first = FrameCodec.encode(Record.Hello(1))
+        val first = FrameCodec.encode(Record.Hello(1, author(1)))
         val second = FrameCodec.encode(Record.HashList((1..40).mapTo(mutableSetOf()) { msgId(it) }))
 
         connection.send(first + second)

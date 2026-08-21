@@ -89,13 +89,25 @@ class Session(
     private val protocolVersion: Int = PROTOCOL_VERSION,
 ) {
 
-    suspend fun run(role: Role, connection: Connection): SessionResult {
+    /**
+     * @param myAuthor Sent in `HELLO` so the peer can show a human who they're talking to.
+     * @param confirmPeer Asked right after `HELLO`, before anything private (the listen
+     * scope) goes on the wire — plan.md §5 step 1's "both users confirm before any data
+     * moves". Defaults to always-accept for callers with nothing to confirm against yet
+     * (tests, the debug peer).
+     */
+    suspend fun run(
+        role: Role,
+        connection: Connection,
+        myAuthor: AuthorId,
+        confirmPeer: suspend (AuthorId) -> Boolean = { true },
+    ): SessionResult {
         // Held in a box rather than threaded through return values, so that an abort halfway
         // through a phase still reports what was already persisted. Returning it would lose
         // exactly the work a partial sync is supposed to keep.
         val progress = Progress()
         return try {
-            handshake(role, connection)
+            handshake(role, connection, myAuthor, confirmPeer)
             val priority = priorityPhase(role, connection, progress)
             gossipPhase(role, connection, priority, progress)
             store.pruneAfterSession(clock.nowMillis())
@@ -133,11 +145,17 @@ class Session(
 
     // ---- handshake -------------------------------------------------------------------
 
-    private suspend fun handshake(role: Role, connection: Connection) {
-        val mine = Record.Hello(protocolVersion)
+    private suspend fun handshake(
+        role: Role,
+        connection: Connection,
+        myAuthor: AuthorId,
+        confirmPeer: suspend (AuthorId) -> Boolean,
+    ) {
+        val mine = Record.Hello(protocolVersion, myAuthor)
         val theirs = swap(role, connection, mine) as? Record.Hello
             ?: throw Abort(AbortReason.OUT_OF_PHASE)
         if (theirs.protocolVersion != protocolVersion) throw Abort(AbortReason.VERSION_MISMATCH)
+        if (!confirmPeer(theirs.author)) throw Abort(AbortReason.PEER_DECLINED)
     }
 
     // ---- priority phase --------------------------------------------------------------
@@ -379,16 +397,27 @@ class Session(
 
     // ---- plumbing --------------------------------------------------------------------
 
-    /** One alternating exchange: whoever leads sends first, the other answers. */
-    private suspend fun swap(role: Role, connection: Connection, mine: Record): Record =
-        if (role == Role.INITIATOR) {
+    /**
+     * One alternating exchange: whoever leads sends first, the other answers.
+     *
+     * An `ABORT` arriving here is surfaced with its real reason rather than falling through
+     * to the generic [AbortReason.OUT_OF_PHASE] a plain type mismatch would produce — the
+     * same distinction [AbortReason.PEER_CLOSED] exists for: misreporting an honest "no
+     * thanks" or a dropped link as a protocol violation makes an innocent peer look hostile
+     * in the logs.
+     */
+    private suspend fun swap(role: Role, connection: Connection, mine: Record): Record {
+        val theirs = if (role == Role.INITIATOR) {
             connection.send(FrameCodec.encode(mine))
             next(connection)
         } else {
-            val theirs = next(connection)
+            val received = next(connection)
             connection.send(FrameCodec.encode(mine))
-            theirs
+            received
         }
+        if (theirs is Record.Abort) throw Abort(theirs.reason)
+        return theirs
+    }
 
     private suspend fun next(connection: Connection): Record {
         val frame = connection.receive() ?: throw ConnectionClosed("peer closed mid-session")

@@ -33,6 +33,12 @@ enum class AbortReason(val code: Int) {
      * make honest peers look hostile in the logs.
      */
     PEER_CLOSED(6),
+
+    /**
+     * The local user looked at the peer's identity and said no. Not a protocol violation —
+     * an honest "no thanks" — so it gets its own reason rather than reading as hostility.
+     */
+    PEER_DECLINED(7),
     ;
 
     companion object {
@@ -42,7 +48,11 @@ enum class AbortReason(val code: Int) {
 
 /** One record on the wire (sync-spec.md §3). */
 sealed interface Record {
-    data class Hello(val protocolVersion: Int) : Record
+    /**
+     * `author` is who is on the other end of this connection, so a human can be shown a
+     * fingerprint and asked to confirm before anything else moves (plan.md §5 step 1).
+     */
+    data class Hello(val protocolVersion: Int, val author: AuthorId) : Record
 
     data class Scope(val declaration: ScopeDeclaration) : Record
 
@@ -143,7 +153,7 @@ object FrameCodec {
     // ---- payloads --------------------------------------------------------------------
 
     private fun encodePayload(record: Record): ByteArray = when (record) {
-        is Record.Hello -> byteArrayOf(record.protocolVersion.toByte())
+        is Record.Hello -> byteArrayOf(record.protocolVersion.toByte()) + record.author.toByteArray()
 
         is Record.Scope -> {
             val listen = concat(record.declaration.listen.map { it.toByteArray() })
@@ -166,7 +176,11 @@ object FrameCodec {
     }
 
     private fun decodePayload(type: Int, payload: ByteArray): FrameResult = when (type) {
-        TYPE_HELLO -> exactly(payload, 1) { FrameResult.Ok(Record.Hello(it[0].toInt() and 0xFF)) }
+        TYPE_HELLO -> exactly(payload, 1 + ID_LENGTH) {
+            val version = it[0].toInt() and 0xFF
+            val author = AuthorId.of(it.copyOfRange(1, 1 + ID_LENGTH))
+            FrameResult.Ok(Record.Hello(version, author))
+        }
 
         TYPE_SCOPE -> decodeScope(payload)
 

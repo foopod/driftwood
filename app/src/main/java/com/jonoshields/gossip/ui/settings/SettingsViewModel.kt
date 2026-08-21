@@ -144,7 +144,7 @@ class SettingsViewModel @Inject constructor(
         if (_uiState.value.debugSyncRunning) return
         viewModelScope.launch {
             _uiState.update { it.copy(debugSyncRunning = true, debugSyncSummary = null) }
-            val result = DebugSync.run(syncStore, clock)
+            val result = DebugSync.run(syncStore, identity.publicKey(), clock)
             _uiState.update {
                 it.copy(debugSyncRunning = false, debugSyncSummary = describeSync(result))
             }

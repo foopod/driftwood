@@ -3,6 +3,7 @@ package com.jonoshields.gossip.core.data
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.jonoshields.gossip.core.model.Ed25519Signer
 import com.jonoshields.gossip.core.store.Clock
 import com.jonoshields.gossip.core.store.StorageConfig
 import com.jonoshields.gossip.core.sync.DebugPeer
@@ -34,6 +35,7 @@ import org.junit.runner.RunWith
 class DebugSyncTest {
 
     private val now = 1_700_000_000_000L
+    private val ourDevice = Ed25519Signer(ByteArray(32) { 0xAB.toByte() }).publicKey
     private lateinit var database: GossipDatabase
     private lateinit var store: RoomSyncStore
 
@@ -54,8 +56,8 @@ class DebugSyncTest {
         val clock = Clock { now }
         val (ours, theirs) = Pipe.open()
         try {
-            val peer = async { Session(peerStore, clock).run(Role.RESPONDER, theirs) }
-            val result = Session(store, clock).run(Role.INITIATOR, ours)
+            val peer = async { Session(peerStore, clock).run(Role.RESPONDER, theirs, DebugPeer.device) }
+            val result = Session(store, clock).run(Role.INITIATOR, ours, ourDevice)
             peer.await()
             result
         } finally {

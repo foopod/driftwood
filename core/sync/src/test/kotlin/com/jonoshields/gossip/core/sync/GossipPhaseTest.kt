@@ -84,7 +84,7 @@ class GossipPhaseTest {
         val aliceStore = InMemorySyncStore().seed(secret)
 
         val result = againstScriptedPeer(aliceStore) { peer ->
-            peer.send(FrameCodec.encode(Record.Hello(PROTOCOL_VERSION)))
+            peer.send(FrameCodec.encode(Record.Hello(PROTOCOL_VERSION, scriptedPeerDevice)))
             peer.receive()
             peer.send(FrameCodec.encode(Record.Scope(ScopeDeclaration(setOf(alice.key), 0, emptySet()))))
             peer.receive()
@@ -125,7 +125,7 @@ class GossipPhaseTest {
         val bobStore = InMemorySyncStore()
 
         val result = againstScriptedPeer(bobStore) { peer ->
-            peer.send(FrameCodec.encode(Record.Hello(PROTOCOL_VERSION)))
+            peer.send(FrameCodec.encode(Record.Hello(PROTOCOL_VERSION, scriptedPeerDevice)))
             peer.receive()
             peer.send(FrameCodec.encode(Record.Scope(ScopeDeclaration(emptySet(), 0, emptySet()))))
             peer.receive()

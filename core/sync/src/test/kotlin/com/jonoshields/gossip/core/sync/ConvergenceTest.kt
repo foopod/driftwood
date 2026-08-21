@@ -177,7 +177,7 @@ class ConvergenceTest {
         val b = bobStore()
 
         val result = againstScriptedPeer(b) { peer ->
-            peer.send(FrameCodec.encode(Record.Hello(PROTOCOL_VERSION)))
+            peer.send(FrameCodec.encode(Record.Hello(PROTOCOL_VERSION, scriptedPeerDevice)))
             peer.receive()
             peer.send(FrameCodec.encode(Record.Scope(ScopeDeclaration(setOf(carol.key), 0, emptySet()))))
             peer.receive()

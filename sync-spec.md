@@ -111,7 +111,7 @@ Every record on the stream:
 
 | Type | Value | Direction | Payload |
 |---|---|---|---|
-| `HELLO` | `0x01` | both | protocol version (u8) |
+| `HELLO` | `0x01` | both | protocol version (u8), author id (32 bytes) |
 | `SCOPE` | `0x02` | both | listen set, window cutoff, wants |
 | `HASHLIST` | `0x03` | both | ids held for own scope |
 | `MESSAGE` | `0x04` | both | one message wire form, opaque |
@@ -206,6 +206,13 @@ converges.
 **Each phase is applied on completion, not at session end.** A connection that dies during the
 gossip phase must leave the priority phase's results persisted — the priority phase is
 independently valid by design, and discarding it would make a partial sync worse than useless.
+
+**Identity travels in `HELLO` (M3a).** plan.md §5 step 1 requires both users to confirm who
+they are connected to before anything moves — a name for a known contact, a fingerprint for a
+stranger. That has to happen between `HELLO` and `SCOPE`, because `SCOPE` is the first record
+carrying anything private (the listen list). Each side is asked to confirm the peer's declared
+author immediately after the exchange; declining aborts with `PEER_DECLINED` before `SCOPE` is
+ever sent, in either direction.
 
 ---
 

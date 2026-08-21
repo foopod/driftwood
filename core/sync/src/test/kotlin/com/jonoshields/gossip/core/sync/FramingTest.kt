@@ -29,7 +29,7 @@ class FramingTest {
 
     @Test
     fun `every record type round trips`() {
-        assertEquals(Record.Hello(1), roundTrip(Record.Hello(1)))
+        assertEquals(Record.Hello(1, author(1)), roundTrip(Record.Hello(1, author(1))))
         assertEquals(Record.PhaseDone, roundTrip(Record.PhaseDone))
         assertEquals(Record.SessionDone, roundTrip(Record.SessionDone))
         assertEquals(Record.Abort(AbortReason.VERSION_MISMATCH), roundTrip(Record.Abort(AbortReason.VERSION_MISMATCH)))
@@ -153,7 +153,7 @@ class FramingTest {
         // outcomes are a clean decode or a clean rejection.
         val random = Random(20260821)
         val valid = listOf(
-            FrameCodec.encode(Record.Hello(1)),
+            FrameCodec.encode(Record.Hello(1, author(1))),
             FrameCodec.encode(Record.HashList((1..20).mapTo(mutableSetOf()) { msgId(it) })),
             FrameCodec.encode(Record.Scope(ScopeDeclaration(setOf(author(1)), 5, setOf(msgId(2))))),
             FrameCodec.encode(Record.Message(ByteArray(64) { it.toByte() })),
