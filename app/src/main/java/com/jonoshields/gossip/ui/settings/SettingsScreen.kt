@@ -116,13 +116,6 @@ internal fun SettingsContent(
                 Row("Window", "${state.windowDays} days")
                 Row("Budget", "${state.budgetMegabytes} MB")
                 Row("Listen / context / gossip", state.budgetSplit)
-                Text(
-                    "Caps are not adjustable yet — persisting a user-chosen budget needs " +
-                        "somewhere to store it, which lands with the settings work after M1. " +
-                        "The defaults are chosen so you never have to touch them.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
 
             Section("Maintenance") {
