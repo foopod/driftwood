@@ -5,6 +5,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import com.jonoshields.gossip.core.model.Ed25519Signer
 import com.jonoshields.gossip.core.model.MessageFactory
 import com.jonoshields.gossip.core.model.MessageId
@@ -31,23 +32,33 @@ class ThreadContentTest {
 
     private val signer = Ed25519Signer(ByteArray(32) { it.toByte() })
     private val me = signer.publicKey
+    private val themSigner = Ed25519Signer(ByteArray(32) { (it + 90).toByte() })
+    private val them = themSigner.publicKey
     private var clock = 1_000L
 
     private fun root(text: String) = MessageFactory.createRoot(me, text, clock++, signer)
     private fun reply(root: MessageId, parent: MessageId?, text: String) =
         MessageFactory.createReply(me, root, parent, text, clock++, signer)
+    private fun theirRoot(text: String) = MessageFactory.createRoot(them, text, clock++, themSigner)
 
     private var repliedToRoot: MessageId? = null
     private var repliedToParent: MessageId? = null
     private var parentWasProvided = false
+    private var petnameSet: Pair<com.jonoshields.gossip.core.model.AuthorId, String>? = null
+    private var listenToggled: com.jonoshields.gossip.core.model.AuthorId? = null
+    private var blocked: com.jonoshields.gossip.core.model.AuthorId? = null
 
-    private fun show(state: ThreadUiState) {
+    private fun show(state: ThreadUiState, myAuthor: com.jonoshields.gossip.core.model.AuthorId? = null) {
         compose.setContent {
             ThreadContent(
                 state = state,
+                myAuthor = myAuthor,
                 onReply = { r, p -> repliedToRoot = r; repliedToParent = p; parentWasProvided = true },
                 onBack = {},
                 onToggleStar = {},
+                onSetPetname = { author, name -> petnameSet = author to name },
+                onToggleListen = { author -> listenToggled = author },
+                onBlock = { author -> blocked = author },
             )
         }
     }
@@ -56,7 +67,8 @@ class ThreadContentTest {
         rootId: MessageId,
         messages: List<com.jonoshields.gossip.core.model.Message>,
         names: Map<com.jonoshields.gossip.core.model.AuthorId, com.jonoshields.gossip.core.store.DisplayName> = emptyMap(),
-    ) = ThreadUiState.Loaded(ThreadAssembler.assemble(rootId, messages), starred = false, names = names)
+        listenScope: Set<com.jonoshields.gossip.core.model.AuthorId> = emptySet(),
+    ) = ThreadUiState.Loaded(ThreadAssembler.assemble(rootId, messages), starred = false, names = names, listenScope = listenScope)
 
     /**
      * Counts every control offering to reply, matching on a substring so a differently
@@ -192,5 +204,81 @@ class ThreadContentTest {
         show(loaded(r.id, listOf(r)))
 
         compose.onNodeWithText("☆").assertExists()
+    }
+
+    @Test
+    fun `tapping another author's name opens the contact actions dialog`() {
+        val r = theirRoot("hello")
+        show(loaded(r.id, listOf(r)), myAuthor = me)
+
+        compose.onNodeWithText(NameResolver.fingerprint(them)).performClick()
+
+        compose.onNodeWithText("Save petname").assertExists()
+    }
+
+    @Test
+    fun `tapping your own name does nothing`() {
+        val r = root("hello")
+        show(loaded(r.id, listOf(r)), myAuthor = me)
+
+        compose.onNodeWithText(NameResolver.fingerprint(me)).performClick()
+
+        compose.onNodeWithText("Save petname").assertDoesNotExist()
+    }
+
+    @Test
+    fun `saving a petname calls through with the typed name`() {
+        val r = theirRoot("hello")
+        show(loaded(r.id, listOf(r)), myAuthor = me)
+        compose.onNodeWithText(NameResolver.fingerprint(them)).performClick()
+
+        compose.onNodeWithText("Petname").performTextInput("Sam")
+        compose.onNodeWithText("Save petname").performClick()
+
+        assertEquals(them, petnameSet?.first)
+        assertEquals("Sam", petnameSet?.second)
+    }
+
+    @Test
+    fun `toggling listen calls through for the right author`() {
+        val r = theirRoot("hello")
+        show(loaded(r.id, listOf(r)), myAuthor = me)
+        compose.onNodeWithText(NameResolver.fingerprint(them)).performClick()
+
+        compose.onNodeWithText("Not listening").performClick()
+
+        assertEquals(them, listenToggled)
+    }
+
+    @Test
+    fun `blocking requires a confirm step before calling through`() {
+        val r = theirRoot("hello")
+        show(loaded(r.id, listOf(r)), myAuthor = me)
+        compose.onNodeWithText(NameResolver.fingerprint(them)).performClick()
+
+        // First tap only asks for confirmation — nothing is blocked yet.
+        compose.onNodeWithText("Block").performClick()
+        assertNull(blocked)
+        compose.onNodeWithText(
+            "Blocks them: removes their messages and the threads they started, " +
+                "immediately and from this device only. They are never told.",
+        ).assertExists()
+
+        // Second tap actually does it.
+        compose.onNodeWithText("Block").performClick()
+        assertEquals(them, blocked)
+    }
+
+    @Test
+    fun `cancelling a block confirmation backs out without blocking`() {
+        val r = theirRoot("hello")
+        show(loaded(r.id, listOf(r)), myAuthor = me)
+        compose.onNodeWithText(NameResolver.fingerprint(them)).performClick()
+        compose.onNodeWithText("Block").performClick()
+
+        compose.onNodeWithText("Cancel").performClick()
+
+        assertNull(blocked)
+        compose.onNodeWithText("Save petname").assertExists()
     }
 }

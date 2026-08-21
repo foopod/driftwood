@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jonoshields.gossip.core.data.DirectoryRepository
 import com.jonoshields.gossip.core.data.MessageRepository
+import com.jonoshields.gossip.core.identity.IdentityStore
 import com.jonoshields.gossip.core.model.AuthorId
 import com.jonoshields.gossip.core.store.DisplayName
 import com.jonoshields.gossip.core.store.NameResolver
@@ -29,6 +30,7 @@ sealed interface ThreadUiState {
         val thread: ThreadView,
         val starred: Boolean,
         val names: Map<AuthorId, DisplayName> = emptyMap(),
+        val listenScope: Set<AuthorId> = emptySet(),
     ) : ThreadUiState {
         /**
          * Falls back to the bare fingerprint for anyone with no name at all, so a message
@@ -44,9 +46,13 @@ sealed interface ThreadUiState {
 class ThreadViewModel @Inject constructor(
     private val repository: MessageRepository,
     private val directory: DirectoryRepository,
+    identity: IdentityStore,
 ) : ViewModel() {
 
     private val rootId = MutableStateFlow<MessageId?>(null)
+
+    /** So the contact actions never open for your own messages — there is nothing to do there. */
+    val myAuthor: AuthorId? = runCatching { identity.publicKey() }.getOrNull()
 
     val uiState: StateFlow<ThreadUiState> = rootId
         .filterNotNull()
@@ -57,8 +63,9 @@ class ThreadViewModel @Inject constructor(
                 repository.observeThread(id),
                 repository.observeThreadFavourite(id),
                 directory.observeNames(),
-            ) { thread, starred, names ->
-                ThreadUiState.Loaded(thread, starred, names)
+                directory.observeListenScope(),
+            ) { thread, starred, names, listenScope ->
+                ThreadUiState.Loaded(thread, starred, names, listenScope)
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ThreadUiState.Loading)
@@ -75,5 +82,20 @@ class ThreadViewModel @Inject constructor(
         val id = rootId.value ?: return
         val current = (uiState.value as? ThreadUiState.Loaded)?.starred ?: return
         viewModelScope.launch { repository.setThreadFavourite(id, !current) }
+    }
+
+    fun setPetname(author: AuthorId, petname: String) {
+        viewModelScope.launch { directory.setPetname(author, petname) }
+    }
+
+    fun toggleListen(author: AuthorId) {
+        val listening = (uiState.value as? ThreadUiState.Loaded)?.listenScope?.contains(author) ?: false
+        viewModelScope.launch {
+            if (listening) directory.stopListening(author) else directory.listenTo(author)
+        }
+    }
+
+    fun block(author: AuthorId) {
+        viewModelScope.launch { repository.block(author) }
     }
 }

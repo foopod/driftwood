@@ -232,4 +232,36 @@ class DirectoryRepositoryTest {
 
         assertEquals(setOf(stranger), repository.prune().getOrThrow())
     }
+
+    @Test
+    fun settingAPetnameMakesTheDisplayNameVerified() = runTest {
+        val repository = directory()
+        repository.ingest(strangerClaims("definitely not dad", now), now).getOrThrow()
+
+        repository.setPetname(stranger, "Dad").getOrThrow()
+
+        val name = repository.observeNames().first().getValue(stranger)
+        assertTrue(name.verified)
+        assertEquals("Dad", name.text)
+    }
+
+    @Test
+    fun anUnusablePetnameIsATypedErrorNotACrash() = runTest {
+        val repository = directory()
+        val error = repository.setPetname(stranger, "").exceptionOrNull()
+        assertTrue("got $error", error is DataError.InvalidMessage)
+    }
+
+    @Test
+    fun listeningAddsToTheScopeAndStoppingRemovesIt() = runTest {
+        val repository = directory()
+
+        assertTrue(repository.observeListenScope().first().isEmpty())
+
+        repository.listenTo(stranger).getOrThrow()
+        assertEquals(setOf(stranger), repository.observeListenScope().first())
+
+        repository.stopListening(stranger).getOrThrow()
+        assertTrue(repository.observeListenScope().first().isEmpty())
+    }
 }

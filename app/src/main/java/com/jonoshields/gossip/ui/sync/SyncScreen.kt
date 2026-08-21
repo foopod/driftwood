@@ -29,12 +29,15 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.jonoshields.gossip.core.model.AuthorId
+import com.jonoshields.gossip.core.store.DisplayName
 import com.jonoshields.gossip.core.store.NameResolver
 import com.jonoshields.gossip.sync.DiscoveredPeer
 import com.jonoshields.gossip.sync.LocalAddress
 import com.jonoshields.gossip.sync.SyncSummaryText
 import com.jonoshields.gossip.sync.SyncUiState
 import com.jonoshields.gossip.ui.common.AuthorName
+import com.jonoshields.gossip.ui.common.ContactControls
 
 @Composable
 fun SyncScreen(
@@ -44,9 +47,13 @@ fun SyncScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val discoveredPeers by viewModel.discoveredPeers.collectAsStateWithLifecycle()
+    val names by viewModel.names.collectAsStateWithLifecycle()
+    val listenScope by viewModel.listenScope.collectAsStateWithLifecycle()
     SyncContent(
         state = state,
         discoveredPeers = discoveredPeers,
+        names = names,
+        listenScope = listenScope,
         onBack = onBack,
         onStartListening = viewModel::startListening,
         onConnect = viewModel::connectTo,
@@ -54,6 +61,8 @@ fun SyncScreen(
         onDecline = viewModel::declinePeer,
         onCancel = viewModel::cancel,
         onDone = viewModel::reset,
+        onSetPetname = viewModel::setPetname,
+        onToggleListen = viewModel::toggleListen,
         modifier = modifier,
     )
 }
@@ -63,6 +72,8 @@ fun SyncScreen(
 internal fun SyncContent(
     state: SyncUiState,
     discoveredPeers: List<DiscoveredPeer> = emptyList(),
+    names: Map<AuthorId, DisplayName> = emptyMap(),
+    listenScope: Set<AuthorId> = emptySet(),
     onBack: () -> Unit,
     onStartListening: () -> Unit,
     onConnect: (host: String, port: Int) -> Unit,
@@ -70,6 +81,8 @@ internal fun SyncContent(
     onDecline: () -> Unit,
     onCancel: () -> Unit,
     onDone: () -> Unit,
+    onSetPetname: (AuthorId, String) -> Unit,
+    onToggleListen: (AuthorId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -94,7 +107,15 @@ internal fun SyncContent(
                 SyncUiState.Idle -> IdleContent(discoveredPeers, onStartListening, onConnect)
                 is SyncUiState.Listening -> ListeningContent(state.port)
                 is SyncUiState.Connecting -> StatusContent("Connecting to ${state.host}:${state.port}…")
-                is SyncUiState.Confirming -> ConfirmingContent(state, onConfirm, onDecline)
+                is SyncUiState.Confirming -> ConfirmingContent(
+                    state = state,
+                    displayName = names[state.peer] ?: NameResolver.resolve(state.peer, petname = null, claimed = null),
+                    isListening = state.peer in listenScope,
+                    onConfirm = onConfirm,
+                    onDecline = onDecline,
+                    onSetPetname = { name -> onSetPetname(state.peer, name) },
+                    onToggleListen = { onToggleListen(state.peer) },
+                )
                 SyncUiState.Running -> StatusContent("Syncing…")
                 is SyncUiState.Finished -> FinishedContent(state, onDone)
                 is SyncUiState.Failed -> FailedContent(state, onDone)
@@ -188,21 +209,38 @@ private fun ListeningContent(port: Int) {
 @Composable
 private fun ConfirmingContent(
     state: SyncUiState.Confirming,
+    displayName: DisplayName,
+    isListening: Boolean,
     onConfirm: () -> Unit,
     onDecline: () -> Unit,
+    onSetPetname: (String) -> Unit,
+    onToggleListen: () -> Unit,
 ) {
     Text("Is this who you're syncing with?", style = MaterialTheme.typography.titleMedium)
     Text(
-        "Nobody here is a saved contact yet, so this is only the key's own fingerprint — " +
-            "compare it with what they see on their screen.",
+        "Compare the fingerprint with what they see on their screen.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    AuthorName(NameResolver.resolve(state.peer, petname = null, claimed = null))
+    AuthorName(displayName)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(onClick = onConfirm, modifier = Modifier.fillMaxWidth()) { Text("Yes, sync") }
         OutlinedButton(onClick = onDecline, modifier = Modifier.fillMaxWidth()) { Text("No") }
     }
+
+    Text(
+        // The moment plan.md actually calls out for a petname: "you confirmed a key in
+        // person once, and your local name for it is authoritative from then on." Neither
+        // of these needs the sync to actually proceed.
+        "Once you've checked the fingerprint in person:",
+        style = MaterialTheme.typography.labelMedium,
+    )
+    ContactControls(
+        currentPetname = if (displayName.verified) displayName.label else null,
+        isListening = isListening,
+        onSetPetname = onSetPetname,
+        onToggleListen = onToggleListen,
+    )
 }
 
 @Composable

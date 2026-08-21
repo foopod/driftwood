@@ -1,5 +1,6 @@
 package com.jonoshields.gossip.ui.thread
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +20,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -26,12 +30,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.jonoshields.gossip.core.model.AuthorId
 import com.jonoshields.gossip.core.model.Message
 import com.jonoshields.gossip.core.model.MessageId
 import com.jonoshields.gossip.core.store.DisplayName
 import com.jonoshields.gossip.core.store.NameResolver
 import com.jonoshields.gossip.core.store.ThreadNode
 import com.jonoshields.gossip.ui.common.AuthorName
+import com.jonoshields.gossip.ui.common.ContactControls
 import com.jonoshields.gossip.core.store.ThreadView
 
 @Composable
@@ -47,9 +53,13 @@ fun ThreadScreen(
 
     ThreadContent(
         state = state,
+        myAuthor = viewModel.myAuthor,
         onReply = onReply,
         onBack = onBack,
         onToggleStar = viewModel::toggleStar,
+        onSetPetname = viewModel::setPetname,
+        onToggleListen = viewModel::toggleListen,
+        onBlock = viewModel::block,
         modifier = modifier,
     )
 }
@@ -58,11 +68,19 @@ fun ThreadScreen(
 @Composable
 internal fun ThreadContent(
     state: ThreadUiState,
+    myAuthor: AuthorId?,
     onReply: (MessageId, MessageId?) -> Unit,
     onBack: () -> Unit,
     onToggleStar: () -> Unit,
+    onSetPetname: (AuthorId, String) -> Unit,
+    onToggleListen: (AuthorId) -> Unit,
+    onBlock: (AuthorId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Not rememberSaveable: AuthorId isn't a saveable type, and losing the open dialog on a
+    // rotation is a fine trade for not writing a custom Saver for this.
+    var selectedAuthor by remember { mutableStateOf<AuthorId?>(null) }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
@@ -92,13 +110,86 @@ internal fun ThreadContent(
     ) { padding ->
         when (state) {
             ThreadUiState.Loading -> Unit
-            is ThreadUiState.Loaded -> ThreadBody(
-                thread = state.thread,
-                starred = state.starred,
-                nameOf = state::nameOf,
-                onReply = onReply,
-                modifier = Modifier.padding(padding),
+            is ThreadUiState.Loaded -> {
+                val author = selectedAuthor
+                if (author != null) {
+                    // Swaps in for the message list rather than floating over it as a
+                    // dialog — the same plain content-swap every screen here already uses,
+                    // and one that doesn't need a separate Android window to test.
+                    ContactActionsBody(
+                        displayName = state.nameOf(author),
+                        isListening = author in state.listenScope,
+                        onSetPetname = { name -> onSetPetname(author, name) },
+                        onToggleListen = { onToggleListen(author) },
+                        onBlock = {
+                            onBlock(author)
+                            selectedAuthor = null
+                        },
+                        onClose = { selectedAuthor = null },
+                        modifier = Modifier.padding(padding),
+                    )
+                } else {
+                    ThreadBody(
+                        thread = state.thread,
+                        starred = state.starred,
+                        nameOf = state::nameOf,
+                        onReply = onReply,
+                        // Your own messages have nothing to listen to, block, or name —
+                        // there is nothing to open for tapping yourself.
+                        onAuthorClick = { a -> if (a != myAuthor) selectedAuthor = a },
+                        modifier = Modifier.padding(padding),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContactActionsBody(
+    displayName: DisplayName,
+    isListening: Boolean,
+    onSetPetname: (String) -> Unit,
+    onToggleListen: () -> Unit,
+    onBlock: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var confirmingBlock by remember { mutableStateOf(false) }
+
+    Column(
+        modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        AuthorName(displayName)
+
+        if (confirmingBlock) {
+            // Plain, per plan.md §6: what blocking actually does, stated rather than
+            // implied — this is the moment that decides, not the button that started it.
+            Text(
+                "Blocks them: removes their messages and the threads they started, " +
+                    "immediately and from this device only. They are never told.",
+                style = MaterialTheme.typography.bodyMedium,
             )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = { confirmingBlock = false }) { Text("Cancel") }
+                TextButton(onClick = onBlock) {
+                    Text("Block", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        } else {
+            ContactControls(
+                currentPetname = if (displayName.verified) displayName.label else null,
+                isListening = isListening,
+                onSetPetname = onSetPetname,
+                onToggleListen = onToggleListen,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = { confirmingBlock = true }) {
+                    Text("Block", color = MaterialTheme.colorScheme.error)
+                }
+                TextButton(onClick = onClose) { Text("Close") }
+            }
         }
     }
 }
@@ -107,8 +198,9 @@ internal fun ThreadContent(
 private fun ThreadBody(
     thread: ThreadView,
     starred: Boolean,
-    nameOf: (com.jonoshields.gossip.core.model.AuthorId) -> DisplayName,
+    nameOf: (AuthorId) -> DisplayName,
     onReply: (MessageId, MessageId?) -> Unit,
+    onAuthorClick: (AuthorId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -159,11 +251,12 @@ private fun ThreadBody(
                     depth = 0,
                     detached = false,
                     onReply = { onReply(thread.rootId, root.id) },
+                    onAuthorClick = { onAuthorClick(root.body.author) },
                 )
             }
         }
 
-        renderNodes(thread.replies, depth = 1, rootId = thread.rootId, nameOf = nameOf, onReply = onReply)
+        renderNodes(thread.replies, depth = 1, rootId = thread.rootId, nameOf = nameOf, onReply = onReply, onAuthorClick = onAuthorClick)
     }
 }
 
@@ -172,8 +265,9 @@ private fun LazyListScope.renderNodes(
     nodes: List<ThreadNode>,
     depth: Int,
     rootId: MessageId,
-    nameOf: (com.jonoshields.gossip.core.model.AuthorId) -> DisplayName,
+    nameOf: (AuthorId) -> DisplayName,
     onReply: (MessageId, MessageId?) -> Unit,
+    onAuthorClick: (AuthorId) -> Unit,
 ) {
     nodes.forEach { node ->
         item(key = node.message.id.toHex()) {
@@ -185,9 +279,10 @@ private fun LazyListScope.renderNodes(
                 // Every message is a reply target, and the reply carries both the thread's
                 // root id and this specific message as its parent.
                 onReply = { onReply(rootId, node.message.id) },
+                onAuthorClick = { onAuthorClick(node.message.body.author) },
             )
         }
-        renderNodes(node.children, depth + 1, rootId, nameOf, onReply)
+        renderNodes(node.children, depth + 1, rootId, nameOf, onReply, onAuthorClick)
     }
 }
 
@@ -198,6 +293,7 @@ private fun MessageCard(
     depth: Int,
     detached: Boolean,
     onReply: () -> Unit,
+    onAuthorClick: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth().padding(start = (depth.coerceAtMost(5) * 14).dp)) {
         Card(Modifier.fillMaxWidth()) {
@@ -211,7 +307,7 @@ private fun MessageCard(
                     )
                 }
 
-                AuthorName(name)
+                AuthorName(name, modifier = Modifier.clickable(onClick = onAuthorClick))
                 Text(message.body.text, style = MaterialTheme.typography.bodyLarge)
 
                 Row(

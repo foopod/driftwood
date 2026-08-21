@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -12,6 +13,8 @@ import com.jonoshields.gossip.core.model.Ed25519Signer
 import com.jonoshields.gossip.core.store.NameResolver
 import com.jonoshields.gossip.core.sync.AbortReason
 import com.jonoshields.gossip.core.sync.SessionResult
+import com.jonoshields.gossip.core.model.AuthorId
+import com.jonoshields.gossip.core.store.DisplayName
 import com.jonoshields.gossip.core.sync.SyncSummary
 import com.jonoshields.gossip.sync.DiscoveredPeer
 import com.jonoshields.gossip.sync.SyncUiState
@@ -46,12 +49,21 @@ class SyncContentTest {
     private var declined = false
     private var cancelled = false
     private var done = false
+    private var petnameSet: Pair<AuthorId, String>? = null
+    private var listenToggled: AuthorId? = null
 
-    private fun show(state: SyncUiState, discoveredPeers: List<DiscoveredPeer> = emptyList()) {
+    private fun show(
+        state: SyncUiState,
+        discoveredPeers: List<DiscoveredPeer> = emptyList(),
+        names: Map<AuthorId, DisplayName> = emptyMap(),
+        listenScope: Set<AuthorId> = emptySet(),
+    ) {
         compose.setContent {
             SyncContent(
                 state = state,
                 discoveredPeers = discoveredPeers,
+                names = names,
+                listenScope = listenScope,
                 onBack = {},
                 onStartListening = {},
                 onConnect = { host, port -> connectedHost = host; connectedPort = port },
@@ -59,6 +71,8 @@ class SyncContentTest {
                 onDecline = { declined = true },
                 onCancel = { cancelled = true },
                 onDone = { done = true },
+                onSetPetname = { author, name -> petnameSet = author to name },
+                onToggleListen = { author -> listenToggled = author },
             )
         }
     }
@@ -126,6 +140,39 @@ class SyncContentTest {
 
         assertEquals(false, confirmed)
         assertEquals(true, declined)
+    }
+
+    @Test
+    fun `saving a petname on the confirm screen calls through, independent of confirm`() {
+        show(SyncUiState.Confirming(peer))
+
+        compose.onNodeWithText("Petname").performTextInput("Sam")
+        compose.onNodeWithText("Save petname").performClick()
+
+        assertEquals(peer, petnameSet?.first)
+        assertEquals("Sam", petnameSet?.second)
+        assertEquals(false, confirmed)
+        assertEquals(false, declined)
+    }
+
+    @Test
+    fun `toggling listen on the confirm screen calls through for the peer`() {
+        show(SyncUiState.Confirming(peer))
+
+        compose.onNodeWithText("Not listening").performClick()
+
+        assertEquals(peer, listenToggled)
+    }
+
+    @Test
+    fun `an existing petname shows as a verified name, not just a fingerprint`() {
+        // "Sam" also legitimately appears a second time, pre-filled into the petname field
+        // itself — so the count, not mere existence, is what proves the name rendered.
+        val petname = DisplayName(label = "Sam", fingerprint = NameResolver.fingerprint(peer), verified = true, hue = 0f)
+        show(SyncUiState.Confirming(peer), names = mapOf(peer to petname))
+
+        assertEquals(2, compose.onAllNodesWithText("Sam").fetchSemanticsNodes().size)
+        compose.onNodeWithText(petname.fingerprint).assertDoesNotExist()
     }
 
     @Test

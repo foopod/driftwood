@@ -62,7 +62,7 @@ internal fun HomeContent(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onCompose) { Text("＋", style = MaterialTheme.typography.headlineMedium) }
+            FloatingActionButton(onClick = onCompose) { Text("+", style = MaterialTheme.typography.headlineMedium) }
         },
     ) { padding ->
         when (state) {

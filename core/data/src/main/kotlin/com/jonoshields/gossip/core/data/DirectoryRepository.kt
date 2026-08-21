@@ -3,6 +3,7 @@ package com.jonoshields.gossip.core.data
 import android.database.SQLException
 import com.jonoshields.gossip.core.identity.IdentityStore
 import com.jonoshields.gossip.core.model.AuthorId
+import com.jonoshields.gossip.core.model.Nickname
 import com.jonoshields.gossip.core.model.Profile
 import com.jonoshields.gossip.core.model.ProfileCodec
 import com.jonoshields.gossip.core.model.ProfileVerifyResult
@@ -36,6 +37,24 @@ interface DirectoryRepository {
 
     /** Every name currently known, for resolving a screenful of authors at once. */
     fun observeNames(): Flow<Map<AuthorId, DisplayName>>
+
+    /**
+     * Your local name for [author] — a petname, plan.md §3.1's only kind of name shown
+     * without a fingerprint, because it is a claim *you* made after confirming the key
+     * rather than one the key made about itself.
+     */
+    suspend fun setPetname(author: AuthorId, petname: String): Result<Unit>
+
+    /** Identities you currently listen to. */
+    fun observeListenScope(): Flow<Set<AuthorId>>
+
+    /**
+     * Forward-looking only (plan.md §6): does not reshuffle what you already hold, only
+     * what a future sync delivers.
+     */
+    suspend fun listenTo(author: AuthorId): Result<Unit>
+
+    suspend fun stopListening(author: AuthorId): Result<Unit>
 
     /** Ages names out per plan.md §4. Returns the identities whose names were dropped. */
     suspend fun prune(): Result<Set<AuthorId>>
@@ -123,6 +142,26 @@ class RoomDirectoryRepository internal constructor(
                 NameResolver.resolve(author, petname, claimed[author])
             }
         }
+
+    override suspend fun setPetname(author: AuthorId, petname: String): Result<Unit> = runCatching {
+        val validated = try {
+            Nickname.validate(petname).getOrThrow()
+        } catch (e: Throwable) {
+            throw DataError.InvalidMessage(e)
+        }
+        database.contacts().upsert(ContactEntity(author, validated, clock.nowMillis()))
+    }.mapDirectoryErrors()
+
+    override fun observeListenScope(): Flow<Set<AuthorId>> =
+        database.listen().observeAuthors().map { it.toSet() }
+
+    override suspend fun listenTo(author: AuthorId): Result<Unit> = runCatching {
+        database.listen().add(ListenEntity(author, clock.nowMillis()))
+    }.mapDirectoryErrors()
+
+    override suspend fun stopListening(author: AuthorId): Result<Unit> = runCatching {
+        database.listen().remove(author)
+    }.mapDirectoryErrors()
 
     override suspend fun prune(): Result<Set<AuthorId>> = runCatching {
         val drop = DirectoryPruner.plan(
