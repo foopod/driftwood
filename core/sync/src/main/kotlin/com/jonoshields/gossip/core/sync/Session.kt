@@ -90,20 +90,22 @@ class Session(
 ) {
 
     suspend fun run(role: Role, connection: Connection): SessionResult {
-        var summary = SyncSummary()
+        // Held in a box rather than threaded through return values, so that an abort halfway
+        // through a phase still reports what was already persisted. Returning it would lose
+        // exactly the work a partial sync is supposed to keep.
+        val progress = Progress()
         return try {
             handshake(role, connection)
-            val priority = priorityPhase(role, connection, summary)
-            summary = priority.summary
-            summary = gossipPhase(role, connection, priority, summary)
+            val priority = priorityPhase(role, connection, progress)
+            gossipPhase(role, connection, priority, progress)
             store.pruneAfterSession(clock.nowMillis())
-            SessionResult.Completed(summary)
+            SessionResult.Completed(progress.summary)
         } catch (abort: Abort) {
             tearDown(connection, abort.reason)
-            SessionResult.Aborted(abort.reason, summary)
+            SessionResult.Aborted(abort.reason, progress.summary)
         } catch (closed: ConnectionClosed) {
-            // The peer went away. Whatever a completed phase already applied stays applied.
-            SessionResult.Aborted(AbortReason.PEER_CLOSED, summary)
+            // The peer went away. Whatever was applied stays applied, and stays reported.
+            SessionResult.Aborted(AbortReason.PEER_CLOSED, progress.summary)
         }
     }
 
@@ -140,9 +142,13 @@ class Session(
 
     // ---- priority phase --------------------------------------------------------------
 
+    /** What the session has done so far, updated as it happens rather than at the end. */
+    private class Progress {
+        var summary = SyncSummary()
+    }
+
     /** What the priority phase leaves behind for the gossip phase to build on. */
     private data class PriorityResult(
-        val summary: SyncSummary,
         val myScope: ScopeDeclaration,
         /** Ids we already streamed, so gossip never offers the same content twice. */
         val sent: Set<MessageId>,
@@ -153,7 +159,7 @@ class Session(
     private suspend fun priorityPhase(
         role: Role,
         connection: Connection,
-        summary: SyncSummary,
+        progress: Progress,
     ): PriorityResult {
         val now = clock.nowMillis()
         val myScope = ScopeDeclaration(
@@ -174,18 +180,17 @@ class Session(
         val delivery = planFor(theirScope, theirHashList)
 
         // Alternating: the initiator delivers, then listens; the responder the other way.
-        var running = summary
         if (role == Role.INITIATOR) {
             val sent = deliver(connection, delivery.sendNow)
-            running = receiveUntilPhaseDone(connection, myScope, running)
-            running = running.copy(messagesSent = sent)
+            receiveUntilPhaseDone(connection, myScope, progress)
+            progress.summary = progress.summary.copy(messagesSent = sent)
         } else {
-            running = receiveUntilPhaseDone(connection, myScope, running)
-            val sent = deliver(connection, delivery.sendNow)
-            running = running.copy(messagesSent = sent)
+            receiveUntilPhaseDone(connection, myScope, progress)
+            progress.summary = progress.summary.copy(
+                messagesSent = deliver(connection, delivery.sendNow),
+            )
         }
         return PriorityResult(
-            summary = running.copy(priorityPhaseCompleted = true),
             myScope = myScope,
             sent = delivery.sendNow.toSet(),
             theirHashList = theirHashList,
@@ -255,21 +260,24 @@ class Session(
         role: Role,
         connection: Connection,
         priority: PriorityResult,
-        summary: SyncSummary,
-    ): SyncSummary {
-        var running = summary
+        progress: Progress,
+    ) {
         if (role == Role.INITIATOR) {
-            running = running.copy(messagesSent = running.messagesSent + offerGossip(connection, priority))
-            running = receiveGossip(connection, priority, running)
+            progress.addSent(offerGossip(connection, priority))
+            receiveGossip(connection, priority, progress)
         } else {
-            running = receiveGossip(connection, priority, running)
-            running = running.copy(messagesSent = running.messagesSent + offerGossip(connection, priority))
+            receiveGossip(connection, priority, progress)
+            progress.addSent(offerGossip(connection, priority))
         }
 
         swap(role, connection, Record.SessionDone) as? Record.SessionDone
             ?: throw Abort(AbortReason.OUT_OF_PHASE)
 
-        return running.copy(gossipPhaseCompleted = true)
+        progress.summary = progress.summary.copy(gossipPhaseCompleted = true)
+    }
+
+    private fun Progress.addSent(n: Int) {
+        summary = summary.copy(messagesSent = summary.messagesSent + n)
     }
 
     /** Our half: offer our newest, send back whatever they ask for out of it. */
@@ -297,8 +305,8 @@ class Session(
     private suspend fun receiveGossip(
         connection: Connection,
         priority: PriorityResult,
-        summary: SyncSummary,
-    ): SyncSummary {
+        progress: Progress,
+    ) {
         val offered = (next(connection) as? Record.GossipOffer
             ?: throw Abort(AbortReason.OUT_OF_PHASE)).ids
 
@@ -309,7 +317,7 @@ class Session(
         val asked = Reconciler.request(offered, held).take(GOSSIP_INTAKE_CAP)
         connection.send(FrameCodec.encode(Record.GossipRequest(asked)))
 
-        return receiveUntilPhaseDone(connection, priority.myScope, summary, intakeCap = GOSSIP_INTAKE_CAP)
+        receiveUntilPhaseDone(connection, priority.myScope, progress, intakeCap = GOSSIP_INTAKE_CAP)
     }
 
     /**
@@ -324,9 +332,9 @@ class Session(
     private suspend fun receiveUntilPhaseDone(
         connection: Connection,
         myScope: ScopeDeclaration,
-        summary: SyncSummary,
+        progress: Progress,
         intakeCap: Int? = null,
-    ): SyncSummary {
+    ) {
         val ingest = Ingest(
             blocklist = store.blocklist(),
             wants = myScope.wants,
@@ -354,13 +362,18 @@ class Session(
         val outcome = ingest.outcome()
         store.apply(outcome, clock.nowMillis())
 
-        return summary.copy(
+        // Recorded the moment it is persisted. `priorityPhaseCompleted` is about what we took
+        // in, not about whether we finished handing ours over: if the peer walks off before
+        // reading our half, our side of the sync is still whole and still worth reporting.
+        val summary = progress.summary
+        progress.summary = summary.copy(
             messagesAccepted = summary.messagesAccepted + outcome.accepted.size,
             profilesAccepted = summary.profilesAccepted + outcome.profiles.size,
             rejected = summary.rejected.merge(outcome.rejected),
             blockedDropped = summary.blockedDropped + ingest.blockedDropped,
             staleDropped = summary.staleDropped + ingest.staleDropped,
             overBudgetDropped = summary.overBudgetDropped + ingest.overBudgetDropped,
+            priorityPhaseCompleted = summary.priorityPhaseCompleted || intakeCap == null,
         )
     }
 

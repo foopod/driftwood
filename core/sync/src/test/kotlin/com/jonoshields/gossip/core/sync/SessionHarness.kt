@@ -35,7 +35,11 @@ internal const val NOW = 1_700_000_000_000L
 internal class Recording(private val inner: Connection) : Connection {
     val sent = mutableListOf<Record>()
 
+    /** The bytes as well as the records, so a fuzzer can replay a real session and corrupt it. */
+    val rawSent = mutableListOf<ByteArray>()
+
     override suspend fun send(frame: ByteArray) {
+        rawSent += frame
         (FrameCodec.decode(frame) as? FrameResult.Ok)?.let { sent += it.record }
         inner.send(frame)
     }
