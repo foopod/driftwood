@@ -2,6 +2,7 @@ package com.jonoshields.gossip.ui.firstrun
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.jonoshields.gossip.core.data.DirectoryRepository
 import com.jonoshields.gossip.core.identity.IdentityState
 import com.jonoshields.gossip.core.identity.IdentityStore
 import com.jonoshields.gossip.core.identity.PhraseProblem
@@ -19,6 +20,7 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class FirstRunViewModel @Inject constructor(
     private val identity: IdentityStore,
+    private val directory: DirectoryRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<FirstRunUiState>(initialState())
@@ -95,12 +97,37 @@ class FirstRunViewModel @Inject constructor(
             }
             if (correct) {
                 identity.confirmBackedUp()
-                finish()
+                _uiState.value = FirstRunUiState.ChooseNickname()
             } else {
                 _uiState.value = current.copy(wrong = true)
             }
         }
     }
+
+    fun updateNickname(value: String) {
+        val current = _uiState.value as? FirstRunUiState.ChooseNickname ?: return
+        _uiState.value = current.copy(nickname = value, error = null)
+    }
+
+    fun submitNickname() {
+        val current = _uiState.value as? FirstRunUiState.ChooseNickname ?: return
+        if (!current.canSubmit) return
+
+        _uiState.value = current.copy(saving = true)
+        viewModelScope.launch {
+            directory.setMyNickname(current.nickname)
+                .onSuccess { finish() }
+                .onFailure { failure ->
+                    _uiState.value = current.copy(
+                        saving = false,
+                        error = failure.cause?.message ?: failure.message ?: "That name can't be used",
+                    )
+                }
+        }
+    }
+
+    /** A name is optional — the key is the identity, and it already exists by this point. */
+    fun skipNickname() = finish()
 
     /** Back to the phrase, for someone who realises mid-check that they mistyped it. */
     fun showPhraseAgain() {

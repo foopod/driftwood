@@ -57,12 +57,18 @@ internal fun SettingsContent(
         ) {
             Section("Your identity") {
                 Text(
+                    state.nickname ?: "no name set",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
                     state.publicKey ?: "none yet",
                     fontFamily = FontFamily.Monospace,
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Text(
-                    "This key is who you are. There is no account behind it.",
+                    "The key is who you are; the name is only a label on it. Anyone can " +
+                        "claim any name, so others always see yours next to a short code " +
+                        "derived from this key.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

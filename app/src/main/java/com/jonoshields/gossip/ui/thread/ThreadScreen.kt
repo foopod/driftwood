@@ -28,6 +28,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jonoshields.gossip.core.model.Message
 import com.jonoshields.gossip.core.model.MessageId
+import com.jonoshields.gossip.core.store.DisplayName
+import com.jonoshields.gossip.core.store.NameResolver
 import com.jonoshields.gossip.core.store.ThreadNode
 import com.jonoshields.gossip.core.store.ThreadView
 
@@ -92,6 +94,7 @@ internal fun ThreadContent(
             is ThreadUiState.Loaded -> ThreadBody(
                 thread = state.thread,
                 starred = state.starred,
+                nameOf = state::nameOf,
                 onReply = onReply,
                 modifier = Modifier.padding(padding),
             )
@@ -103,6 +106,7 @@ internal fun ThreadContent(
 private fun ThreadBody(
     thread: ThreadView,
     starred: Boolean,
+    nameOf: (com.jonoshields.gossip.core.model.AuthorId) -> DisplayName,
     onReply: (MessageId, MessageId?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -150,6 +154,7 @@ private fun ThreadBody(
                 // — so it would be two buttons with one meaning.
                 MessageCard(
                     message = root,
+                    name = nameOf(root.body.author),
                     depth = 0,
                     detached = false,
                     label = "opens the thread",
@@ -158,7 +163,7 @@ private fun ThreadBody(
             }
         }
 
-        renderNodes(thread.replies, depth = 1, rootId = thread.rootId, onReply = onReply)
+        renderNodes(thread.replies, depth = 1, rootId = thread.rootId, nameOf = nameOf, onReply = onReply)
     }
 }
 
@@ -167,12 +172,14 @@ private fun LazyListScope.renderNodes(
     nodes: List<ThreadNode>,
     depth: Int,
     rootId: MessageId,
+    nameOf: (com.jonoshields.gossip.core.model.AuthorId) -> DisplayName,
     onReply: (MessageId, MessageId?) -> Unit,
 ) {
     nodes.forEach { node ->
         item(key = node.message.id.toHex()) {
             MessageCard(
                 message = node.message,
+                name = nameOf(node.message.body.author),
                 depth = depth,
                 detached = node.detached,
                 label = null,
@@ -181,13 +188,14 @@ private fun LazyListScope.renderNodes(
                 onReply = { onReply(rootId, node.message.id) },
             )
         }
-        renderNodes(node.children, depth + 1, rootId, onReply)
+        renderNodes(node.children, depth + 1, rootId, nameOf, onReply)
     }
 }
 
 @Composable
 private fun MessageCard(
     message: Message,
+    name: DisplayName,
     depth: Int,
     detached: Boolean,
     label: String?,
@@ -211,6 +219,17 @@ private fun MessageCard(
                     )
                 }
 
+                // A claimed name never appears without its fingerprint; a petname you
+                // assigned reads as plain text (plan.md §3.1).
+                Text(
+                    text = name.text,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (name.verified) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
                 Text(message.body.text, style = MaterialTheme.typography.bodyLarge)
 
                 Row(

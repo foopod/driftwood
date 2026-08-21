@@ -2,11 +2,13 @@ package com.jonoshields.gossip.ui
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.jonoshields.gossip.core.model.Ed25519Signer
 import com.jonoshields.gossip.core.model.MessageFactory
 import com.jonoshields.gossip.core.model.MessageId
+import com.jonoshields.gossip.core.store.NameResolver
 import com.jonoshields.gossip.core.store.ThreadAssembler
 import com.jonoshields.gossip.ui.thread.ThreadContent
 import com.jonoshields.gossip.ui.thread.ThreadUiState
@@ -19,7 +21,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+// A tall viewport on purpose: these count controls across the whole thread, and a
+// LazyColumn only composes what fits, so a short screen would silently under-count and the
+// assertions would pass for the wrong reason.
+@Config(sdk = [36], qualifiers = "w400dp-h3000dp")
 class ThreadContentTest {
 
     @get:Rule val compose = createComposeRule()
@@ -47,8 +52,11 @@ class ThreadContentTest {
         }
     }
 
-    private fun loaded(rootId: MessageId, messages: List<com.jonoshields.gossip.core.model.Message>) =
-        ThreadUiState.Loaded(ThreadAssembler.assemble(rootId, messages), starred = false)
+    private fun loaded(
+        rootId: MessageId,
+        messages: List<com.jonoshields.gossip.core.model.Message>,
+        names: Map<com.jonoshields.gossip.core.model.AuthorId, com.jonoshields.gossip.core.store.DisplayName> = emptyMap(),
+    ) = ThreadUiState.Loaded(ThreadAssembler.assemble(rootId, messages), starred = false, names = names)
 
     /**
      * Counts every control offering to reply, matching on a substring so a differently
@@ -124,6 +132,33 @@ class ThreadContentTest {
         show(loaded(r.id, listOf(r, orphan)))
 
         compose.onNodeWithText("replying to a message not carried here").assertExists()
+    }
+
+    @Test
+    fun `a claimed name is shown with its fingerprint attached`() {
+        val r = root("hello")
+        val claimed = NameResolver.resolve(me, petname = null, claimed = "jono")
+        show(loaded(r.id, listOf(r), names = mapOf(me to claimed)))
+
+        compose.onNodeWithText(claimed.text).assertExists()
+        compose.onNodeWithText("jono", substring = false).assertDoesNotExist()
+    }
+
+    @Test
+    fun `a petname you assigned is shown alone`() {
+        val r = root("hello")
+        val petname = NameResolver.resolve(me, petname = "Dad", claimed = "someone else")
+        show(loaded(r.id, listOf(r), names = mapOf(me to petname)))
+
+        compose.onNodeWithText("Dad").assertExists()
+    }
+
+    @Test
+    fun `an author with no name at all falls back to the fingerprint`() {
+        val r = root("hello")
+        show(loaded(r.id, listOf(r)))
+
+        compose.onNodeWithText(NameResolver.fingerprint(me)).assertExists()
     }
 
     @Test

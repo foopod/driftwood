@@ -1,6 +1,5 @@
 package com.jonoshields.gossip.core.data
 
-import android.content.Context
 import android.database.SQLException
 import com.jonoshields.gossip.core.identity.IdentityStore
 import com.jonoshields.gossip.core.model.AuthorId
@@ -72,13 +71,6 @@ class RoomMessageRepository internal constructor(
     private val clock: Clock,
     private val config: StorageConfig,
 ) : MessageRepository {
-
-    constructor(
-        context: Context,
-        identity: IdentityStore,
-        clock: Clock = Clock.System,
-        config: StorageConfig = StorageConfig(),
-    ) : this(buildGossipDatabase(context), identity, clock, config)
 
     private val messages get() = database.messages()
 

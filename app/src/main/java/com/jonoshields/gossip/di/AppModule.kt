@@ -1,8 +1,9 @@
 package com.jonoshields.gossip.di
 
 import android.content.Context
+import com.jonoshields.gossip.core.data.DirectoryRepository
 import com.jonoshields.gossip.core.data.MessageRepository
-import com.jonoshields.gossip.core.data.RoomMessageRepository
+import com.jonoshields.gossip.core.data.GossipStore
 import com.jonoshields.gossip.core.identity.FileSeedStorage
 import com.jonoshields.gossip.core.identity.IdentityStore
 import com.jonoshields.gossip.core.identity.KeystoreSeedCipher
@@ -45,12 +46,21 @@ object AppModule {
             storage = FileSeedStorage(File(context.filesDir, "identity.bin")),
         )
 
+    /** One database for the whole app — see [GossipStore] for why that matters. */
     @Provides
     @Singleton
-    fun messageRepository(
+    fun gossipStore(
         @ApplicationContext context: Context,
         identity: IdentityStore,
         clock: Clock,
         config: StorageConfig,
-    ): MessageRepository = RoomMessageRepository(context, identity, clock, config)
+    ): GossipStore = GossipStore(context, identity, clock, config)
+
+    @Provides
+    @Singleton
+    fun messageRepository(store: GossipStore): MessageRepository = store.messages
+
+    @Provides
+    @Singleton
+    fun directoryRepository(store: GossipStore): DirectoryRepository = store.directory
 }

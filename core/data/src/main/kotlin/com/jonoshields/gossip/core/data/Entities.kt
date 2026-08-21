@@ -106,3 +106,20 @@ internal class ContactEntity(
     @ColumnInfo(name = "display_name") val displayName: String,
     @ColumnInfo(name = "added_at") val addedAt: Long,
 )
+
+/**
+ * A claimed nickname we have heard for an identity (plan.md §3.5).
+ *
+ * A cache of other people's claims, never authority. [claimedAt] is the author's own
+ * timestamp and decides which claim is current; [lastSeenPost] drives ageing.
+ */
+@Entity(tableName = "directory")
+internal class DirectoryEntity(
+    @PrimaryKey val author: AuthorId,
+    val nickname: String,
+    @ColumnInfo(name = "claimed_at") val claimedAt: Long,
+    @ColumnInfo(name = "first_received") val firstReceived: Long,
+    @ColumnInfo(name = "last_seen_post") val lastSeenPost: Long,
+    /** The signed record itself, kept so it can be relayed onward unchanged. */
+    val record: ByteArray,
+)

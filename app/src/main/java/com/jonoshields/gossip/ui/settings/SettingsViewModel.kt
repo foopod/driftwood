@@ -2,6 +2,7 @@ package com.jonoshields.gossip.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.jonoshields.gossip.core.data.DirectoryRepository
 import com.jonoshields.gossip.core.data.MessageRepository
 import com.jonoshields.gossip.core.identity.IdentityState
 import com.jonoshields.gossip.core.identity.IdentityStore
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class SettingsUiState(
+    val nickname: String? = null,
     val publicKey: String? = null,
     val messageCount: Int = 0,
     val windowDays: Long = 0,
@@ -27,6 +29,7 @@ data class SettingsUiState(
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val repository: MessageRepository,
+    private val directory: DirectoryRepository,
     private val identity: IdentityStore,
     private val config: StorageConfig,
 ) : ViewModel() {
@@ -51,10 +54,16 @@ class SettingsViewModel @Inject constructor(
                 _uiState.update { it.copy(messageCount = messages.size) }
             }
         }
+        viewModelScope.launch {
+            val mine = directory.myProfile().getOrNull()
+            _uiState.update { it.copy(nickname = mine?.nickname) }
+        }
     }
 
     fun prune() {
         viewModelScope.launch {
+            // Names age out on their own rules, so the same button runs both.
+            directory.prune()
             repository.prune()
                 .onSuccess { plan ->
                     val byReason = plan.evict.groupingBy { plan.reasons[it] }.eachCount()

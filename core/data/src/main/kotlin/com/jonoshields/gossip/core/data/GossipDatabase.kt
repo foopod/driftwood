@@ -101,12 +101,39 @@ internal interface FavouriteDao {
 }
 
 @Dao
+internal interface DirectoryDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entry: DirectoryEntity)
+
+    @Query("SELECT * FROM directory WHERE author = :author")
+    suspend fun find(author: AuthorId): DirectoryEntity?
+
+    @Query("SELECT * FROM directory")
+    suspend fun all(): List<DirectoryEntity>
+
+    @Query("SELECT * FROM directory")
+    fun observeAll(): Flow<List<DirectoryEntity>>
+
+    @Query("DELETE FROM directory WHERE author IN (:authors)")
+    suspend fun delete(authors: List<AuthorId>)
+
+    @Query("UPDATE directory SET last_seen_post = :at WHERE author = :author AND last_seen_post < :at")
+    suspend fun touch(author: AuthorId, at: Long)
+
+    @Query("SELECT DISTINCT author FROM messages")
+    suspend fun authorsWithMessages(): List<AuthorId>
+}
+
+@Dao
 internal interface ContactDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(contact: ContactEntity)
 
     @Query("SELECT * FROM contacts")
     fun observeAll(): Flow<List<ContactEntity>>
+
+    @Query("SELECT author FROM contacts")
+    suspend fun authors(): List<AuthorId>
 }
 
 @Database(
@@ -116,6 +143,7 @@ internal interface ContactDao {
         BlockedAuthorEntity::class,
         BlockedRootEntity::class,
         FavouriteRootEntity::class,
+        DirectoryEntity::class,
         WantEntity::class,
         ContactEntity::class,
     ],
@@ -128,6 +156,7 @@ internal abstract class GossipDatabase : RoomDatabase() {
     abstract fun listen(): ListenDao
     abstract fun blocklist(): BlocklistDao
     abstract fun favourites(): FavouriteDao
+    abstract fun directory(): DirectoryDao
     abstract fun contacts(): ContactDao
 }
 

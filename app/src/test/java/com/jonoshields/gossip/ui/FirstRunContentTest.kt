@@ -40,6 +40,9 @@ class FirstRunContentTest {
     private var created = 0
     private var verified = 0
     private val answers = mutableMapOf<Int, String>()
+    private var typedNickname = ""
+    private var nicknameSubmitted = 0
+    private var nicknameSkipped = 0
 
     private fun actions() = FirstRunActions(
         onCreate = { created++ },
@@ -50,6 +53,9 @@ class FirstRunContentTest {
         onVerificationAnswerChange = { slot, value -> answers[slot] = value },
         onSubmitVerification = { verified++ },
         onShowPhraseAgain = {},
+        onNicknameChange = { typedNickname = it },
+        onSubmitNickname = { nicknameSubmitted++ },
+        onSkipNickname = { nicknameSkipped++ },
         onFinished = {},
     )
 
@@ -149,6 +155,41 @@ class FirstRunContentTest {
             "the expected word must not be on screen during verification",
             compose.onAllNodesWithText(phrase[2]).fetchSemanticsNodes().isEmpty(),
         )
+    }
+
+    @Test
+    fun `the nickname step explains that a name is not a username`() {
+        // The single most important thing to say here: nobody owns a name in this system.
+        compose.setContent { FirstRunContent(FirstRunUiState.ChooseNickname(), actions()) }
+
+        compose.onNodeWithText("What should people call you?").assertExists()
+        compose.onNodeWithText("It is not a username", substring = true).assertExists()
+    }
+
+    @Test
+    fun `a name can be skipped, because the key is the identity`() {
+        compose.setContent { FirstRunContent(FirstRunUiState.ChooseNickname(), actions()) }
+
+        compose.onNodeWithText("Skip for now").performClick()
+
+        assertEquals(1, nicknameSkipped)
+    }
+
+    @Test
+    fun `an empty name cannot be submitted`() {
+        compose.setContent { FirstRunContent(FirstRunUiState.ChooseNickname(), actions()) }
+        compose.onNodeWithText("Continue").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `a rejected name is explained rather than silently dropped`() {
+        val state = FirstRunUiState.ChooseNickname(
+            nickname = "bad",
+            error = "That name contains invisible characters.",
+        )
+        compose.setContent { FirstRunContent(state, actions()) }
+
+        compose.onNodeWithText("That name contains invisible characters.").assertExists()
     }
 
     @Test

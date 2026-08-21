@@ -25,6 +25,19 @@ sealed interface FirstRunUiState {
         val canSubmit: Boolean get() = answers.all { it.isNotBlank() }
     }
 
+    /**
+     * Choosing what to be called. Comes *after* the phrase is confirmed: the identity is
+     * the key, and a name is a label on it, so nothing about naming may delay backing the
+     * key up.
+     */
+    data class ChooseNickname(
+        val nickname: String = "",
+        val error: String? = null,
+        val saving: Boolean = false,
+    ) : FirstRunUiState {
+        val canSubmit: Boolean get() = !saving && nickname.isNotBlank()
+    }
+
     /** Typing a 24-word phrase back in to recover an existing identity. */
     data class Restore(val input: String = "", val error: String? = null) : FirstRunUiState
 

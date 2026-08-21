@@ -2,7 +2,11 @@ package com.jonoshields.gossip.ui.thread
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.jonoshields.gossip.core.data.DirectoryRepository
 import com.jonoshields.gossip.core.data.MessageRepository
+import com.jonoshields.gossip.core.model.AuthorId
+import com.jonoshields.gossip.core.store.DisplayName
+import com.jonoshields.gossip.core.store.NameResolver
 import com.jonoshields.gossip.core.model.MessageId
 import com.jonoshields.gossip.core.store.ThreadView
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -21,13 +25,25 @@ sealed interface ThreadUiState {
     data object Loading : ThreadUiState
 
     /** [starred] is a property of the whole thread, not of any message in it. */
-    data class Loaded(val thread: ThreadView, val starred: Boolean) : ThreadUiState
+    data class Loaded(
+        val thread: ThreadView,
+        val starred: Boolean,
+        val names: Map<AuthorId, DisplayName> = emptyMap(),
+    ) : ThreadUiState {
+        /**
+         * Falls back to the bare fingerprint for anyone with no name at all, so a message
+         * is never attributed to nothing.
+         */
+        fun nameOf(author: AuthorId): DisplayName =
+            names[author] ?: NameResolver.resolve(author, petname = null, claimed = null)
+    }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class ThreadViewModel @Inject constructor(
     private val repository: MessageRepository,
+    private val directory: DirectoryRepository,
 ) : ViewModel() {
 
     private val rootId = MutableStateFlow<MessageId?>(null)
@@ -37,8 +53,12 @@ class ThreadViewModel @Inject constructor(
         // flatMapLatest so opening a different thread cancels the previous query rather
         // than leaving two observers racing to set the same state.
         .flatMapLatest { id ->
-            combine(repository.observeThread(id), repository.observeThreadFavourite(id)) { thread, starred ->
-                ThreadUiState.Loaded(thread, starred)
+            combine(
+                repository.observeThread(id),
+                repository.observeThreadFavourite(id),
+                directory.observeNames(),
+            ) { thread, starred, names ->
+                ThreadUiState.Loaded(thread, starred, names)
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ThreadUiState.Loading)

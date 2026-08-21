@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "67717d30fc00e58c46b45fa220ebf715",
+    "identityHash": "05ab1c283715346b502ff06d54014906",
     "entities": [
       {
         "tableName": "messages",
@@ -238,6 +238,54 @@
         }
       },
       {
+        "tableName": "directory",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`author` BLOB NOT NULL, `nickname` TEXT NOT NULL, `claimed_at` INTEGER NOT NULL, `first_received` INTEGER NOT NULL, `last_seen_post` INTEGER NOT NULL, `record` BLOB NOT NULL, PRIMARY KEY(`author`))",
+        "fields": [
+          {
+            "fieldPath": "author",
+            "columnName": "author",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nickname",
+            "columnName": "nickname",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "claimedAt",
+            "columnName": "claimed_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firstReceived",
+            "columnName": "first_received",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSeenPost",
+            "columnName": "last_seen_post",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "record",
+            "columnName": "record",
+            "affinity": "BLOB",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "author"
+          ]
+        }
+      },
+      {
         "tableName": "want_list",
         "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`parent` BLOB NOT NULL, `first_wanted_at` INTEGER NOT NULL, `unsatisfied_syncs` INTEGER NOT NULL, PRIMARY KEY(`parent`))",
         "fields": [
@@ -300,7 +348,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '67717d30fc00e58c46b45fa220ebf715')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '05ab1c283715346b502ff06d54014906')"
     ]
   }
 }
