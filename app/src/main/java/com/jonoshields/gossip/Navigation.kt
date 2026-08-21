@@ -15,6 +15,7 @@ import com.jonoshields.gossip.ui.compose.ComposeScreen
 import com.jonoshields.gossip.ui.firstrun.FirstRunScreen
 import com.jonoshields.gossip.ui.home.HomeScreen
 import com.jonoshields.gossip.ui.settings.SettingsScreen
+import com.jonoshields.gossip.ui.sync.SyncScreen
 import com.jonoshields.gossip.ui.thread.ThreadScreen
 
 /**
@@ -52,6 +53,7 @@ private fun MainNavigation() {
                     onOpenThread = { backStack.add(Thread(it.toHex())) },
                     onCompose = { backStack.add(Compose()) },
                     onSettings = { backStack.add(Settings) },
+                    onSync = { backStack.add(Sync) },
                     modifier = Modifier.safeDrawingPadding(),
                 )
             }
@@ -76,6 +78,12 @@ private fun MainNavigation() {
             }
             entry<Settings> {
                 SettingsScreen(
+                    onBack = { backStack.removeLastOrNull() },
+                    modifier = Modifier.safeDrawingPadding(),
+                )
+            }
+            entry<Sync> {
+                SyncScreen(
                     onBack = { backStack.removeLastOrNull() },
                     modifier = Modifier.safeDrawingPadding(),
                 )

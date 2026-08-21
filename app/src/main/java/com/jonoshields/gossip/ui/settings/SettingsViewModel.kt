@@ -9,9 +9,9 @@ import com.jonoshields.gossip.core.identity.IdentityStore
 import com.jonoshields.gossip.core.store.Clock
 import com.jonoshields.gossip.core.store.EvictionReason
 import com.jonoshields.gossip.core.store.StorageConfig
-import com.jonoshields.gossip.core.sync.SessionResult
 import com.jonoshields.gossip.core.sync.SyncStore
 import com.jonoshields.gossip.sync.DebugSync
+import com.jonoshields.gossip.sync.SyncSummaryText
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -146,25 +146,8 @@ class SettingsViewModel @Inject constructor(
             _uiState.update { it.copy(debugSyncRunning = true, debugSyncSummary = null) }
             val result = DebugSync.run(syncStore, identity.publicKey(), clock)
             _uiState.update {
-                it.copy(debugSyncRunning = false, debugSyncSummary = describeSync(result))
+                it.copy(debugSyncRunning = false, debugSyncSummary = SyncSummaryText.describe(result))
             }
         }
-    }
-
-    private fun describeSync(result: SessionResult): String = when (result) {
-        is SessionResult.Completed -> describeSummary(result.summary)
-        is SessionResult.Aborted ->
-            "Stopped (${result.reason.name.lowercase().replace('_', ' ')}): " +
-                describeSummary(result.summary)
-    }
-
-    private fun describeSummary(summary: com.jonoshields.gossip.core.sync.SyncSummary): String {
-        if (summary.messagesAccepted == 0 && summary.profilesAccepted == 0) {
-            return "Nothing new — already up to date with the debug peer."
-        }
-        val parts = mutableListOf<String>()
-        if (summary.messagesAccepted > 0) parts += "${summary.messagesAccepted} messages"
-        if (summary.profilesAccepted > 0) parts += "${summary.profilesAccepted} names"
-        return "Fetched " + parts.joinToString(", ") + "."
     }
 }

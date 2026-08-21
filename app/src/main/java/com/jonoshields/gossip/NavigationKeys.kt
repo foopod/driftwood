@@ -3,7 +3,7 @@ package com.jonoshields.gossip
 import androidx.navigation3.runtime.NavKey
 import kotlinx.serialization.Serializable
 
-/** The message list — your own posts until sync arrives in M2. */
+/** The message list. */
 @Serializable data object Main : NavKey
 
 /** Composing a new root, or a reply when [replyToRoot] is set. */
@@ -17,3 +17,5 @@ data class Compose(
 @Serializable data class Thread(val rootId: String) : NavKey
 
 @Serializable data object Settings : NavKey
+
+@Serializable data object Sync : NavKey

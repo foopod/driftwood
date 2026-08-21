@@ -32,11 +32,12 @@ fun HomeScreen(
     onOpenThread: (MessageId) -> Unit,
     onCompose: () -> Unit,
     onSettings: () -> Unit,
+    onSync: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    HomeContent(state, onOpenThread, onCompose, onSettings, modifier)
+    HomeContent(state, onOpenThread, onCompose, onSettings, onSync, modifier)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,6 +47,7 @@ internal fun HomeContent(
     onOpenThread: (MessageId) -> Unit,
     onCompose: () -> Unit,
     onSettings: () -> Unit,
+    onSync: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -53,7 +55,10 @@ internal fun HomeContent(
         topBar = {
             TopAppBar(
                 title = { Text("Gossip") },
-                actions = { TextButton(onClick = onSettings) { Text("Settings") } },
+                actions = {
+                    TextButton(onClick = onSync) { Text("Sync") }
+                    TextButton(onClick = onSettings) { Text("Settings") }
+                },
             )
         },
         floatingActionButton = {
@@ -118,7 +123,7 @@ private fun ThreadRow(thread: ThreadSummary, onClick: () -> Unit) {
 @Preview(showBackground = true)
 @Composable
 private fun EmptyPreview() {
-    GossipTheme { HomeContent(HomeUiState.Empty, {}, {}, {}) }
+    GossipTheme { HomeContent(HomeUiState.Empty, {}, {}, {}, {}) }
 }
 
 @Preview(showBackground = true)
@@ -132,7 +137,7 @@ private fun ThreadsPreview() {
                     ThreadSummary(MessageId.of(ByteArray(32) { 2 }), "…and it kept going from there.", 4, 0, false),
                 )
             ),
-            {}, {}, {},
+            {}, {}, {}, {},
         )
     }
 }
