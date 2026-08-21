@@ -34,6 +34,12 @@ sealed interface FirstRunUiState {
         val nickname: String = "",
         val error: String? = null,
         val saving: Boolean = false,
+        /**
+         * Restoring rather than starting fresh. The identity already had a name, but the
+         * phrase does not carry it — only the key — so it has to be asked for again or
+         * left to come back over sync.
+         */
+        val restoring: Boolean = false,
     ) : FirstRunUiState {
         val canSubmit: Boolean get() = !saving && nickname.isNotBlank()
     }

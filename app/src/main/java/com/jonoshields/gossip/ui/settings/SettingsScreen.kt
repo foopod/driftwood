@@ -12,6 +12,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -31,7 +32,14 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    SettingsContent(state, onBack, viewModel::prune, modifier)
+    SettingsContent(
+        state = state,
+        onBack = onBack,
+        onPrune = viewModel::prune,
+        onNicknameChange = viewModel::updateNickname,
+        onSaveNickname = viewModel::saveNickname,
+        modifier = modifier,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -40,6 +48,8 @@ internal fun SettingsContent(
     state: SettingsUiState,
     onBack: () -> Unit,
     onPrune: () -> Unit,
+    onNicknameChange: (String) -> Unit,
+    onSaveNickname: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -56,10 +66,33 @@ internal fun SettingsContent(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Section("Your identity") {
-                Text(
-                    state.nickname ?: "no name set",
-                    style = MaterialTheme.typography.titleMedium,
+                OutlinedTextField(
+                    value = state.nicknameDraft,
+                    onValueChange = onNicknameChange,
+                    label = { Text("Your name") },
+                    placeholder = { Text("no name set") },
+                    singleLine = true,
+                    isError = state.nicknameError != null,
+                    modifier = Modifier.fillMaxWidth(),
                 )
+                state.nicknameError?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+                if (state.nicknameSaved) {
+                    Text(
+                        "Saved. People you sync with will see the new name; until then they " +
+                            "still hold the old one.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                OutlinedButton(
+                    onClick = onSaveNickname,
+                    enabled = state.nicknameDraft.isNotBlank() && state.nicknameDraft != state.nickname,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (state.nickname == null) "Set name" else "Change name")
+                }
                 Text(
                     state.publicKey ?: "none yet",
                     fontFamily = FontFamily.Monospace,

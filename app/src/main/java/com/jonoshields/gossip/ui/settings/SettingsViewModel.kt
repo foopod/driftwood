@@ -18,6 +18,9 @@ import kotlinx.coroutines.launch
 
 data class SettingsUiState(
     val nickname: String? = null,
+    val nicknameDraft: String = "",
+    val nicknameError: String? = null,
+    val nicknameSaved: Boolean = false,
     val publicKey: String? = null,
     val messageCount: Int = 0,
     val windowDays: Long = 0,
@@ -56,7 +59,38 @@ class SettingsViewModel @Inject constructor(
         }
         viewModelScope.launch {
             val mine = directory.myProfile().getOrNull()
-            _uiState.update { it.copy(nickname = mine?.nickname) }
+            _uiState.update {
+                it.copy(nickname = mine?.nickname, nicknameDraft = mine?.nickname.orEmpty())
+            }
+        }
+    }
+
+    fun updateNickname(value: String) {
+        _uiState.update { it.copy(nicknameDraft = value, nicknameError = null, nicknameSaved = false) }
+    }
+
+    /**
+     * Signs a fresh claim. Names are mutable by design — latest claim wins (plan.md §3.5) —
+     * so this is the ordinary path, not an exceptional one.
+     */
+    fun saveNickname() {
+        val draft = _uiState.value.nicknameDraft
+        if (draft.isBlank()) return
+        viewModelScope.launch {
+            directory.setMyNickname(draft)
+                .onSuccess { profile ->
+                    _uiState.update {
+                        it.copy(nickname = profile.nickname, nicknameSaved = true, nicknameError = null)
+                    }
+                }
+                .onFailure { failure ->
+                    _uiState.update {
+                        it.copy(
+                            nicknameError = failure.cause?.message
+                                ?: failure.message ?: "That name can't be used",
+                        )
+                    }
+                }
         }
     }
 

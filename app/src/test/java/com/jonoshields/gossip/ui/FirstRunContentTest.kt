@@ -193,6 +193,36 @@ class FirstRunContentTest {
     }
 
     @Test
+    fun `restoring also asks for a name, and says why`() {
+        // Someone restoring reasonably expects everything back, and most of it comes back.
+        // The name is the exception, so the screen explains rather than silently re-asking.
+        val state = FirstRunUiState.ChooseNickname(restoring = true)
+        compose.setContent { FirstRunContent(state, actions()) }
+
+        compose.onNodeWithText("What should people call you?").assertExists()
+        compose.onNodeWithText("carries your key, not your name", substring = true).assertExists()
+    }
+
+    @Test
+    fun `restoring explains that skipping may bring the old name back`() {
+        // True, and worth saying: peers hold the old profile signed by this key, and
+        // latest-claim-wins restores it on the next sync.
+        val state = FirstRunUiState.ChooseNickname(restoring = true)
+        compose.setContent { FirstRunContent(state, actions()) }
+
+        compose.onNodeWithText("your old name may return", substring = true).assertExists()
+        compose.onNodeWithText("Skip for now").assertExists()
+    }
+
+    @Test
+    fun `a fresh identity is not told about names coming back`() {
+        // There is no old name to return, so that copy would be nonsense here.
+        compose.setContent { FirstRunContent(FirstRunUiState.ChooseNickname(), actions()) }
+
+        compose.onNodeWithText("your old name may return", substring = true).assertDoesNotExist()
+    }
+
+    @Test
     fun `a restore error is shown to the user`() {
         val state = FirstRunUiState.Restore(input = "abandon abandon", error = "A recovery phrase is 24 words — this one has 2.")
         compose.setContent { FirstRunContent(state, actions()) }

@@ -200,12 +200,29 @@ private fun VerifyPhrase(state: FirstRunUiState.VerifyPhrase, actions: FirstRunA
 @Composable
 private fun ChooseNickname(state: FirstRunUiState.ChooseNickname, actions: FirstRunActions) {
     Text("What should people call you?", style = MaterialTheme.typography.headlineMedium)
-    Text(
-        "This travels with your messages so people can read who said what. It is not a " +
-            "username — nobody owns a name here, anyone can claim any name, and others " +
-            "will always see it alongside a short code derived from your key.",
-        style = MaterialTheme.typography.bodyMedium,
-    )
+    if (state.restoring) {
+        // Worth explaining rather than silently re-asking: someone restoring reasonably
+        // expects everything to come back, and most of it does.
+        Text(
+            "Your recovery phrase carries your key, not your name — so this is the one " +
+                "thing it cannot bring back.",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
+            "If you skip it, your old name may return on its own: people who synced with " +
+                "you still hold it, signed by your key, and it comes back the next time " +
+                "you meet one of them. Setting a name here replaces it instead.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    } else {
+        Text(
+            "This travels with your messages so people can read who said what. It is not " +
+                "a username — nobody owns a name here, anyone can claim any name, and " +
+                "others will always see it alongside a short code derived from your key.",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
 
     OutlinedTextField(
         value = state.nickname,

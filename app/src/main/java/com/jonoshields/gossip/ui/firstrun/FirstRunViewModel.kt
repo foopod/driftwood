@@ -62,7 +62,10 @@ class FirstRunViewModel @Inject constructor(
         val current = _uiState.value as? FirstRunUiState.Restore ?: return
         runGuarded {
             when (val result = identity.restore(current.input)) {
-                is RestoreResult.Success -> finish()
+                // A restored identity has a key but no name: the phrase carries the seed
+                // and nothing else.
+                is RestoreResult.Success ->
+                    _uiState.value = FirstRunUiState.ChooseNickname(restoring = true)
                 RestoreResult.AlreadyExists ->
                     _uiState.value = current.copy(
                         error = "This device already has an identity. Restoring would replace it."
