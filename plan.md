@@ -71,11 +71,36 @@ unclear, resolve it back to these.
 
 ### 3.1 Identity
 - Ed25519 keypair generated on-device.
-- Public key = identity. No handle registry (a local display-name is cosmetic only).
+- **Public key = identity.** There is no handle registry and no global namespace. A name is
+  never what identifies someone — only what they are called.
 - Private key stored in Android Keystore where possible; **exportable** as an encrypted
   backup (recovery phrase or key file). Forced backup step on first run.
 
-### 3.2 Message (the single data type)
+**Names: two kinds, never blurred.**
+
+| | Petname | Claimed nickname |
+|---|---|---|
+| Set by | **you** | its owner |
+| Travels | never | yes, signed by its owner |
+| Trust | trustworthy — you bound that name to that key yourself | a claim, nothing more |
+| Lives in | `contacts` | `directory` (§3.5) |
+
+- A **petname** is what you choose to call someone after confirming their key in person
+  (§6, QR exchange). It is local, and it is the only kind of name that can be trusted.
+- A **claimed nickname** is self-asserted, signed by the key it belongs to, and propagates
+  through sync so that strangers in the gossip tier are readable rather than hex.
+
+- **Collision is the default outcome, not an edge case.** Nothing stops two keys claiming
+  the same nickname, and in an open network you should expect exactly that, including
+  deliberately. This is Zooko's triangle — human-meaningful, decentralised, secure: pick
+  two. The design keeps *decentralised* and *secure*, so names cannot be identifiers.
+- Because the nickname is signed by its own key, a relaying peer cannot rewrite it; the
+  worst a peer can do is withhold it.
+- **Display rule (§6): a petname always wins.** Any name you did not assign yourself is
+  shown with a short key fingerprint permanently attached, and styled as unverified. A
+  claimed nickname is never rendered as though it were an identity.
+
+### 3.2 Message (the primary data type)
 
 | Field | Notes |
 |---|---|
@@ -87,6 +112,10 @@ unclear, resolve it back to these.
 | `timestamp` | Author-claimed time, Unix milliseconds UTC. **Untrusted.** See `effective_time` in §4 for ordering/windowing. |
 | `text` | UTF-8 text, **max 320 characters** — Unicode scalar values (code points), not bytes and not UTF-16 units. **NFC-normalize first, then count** (see below). Enforced on create and on ingest; over-length is rejected. |
 | `sig` | Ed25519 signature over the canonical preimage (see below). Not part of the hash preimage. |
+
+Messages carry no name. Who wrote something is the `author` key; what they are *called* is a
+separate, much smaller signed record (§3.5), so a name is stored once per identity rather
+than repeated on every message that identity ever writes.
 
 **Canonical serialization (the foundation — two impls must agree byte-for-byte).**
 - Fields are serialized in this fixed order: `v`, `author`, `root`, `parent`, `timestamp`, `text`.
@@ -197,6 +226,9 @@ verify that should not. Decode to *inspect* the fields; hash and verify the *rec
   you have actually seen — see §4.)
 - **Want-list** — orphan parent-ids you'd accept if a peer has them; each entry has a TTL.
   Parents only; roots are never wanted (§3.2).
+- **Directory** — every identity whose claimed nickname you have heard, from anywhere:
+  `author`, `nickname`, `claimed_at`, `first_received`, `last_seen_post`. Purely a cache of
+  other people's claims — losing it costs readability, never integrity.
 - **Storage config** — an overall storage budget plus the three partition caps
   (`listen` / `context` / `gossip`), derived from the default split unless a power user
   overrides them.
@@ -223,7 +255,55 @@ one-line change. The values are deliberate starting points, not researched optim
 | `MSG_FORMAT_VERSION` (`v`) | 1 | First field of every message. |
 | `SESSION_INTAKE_CAP` | 1000 | Max messages accepted per phase per session. Starting point; revisit in M2 against observed sizes. |
 | `VERIFY_FAIL_CUTOFF` | 20 | Rejected (unverifiable) messages from one peer in one session before the session is aborted. |
+| `NICKNAME_MAX_CHARS` | 32 | Unicode scalar values after NFC, like `MSG_MAX_CHARS`. |
+| `DIRECTORY_TTL` | 180 days | Since `last_seen_post`, before a name ages out. Deliberately longer than `WINDOW_DEFAULT` so a partly-pruned thread still shows who said what. |
 | `MIN_SDK` | 33 (Android 13) | Set by Wi-Fi Direct + `NEARBY_WIFI_DEVICES`/`neverForLocation`; API ≤ 32 would force a location permission. See §7. |
+
+### 3.5 Profile record (the second data type)
+
+A tiny signed claim: *this key calls itself this*. Deliberately separate from messages —
+names change, messages do not, and one row per identity beats the same name repeated across
+every message that identity ever wrote.
+
+| Field | Notes |
+|---|---|
+| `v` | Format version. `1`. |
+| `author` | The key making the claim (32 bytes). Also the primary key — a profile is not content-addressed, because it is mutable by design. |
+| `nickname` | UTF-8, **max 32 characters** (Unicode scalar values, NFC-normalised, counted after normalising, exactly as `text` in §3.2). |
+| `timestamp` | Author-claimed time. Untrusted; see below. |
+| `sig` | Ed25519 over the canonical preimage. |
+
+**Canonical form** follows §3.2 exactly — same length-prefixed binary encoding, same field
+discipline, same strict decoding — so there is one serialization idea in the system rather
+than two. Field order: `v`, `author`, `nickname`, `timestamp`. There is no `id`: profiles are
+keyed by `author`.
+
+**Nickname validation (on create and on ingest).** NFC-normalise, then count code points
+against the cap. Reject: unpaired surrogates; any Unicode **control, format or bidi-override**
+character; leading or trailing whitespace; an empty result.
+
+The bidi rule is not fussiness — `U+202E` (right-to-left override) reverses how following
+text renders, so `evil\u202Eonoj` can display as something else entirely. It is the same
+trick as the "Trojan Source" attacks, it costs one check to close, and a name is precisely
+where someone would try it.
+
+**Latest claim wins**, ordered by `effective_time` (§4) rather than raw claimed time — so
+forward-dating cannot pin a name permanently, for the same reason it cannot pin a message to
+the top of a feed.
+
+**How profiles sync.** They do not get their own reconciliation, want-list or phase.
+Profiles **ride along with delivery**: when a peer streams a delta covering messages from N
+authors, it attaches the profile records it holds for those N authors. Two consequences:
+
+- Gap-filling is automatic. Receiving somebody's content is exactly when you need their name,
+  and it arrives together.
+- There is **no independent flooding vector**. Profiles cannot be pushed for keys whose
+  content you were not already receiving, so the directory is bounded by the message caps
+  rather than needing caps of its own.
+
+Verification on ingest mirrors §3.2: strict decode, structural checks, then signature against
+`author`. A profile that fails is rejected outright, never stored.
+
 
 ---
 
@@ -341,6 +421,20 @@ else, and when full, its own oldest content is evicted first.
   block and the next prune.
 - Favourite does **not** protect blocked content; blocking wins.
 
+**Directory pruning (names, not messages).**
+The directory is a cache, so it is pruned on its own terms rather than by fair share. A row
+is kept while **any** of these hold:
+
+- the author is in your **listen list** — immune, since a name you deliberately follow is
+  the last one you would want to lose;
+- the author is a **contact** (you have a petname for them anyway);
+- you still hold at least one message from them.
+
+Otherwise it ages out `DIRECTORY_TTL` after `last_seen_post`. Keeping names a while *past*
+the messages is the point: a thread you have partly pruned still reads as people talking
+rather than as hex addresses. Blocked authors' rows are dropped immediately with their
+content.
+
 **When pruning runs.**
 - **Pruning happens only during a sync**, after a session merges new messages — never
   merely because you added someone to your listen list or favourited/unfavourited
@@ -411,7 +505,11 @@ publishes your interests to them** — noted in §9.
    - Both deltas exclude blocked-author content (§4) before anything is sent.
 
 4. **Deliver (priority phase).** Each side streams its delta; the most complete thread
-   subgraphs it holds for those roots are included. Thread-bump content is sent
+   subgraphs it holds for those roots are included, **plus the profile records (§3.5) it
+   holds for the authors appearing in that delta**. Names ride with content rather than
+   getting a phase of their own: receiving somebody's message is exactly when their name
+   becomes useful, and it means a name can never be pushed for a key whose content you were
+   not already accepting. Thread-bump content is sent
    **newest-first by `effective_time`** and shares the phase's `SESSION_INTAKE_CAP`. There
    is deliberately **no per-root cap** in MVP: a large thread that is *entirely recent* is
    legitimately worth its size, and older tail content (often including the root itself)
@@ -493,6 +591,12 @@ Keep it calm and honest about partial data. Text-only keeps the surface small.
   is allowed against any `root` id you hold — you need not hold the root message or the rest
   of the thread, and "commenting on gossip whose origin you didn't see" is an intended
   feature, not an edge case.
+- **Names:** a petname you assigned always wins and reads as plain text. Any name you did
+  not assign is shown as `nickname · a3f1…8e2`, with the fingerprint permanently attached
+  and styled as unverified — never as bare text that could be mistaken for an identity.
+  Someone with no claimed nickname at all shows as the fingerprint alone. Two visible keys
+  claiming the same nickname is expected (§3.1), and the always-on fingerprint is what keeps
+  that merely confusing rather than dangerous.
 - **Listen:** add/remove identities (via scanned QR of their public key, or from seeing
   them in *everything else*). Public in MVP. Because tiers are recomputed at sync (§4), the
   UI must say what listening actually does — **forward-looking language**: "You'll receive
@@ -589,6 +693,19 @@ Keep it calm and honest about partial data. Text-only keeps the surface small.
   incl. reclassification when a listened author is added, blocked authors and their rooted
   threads gone including replies that outlive the blocked root), and threads render correctly
   with deliberate gaps — including a thread whose root is not held.
+
+**M1.1 — Names**
+- Signed profile records (§3.5): canonical form, nickname validation, sign/verify.
+- Nickname chosen during first-run setup; your own profile created and signed.
+- Directory table, plus its TTL/listen-immune pruning (§4).
+- The display rule everywhere a name appears: petname > `nickname · fingerprint` >
+  fingerprint alone.
+- *Done when:* a nickname set at first run round-trips through sign/verify; validation
+  rejects over-length, unpaired surrogates and bidi-override characters; the directory
+  prunes on the rules above with listened authors immune; and no surface anywhere renders a
+  claimed nickname without its fingerprint.
+- Sync of profiles is **designed here and implemented in M2**, where delivery exists to
+  carry them.
 
 **M2 — Sync core, transport-mocked**
 - Implement the symmetric declaration round, the single union-scope reconciliation
@@ -691,6 +808,13 @@ Keep it calm and honest about partial data. Text-only keeps the surface small.
   mismatch between two builds looks like "peer sent garbage" rather than showing the
   content. The per-peer rejection counter and debug-build logging exist precisely for this;
   keep them loud during M2–M3.
+- **Nickname squatting and homoglyphs.** Names are claims, not identifiers (§3.1), so two
+  keys claiming `jono` is expected and handled by the always-on fingerprint. What is *not*
+  addressed is visual confusability: `jоno` with a Cyrillic `о` renders identically to
+  `jono`. Proper detection means Unicode confusable-skeleton matching (UTS #39), which is a
+  substantial piece of work and a large data table. Deliberately out of MVP, in the same
+  spirit as the sybil hole above — the fingerprint is the mitigation, and it is always
+  visible. Revisit if field test shows people reading names and ignoring fingerprints.
 - **Thread nesting depth** is a UI concern, deferred deliberately — the data model
   (root backbone + optional parent) supports both flat and nested without change.
 - **The empty-network / faint-newcomer problem.** A new person is quiet until someone
