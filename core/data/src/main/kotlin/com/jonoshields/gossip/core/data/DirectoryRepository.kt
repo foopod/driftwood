@@ -111,10 +111,16 @@ class RoomDirectoryRepository internal constructor(
             directory.observeAll(),
             database.contacts().observeAll(),
         ) { claims, contacts ->
+            val me = runCatching { identity.publicKey() }.getOrNull()
             val petnames = contacts.associate { it.author to it.displayName }
             val claimed = claims.associate { it.author to it.nickname }
+
             (petnames.keys + claimed.keys).associateWith { author ->
-                NameResolver.resolve(author, petnames[author], claimed[author])
+                // Your own name needs no fingerprint and no colour: you are not trying to
+                // work out whether you are really you. Treating it as a petname is honest
+                // rather than a special case — you did assign that name to that key.
+                val petname = if (author == me) claimed[author] ?: petnames[author] else petnames[author]
+                NameResolver.resolve(author, petname, claimed[author])
             }
         }
 

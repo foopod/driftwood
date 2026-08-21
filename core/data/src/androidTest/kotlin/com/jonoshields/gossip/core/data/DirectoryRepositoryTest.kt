@@ -212,6 +212,19 @@ class DirectoryRepositoryTest {
     }
 
     @Test
+    fun yourOwnNameNeedsNoFingerprint() = runTest {
+        // You are not trying to establish whether you are really you, so your own messages
+        // should not carry the apparatus for doing so.
+        val repository = directory()
+        repository.setMyNickname("jono").getOrThrow()
+
+        val mine = repository.observeNames().first().getValue(identity.publicKey())
+
+        assertTrue(mine.verified)
+        assertEquals("jono", mine.text)
+    }
+
+    @Test
     fun blockingDropsTheirNameToo() = runTest {
         val repository = directory()
         repository.ingest(strangerClaims("sam", now), now).getOrThrow()
