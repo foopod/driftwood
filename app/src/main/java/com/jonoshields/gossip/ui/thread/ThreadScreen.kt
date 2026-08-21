@@ -158,7 +158,6 @@ private fun ThreadBody(
                     name = nameOf(root.body.author),
                     depth = 0,
                     detached = false,
-                    label = "opens the thread",
                     onReply = { onReply(thread.rootId, root.id) },
                 )
             }
@@ -183,7 +182,6 @@ private fun LazyListScope.renderNodes(
                 name = nameOf(node.message.body.author),
                 depth = depth,
                 detached = node.detached,
-                label = null,
                 // Every message is a reply target, and the reply carries both the thread's
                 // root id and this specific message as its parent.
                 onReply = { onReply(rootId, node.message.id) },
@@ -199,7 +197,6 @@ private fun MessageCard(
     name: DisplayName,
     depth: Int,
     detached: Boolean,
-    label: String?,
     onReply: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth().padding(start = (depth.coerceAtMost(5) * 14).dp)) {
@@ -209,12 +206,6 @@ private fun MessageCard(
                     // The quiet marker from plan.md §6 — never styled as a failure.
                     Text(
                         "replying to a message not carried here",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else if (label != null) {
-                    Text(
-                        label,
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

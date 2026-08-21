@@ -77,12 +77,6 @@ internal fun ComposeContent(
                 value = state.text,
                 onValueChange = onTextChange,
                 label = { Text(if (state.isReply) "Your reply" else "What's on your mind?") },
-                supportingText = {
-                    Text(
-                        "Write so it stands alone — whoever reads this may never see the " +
-                            "rest of the thread."
-                    )
-                },
                 minLines = 5,
                 modifier = Modifier.fillMaxWidth(),
             )
