@@ -31,6 +31,7 @@ import com.jonoshields.gossip.core.model.MessageId
 import com.jonoshields.gossip.core.store.DisplayName
 import com.jonoshields.gossip.core.store.NameResolver
 import com.jonoshields.gossip.core.store.ThreadNode
+import com.jonoshields.gossip.ui.common.AuthorName
 import com.jonoshields.gossip.core.store.ThreadView
 
 @Composable
@@ -219,17 +220,7 @@ private fun MessageCard(
                     )
                 }
 
-                // A claimed name never appears without its fingerprint; a petname you
-                // assigned reads as plain text (plan.md §3.1).
-                Text(
-                    text = name.text,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (name.verified) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
+                AuthorName(name)
                 Text(message.body.text, style = MaterialTheme.typography.bodyLarge)
 
                 Row(

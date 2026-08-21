@@ -15,6 +15,12 @@ data class DisplayName(
     val label: String?,
     val fingerprint: String,
     val verified: Boolean,
+    /**
+     * Hue in degrees for the chip behind a claimed name. Meaningless for a [verified] name,
+     * which is rendered as plain text precisely so that "I vouched for this" and "they say
+     * so" never look alike.
+     */
+    val hue: Float,
 ) {
     /**
      * What actually goes on screen. A claimed name never appears without its fingerprint,
@@ -43,11 +49,30 @@ object NameResolver {
      */
     fun resolve(author: AuthorId, petname: String?, claimed: String?): DisplayName {
         val fingerprint = fingerprint(author)
+        val hue = hue(author)
         return when {
-            petname != null -> DisplayName(petname, fingerprint, verified = true)
-            claimed != null -> DisplayName(claimed, fingerprint, verified = false)
-            else -> DisplayName(null, fingerprint, verified = false)
+            petname != null -> DisplayName(petname, fingerprint, verified = true, hue = hue)
+            claimed != null -> DisplayName(claimed, fingerprint, verified = false, hue = hue)
+            else -> DisplayName(null, fingerprint, verified = false, hue = hue)
         }
+    }
+
+    /**
+     * A colour for the key, in degrees of hue.
+     *
+     * Colour is the at-a-glance channel: it catches the common case of two people honestly
+     * sharing a name, without making every line of the UI carry hex. It is **not** a
+     * defence. There are only a handful of reliably distinguishable hues, so matching a
+     * target's colour costs an attacker a few dozen throwaway keypairs — and keypairs are
+     * free (§4). The fingerprint beside it and the petname above it are what carry weight.
+     *
+     * Drawn from bytes the fingerprint does not display, so the two channels are
+     * independent: an impersonator has to match both, not one.
+     */
+    fun hue(author: AuthorId): Float {
+        val bytes = author.toByteArray()
+        val value = ((bytes[8].toInt() and 0xFF) shl 8) or (bytes[9].toInt() and 0xFF)
+        return value * 360f / 65_536f
     }
 }
 

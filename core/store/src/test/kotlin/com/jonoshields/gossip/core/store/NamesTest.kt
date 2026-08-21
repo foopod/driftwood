@@ -125,3 +125,41 @@ class DirectoryPrunerTest {
         assertTrue(plan(emptyList()).isEmpty())
     }
 }
+
+class AuthorHueTest {
+
+    @Test
+    fun `hue is stable for a key`() {
+        assertEquals(NameResolver.hue(author(1)), NameResolver.hue(author(1)), 0.0001f)
+    }
+
+    @Test
+    fun `hue is in range`() {
+        (1..200).forEach {
+            val hue = NameResolver.hue(author(it))
+            assertTrue("$hue", hue >= 0f && hue < 360f)
+        }
+    }
+
+    @Test
+    fun `hue is drawn from bytes the fingerprint does not show`() {
+        // So the two channels are independent: an impersonator who grinds a matching
+        // fingerprint does not get a matching colour thrown in for free.
+        val base = ByteArray(32) { it.toByte() }
+        val differentMiddle = base.copyOf().also { it[8] = 99; it[9] = 77 }
+
+        val a = com.jonoshields.gossip.core.model.AuthorId.of(base)
+        val b = com.jonoshields.gossip.core.model.AuthorId.of(differentMiddle)
+
+        assertEquals("fingerprints match", NameResolver.fingerprint(a), NameResolver.fingerprint(b))
+        assertTrue("hues must not", NameResolver.hue(a) != NameResolver.hue(b))
+    }
+
+    @Test
+    fun `a name is never distinguished by colour alone`() {
+        // Colour is unusable for a colour-blind reader, so whatever else changes, the
+        // fingerprint must remain part of how a claimed name is rendered.
+        val name = NameResolver.resolve(author(3), petname = null, claimed = "sam")
+        assertTrue(name.text.contains(name.fingerprint))
+    }
+}

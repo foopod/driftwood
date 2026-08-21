@@ -96,9 +96,19 @@ unclear, resolve it back to these.
   two. The design keeps *decentralised* and *secure*, so names cannot be identifiers.
 - Because the nickname is signed by its own key, a relaying peer cannot rewrite it; the
   worst a peer can do is withhold it.
-- **Display rule (§6): a petname always wins.** Any name you did not assign yourself is
-  shown with a short key fingerprint permanently attached, and styled as unverified. A
-  claimed nickname is never rendered as though it were an identity.
+- **Display rule (§6): a petname always wins.** A petname is plain text. A claimed nickname
+  sits on a **colour derived from the key**, with a short fingerprint beside it. The two must
+  never look alike: "I vouched for this person" and "this person says so" are different
+  claims, and the difference is structural rather than a matter of shading.
+- **What the colour is for, and what it is not.** It catches the common, honest case — two
+  people genuinely both called Sam — at a glance, without making every line carry hex. It is
+  not a defence: there are only a handful of reliably distinguishable hues, so matching a
+  target's colour costs a few dozen throwaway keypairs. The hue is drawn from key bytes the
+  fingerprint does not display, so at least the two channels are independent and an
+  impersonator has to match both.
+- **Never colour alone.** Around 8% of men have some colour-vision deficiency; if colour were
+  the only differentiator they would have none. The fingerprint is the non-colour channel and
+  stays visible.
 
 ### 3.2 Message (the primary data type)
 
@@ -808,6 +818,26 @@ Keep it calm and honest about partial data. Text-only keeps the surface small.
   mismatch between two builds looks like "peer sent garbage" rather than showing the
   content. The per-peer rejection counter and debug-build logging exist precisely for this;
   keep them loud during M2–M3.
+- **No short fingerprint resists a determined impersonator, and it is worth being honest
+  about which part actually protects anyone.** Identities are free (§4), so an attacker does
+  not break a fingerprint, they grind keys until the *displayed* part matches. Eight hex
+  characters is 32 bits — a few minutes on a GPU. A colour is four or five bits: a few dozen
+  attempts. Two words from a 2048-word list is twenty-two bits: seconds.
+
+  So colour and fingerprints are **accident-detection**, not defence. They reliably separate
+  two people who honestly share a name; they do not stop someone trying to be mistaken for
+  you. The thing that actually defends is the **petname** — you confirmed a key in person
+  once, and your local name for it is authoritative from then on. The design should keep
+  steering people toward QR-confirming the handful of identities they actually care about,
+  rather than implying that a fingerprint verified anything.
+
+  A second, subtler effect: **vanity grinding skews the distribution.** If people regenerate
+  until they get a colour or word-pair they like, the population clusters in the pleasant
+  subspace and accidental collisions get *more* likely — degrading the one thing these
+  signals were good at. Partial mitigation, and the reason first-run deliberately shows the
+  recovery phrase but never the fingerprint or colour: do not surface the vanity signal while
+  rerolling is still free. Once you have posted and been synced, regenerating costs your
+  history.
 - **Nickname squatting and homoglyphs.** Names are claims, not identifiers (§3.1), so two
   keys claiming `jono` is expected and handled by the always-on fingerprint. What is *not*
   addressed is visual confusability: `jоno` with a Cyrillic `о` renders identically to

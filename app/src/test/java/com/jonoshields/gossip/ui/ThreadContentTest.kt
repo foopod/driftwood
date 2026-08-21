@@ -136,12 +136,25 @@ class ThreadContentTest {
 
     @Test
     fun `a claimed name is shown with its fingerprint attached`() {
+        // Colour does the glancing, but it is unreadable for a colour-blind user and is
+        // only a few bits anyway, so the fingerprint must be on screen as well.
         val r = root("hello")
         val claimed = NameResolver.resolve(me, petname = null, claimed = "jono")
         show(loaded(r.id, listOf(r), names = mapOf(me to claimed)))
 
-        compose.onNodeWithText(claimed.text).assertExists()
-        compose.onNodeWithText("jono", substring = false).assertDoesNotExist()
+        compose.onNodeWithText("jono").assertExists()
+        compose.onNodeWithText(claimed.fingerprint).assertExists()
+    }
+
+    @Test
+    fun `a petname is shown without a fingerprint`() {
+        // The visible difference between "I vouched for this person" and "they say so".
+        val r = root("hello")
+        val petname = NameResolver.resolve(me, petname = "Dad", claimed = null)
+        show(loaded(r.id, listOf(r), names = mapOf(me to petname)))
+
+        compose.onNodeWithText("Dad").assertExists()
+        compose.onNodeWithText(petname.fingerprint).assertDoesNotExist()
     }
 
     @Test
