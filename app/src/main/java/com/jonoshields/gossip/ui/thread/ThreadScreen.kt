@@ -125,6 +125,8 @@ private fun ThreadBody(
             val root = thread.root
             if (root == null) {
                 // Calm, not an error: a thread outliving its root is a normal end state.
+                // This carries the only thread-level reply action, because with no root
+                // message there is no card to reply from.
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
@@ -136,9 +138,16 @@ private fun ThreadBody(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { onReply(thread.rootId, null) }) { Text("Reply") }
+                        }
                     }
                 }
             } else {
+                // Exactly one reply action per message, including the root. A separate
+                // "reply to the thread" button would do the identical thing here — the
+                // assembler treats a null parent and a parent naming the root the same way
+                // — so it would be two buttons with one meaning.
                 MessageCard(
                     message = root,
                     depth = 0,
@@ -146,14 +155,6 @@ private fun ThreadBody(
                     label = "opens the thread",
                     onReply = { onReply(thread.rootId, root.id) },
                 )
-            }
-        }
-
-        // Replying to the thread itself, when you want to answer the conversation rather
-        // than any particular message in it.
-        item {
-            TextButton(onClick = { onReply(thread.rootId, thread.root?.id) }) {
-                Text("Reply to the thread")
             }
         }
 
