@@ -13,6 +13,7 @@ import com.jonoshields.gossip.core.store.NameResolver
 import com.jonoshields.gossip.core.sync.AbortReason
 import com.jonoshields.gossip.core.sync.SessionResult
 import com.jonoshields.gossip.core.sync.SyncSummary
+import com.jonoshields.gossip.sync.DiscoveredPeer
 import com.jonoshields.gossip.sync.SyncUiState
 import com.jonoshields.gossip.ui.sync.SyncContent
 import org.junit.Assert.assertEquals
@@ -46,10 +47,11 @@ class SyncContentTest {
     private var cancelled = false
     private var done = false
 
-    private fun show(state: SyncUiState) {
+    private fun show(state: SyncUiState, discoveredPeers: List<DiscoveredPeer> = emptyList()) {
         compose.setContent {
             SyncContent(
                 state = state,
+                discoveredPeers = discoveredPeers,
                 onBack = {},
                 onStartListening = {},
                 onConnect = { host, port -> connectedHost = host; connectedPort = port },
@@ -78,6 +80,23 @@ class SyncContentTest {
 
         assertEquals("192.168.1.23", connectedHost)
         assertEquals(5000, connectedPort)
+    }
+
+    @Test
+    fun `tapping a discovered peer connects to its resolved address, not typed input`() {
+        show(SyncUiState.Idle, discoveredPeers = listOf(DiscoveredPeer("Gossip (Pixel)", "192.168.1.99", 41234)))
+
+        compose.onNodeWithText("Gossip (Pixel)").performClick()
+
+        assertEquals("192.168.1.99", connectedHost)
+        assertEquals(41234, connectedPort)
+    }
+
+    @Test
+    fun `no peers found says so rather than showing an empty list`() {
+        show(SyncUiState.Idle)
+
+        compose.onNodeWithText("Looking for peers on this Wi-Fi network…").assertExists()
     }
 
     @Test

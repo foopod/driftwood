@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- M3a: TCP sockets for sync (plan.md §7). NSD discovery adds its own permissions later. -->
+    <!-- M3a, plan.md §7: TCP sockets for sync, plus mDNS/NSD discovery on the same Wi-Fi LAN. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <application
         android:name=".GossipApplication"

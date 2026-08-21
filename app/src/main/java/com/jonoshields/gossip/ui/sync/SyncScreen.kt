@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jonoshields.gossip.core.store.NameResolver
+import com.jonoshields.gossip.sync.DiscoveredPeer
 import com.jonoshields.gossip.sync.LocalAddress
 import com.jonoshields.gossip.sync.SyncSummaryText
 import com.jonoshields.gossip.sync.SyncUiState
@@ -42,8 +43,10 @@ fun SyncScreen(
     viewModel: SyncViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val discoveredPeers by viewModel.discoveredPeers.collectAsStateWithLifecycle()
     SyncContent(
         state = state,
+        discoveredPeers = discoveredPeers,
         onBack = onBack,
         onStartListening = viewModel::startListening,
         onConnect = viewModel::connectTo,
@@ -59,6 +62,7 @@ fun SyncScreen(
 @Composable
 internal fun SyncContent(
     state: SyncUiState,
+    discoveredPeers: List<DiscoveredPeer> = emptyList(),
     onBack: () -> Unit,
     onStartListening: () -> Unit,
     onConnect: (host: String, port: Int) -> Unit,
@@ -87,7 +91,7 @@ internal fun SyncContent(
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             when (state) {
-                SyncUiState.Idle -> IdleContent(onStartListening, onConnect)
+                SyncUiState.Idle -> IdleContent(discoveredPeers, onStartListening, onConnect)
                 is SyncUiState.Listening -> ListeningContent(state.port)
                 is SyncUiState.Connecting -> StatusContent("Connecting to ${state.host}:${state.port}…")
                 is SyncUiState.Confirming -> ConfirmingContent(state, onConfirm, onDecline)
@@ -100,18 +104,42 @@ internal fun SyncContent(
 }
 
 @Composable
-private fun IdleContent(onStartListening: () -> Unit, onConnect: (String, Int) -> Unit) {
-    Text(
-        "There's no discovery yet, so one device listens and the other connects to it " +
-            "directly. Either device can go first.",
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+private fun IdleContent(
+    discoveredPeers: List<DiscoveredPeer>,
+    onStartListening: () -> Unit,
+    onConnect: (String, Int) -> Unit,
+) {
+    Text("Nearby", style = MaterialTheme.typography.titleMedium)
+    if (discoveredPeers.isEmpty()) {
+        Text(
+            "Looking for peers on this Wi-Fi network…",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            discoveredPeers.forEach { peer ->
+                OutlinedButton(
+                    onClick = { onConnect(peer.host, peer.port) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(peer.name)
+                }
+            }
+        }
+    }
+
+    Text("— or —", style = MaterialTheme.typography.labelMedium)
+
     Button(onClick = onStartListening, modifier = Modifier.fillMaxWidth()) {
         Text("Listen for a peer")
     }
 
-    Text("— or —", style = MaterialTheme.typography.labelMedium)
+    Text(
+        "If discovery doesn't find them, enter their address directly.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 
     var host by rememberSaveable { mutableStateOf("") }
     var port by rememberSaveable { mutableStateOf("") }
@@ -146,12 +174,13 @@ private fun ListeningContent(port: Int) {
     val address = remember { LocalAddress.current() }
     StatusContent("Waiting for someone to connect…")
     Text(
-        if (address != null) {
-            "Tell them to enter $address, port $port."
-        } else {
-            "Tell them to enter this device's address and port $port — couldn't work out " +
-                "the address automatically."
-        },
+        "Discoverable as \"Nearby\" on their screen. If that doesn't find you: " +
+            if (address != null) {
+                "tell them to enter $address, port $port."
+            } else {
+                "tell them to enter this device's address and port $port — couldn't work " +
+                    "out the address automatically."
+            },
         style = MaterialTheme.typography.bodyMedium,
     )
 }

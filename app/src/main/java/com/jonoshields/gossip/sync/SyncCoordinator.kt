@@ -37,6 +37,7 @@ class SyncCoordinator @Inject constructor(
     private val syncStore: SyncStore,
     private val identity: IdentityStore,
     private val clock: Clock,
+    private val discovery: NsdPeerDiscovery,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -44,23 +45,27 @@ class SyncCoordinator @Inject constructor(
     val state: StateFlow<SyncUiState> = _state.asStateFlow()
 
     private var listener: TcpTransport.Listener? = null
+    private var advertisement: AutoCloseable? = null
     private var job: Job? = null
     private var pendingConfirmation: CompletableDeferred<Boolean>? = null
 
-    /** Binds a port and waits for one incoming connection. No-op unless currently [SyncUiState.Idle]. */
+    /** Binds a port, advertises it over NSD, and waits for one incoming connection. No-op unless currently [SyncUiState.Idle]. */
     fun startListening() {
         if (_state.value !is SyncUiState.Idle) return
         val opened = TcpTransport.Listener()
         listener = opened
+        advertisement = discovery.advertise(opened.port)
         _state.value = SyncUiState.Listening(opened.port)
         job = scope.launch {
             val connection = try {
                 opened.accept()
             } catch (e: IOException) {
                 // Almost always our own listener.close() unblocking accept() — see cancel().
+                stopAdvertising()
                 _state.value = SyncUiState.Idle
                 return@launch
             }
+            stopAdvertising()
             runSession(Role.RESPONDER, connection)
         }
     }
@@ -94,9 +99,15 @@ class SyncCoordinator @Inject constructor(
         // Connection close and reports PEER_CLOSED rather than hanging.
         listener?.close()
         listener = null
+        stopAdvertising()
         pendingConfirmation?.cancel()
         pendingConfirmation = null
         _state.value = SyncUiState.Idle
+    }
+
+    private fun stopAdvertising() {
+        advertisement?.close()
+        advertisement = null
     }
 
     /** Back to idle after seeing a result or a failure, so the screen can start over. */
