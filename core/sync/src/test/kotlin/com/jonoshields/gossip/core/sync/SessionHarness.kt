@@ -108,15 +108,46 @@ internal suspend fun againstScriptedPeer(
     result
 }
 
-/** Drives a peer through the handshake, then sends whatever it is told to. */
+/**
+ * A peer that follows the protocol exactly, holds nothing, and delivers whatever it is told
+ * to. Used to feed our session content it would otherwise never see — tampered bytes,
+ * floods — without a second real store on the other end.
+ *
+ * It plays against a **responder**, so the ordering here is the mirror of [Session]'s: it
+ * leads every exchange, and in each delivery half it speaks before it listens.
+ */
 internal suspend fun peerDeliveringMessages(connection: Connection, messages: List<ByteArray>) {
-    connection.send(FrameCodec.encode(Record.Hello(PROTOCOL_VERSION)))
+    suspend fun send(record: Record) = connection.send(FrameCodec.encode(record))
+
+    send(Record.Hello(PROTOCOL_VERSION))
     connection.receive()
-    connection.send(FrameCodec.encode(Record.Scope(ScopeDeclaration(emptySet(), 0, emptySet()))))
+    send(Record.Scope(ScopeDeclaration(emptySet(), 0, emptySet())))
     connection.receive()
-    connection.send(FrameCodec.encode(Record.HashList(emptySet())))
+    send(Record.HashList(emptySet()))
     connection.receive()
-    messages.forEach { connection.send(FrameCodec.encode(Record.Message(it))) }
-    connection.send(FrameCodec.encode(Record.PhaseDone))
+
+    // Priority phase: we deliver, they deliver back.
+    messages.forEach { send(Record.Message(it)) }
+    send(Record.PhaseDone)
+    drainUntilPhaseDone(connection)
+
+    // Gossip: they receive first, so we offer first. We hold nothing, so both offers are
+    // empty and both requests come back empty.
+    send(Record.GossipOffer(emptyList()))
+    connection.receive()                       // their GOSSIP_REQUEST, necessarily empty
+    send(Record.PhaseDone)
+    connection.receive()                       // their GOSSIP_OFFER
+    send(Record.GossipRequest(emptyList()))
+    drainUntilPhaseDone(connection)
+
+    send(Record.SessionDone)
     runCatching { while (connection.receive() != null) Unit }
+}
+
+private suspend fun drainUntilPhaseDone(connection: Connection) {
+    while (true) {
+        val frame = connection.receive() ?: return
+        val record = (FrameCodec.decode(frame) as? FrameResult.Ok)?.record ?: return
+        if (record == Record.PhaseDone) return
+    }
 }

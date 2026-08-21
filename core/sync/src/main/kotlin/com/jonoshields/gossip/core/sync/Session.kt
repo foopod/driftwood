@@ -52,7 +52,10 @@ data class SyncSummary(
     val blockedDropped: Int = 0,
     /** Dropped for falling outside our window, and not filling a want. */
     val staleDropped: Int = 0,
+    /** Gossip refused because our own intake budget for this session ran out. */
+    val overBudgetDropped: Int = 0,
     val priorityPhaseCompleted: Boolean = false,
+    val gossipPhaseCompleted: Boolean = false,
 ) {
     val rejectionCount: Int get() = rejected.values.sum()
 }
@@ -90,7 +93,9 @@ class Session(
         var summary = SyncSummary()
         return try {
             handshake(role, connection)
-            summary = priorityPhase(role, connection, summary)
+            val priority = priorityPhase(role, connection, summary)
+            summary = priority.summary
+            summary = gossipPhase(role, connection, priority, summary)
             store.pruneAfterSession(clock.nowMillis())
             SessionResult.Completed(summary)
         } catch (abort: Abort) {
@@ -135,11 +140,21 @@ class Session(
 
     // ---- priority phase --------------------------------------------------------------
 
+    /** What the priority phase leaves behind for the gossip phase to build on. */
+    private data class PriorityResult(
+        val summary: SyncSummary,
+        val myScope: ScopeDeclaration,
+        /** Ids we already streamed, so gossip never offers the same content twice. */
+        val sent: Set<MessageId>,
+        /** Their hash-list: content they told us they already hold. */
+        val theirHashList: Set<MessageId>,
+    )
+
     private suspend fun priorityPhase(
         role: Role,
         connection: Connection,
         summary: SyncSummary,
-    ): SyncSummary {
+    ): PriorityResult {
         val now = clock.nowMillis()
         val myScope = ScopeDeclaration(
             listen = store.listenScope(),
@@ -161,15 +176,20 @@ class Session(
         // Alternating: the initiator delivers, then listens; the responder the other way.
         var running = summary
         if (role == Role.INITIATOR) {
-            val sent = deliver(connection, delivery)
+            val sent = deliver(connection, delivery.sendNow)
             running = receiveUntilPhaseDone(connection, myScope, running)
             running = running.copy(messagesSent = sent)
         } else {
             running = receiveUntilPhaseDone(connection, myScope, running)
-            val sent = deliver(connection, delivery)
+            val sent = deliver(connection, delivery.sendNow)
             running = running.copy(messagesSent = sent)
         }
-        return running.copy(priorityPhaseCompleted = true)
+        return PriorityResult(
+            summary = running.copy(priorityPhaseCompleted = true),
+            myScope = myScope,
+            sent = delivery.sendNow.toSet(),
+            theirHashList = theirHashList,
+        )
     }
 
     /**
@@ -198,8 +218,7 @@ class Session(
         )
     }
 
-    private suspend fun deliver(connection: Connection, delivery: Delivery): Int {
-        val ids = delivery.sendNow
+    private suspend fun deliver(connection: Connection, ids: List<MessageId>): Int {
         val wire = store.readMessages(ids)
         wire.forEach { connection.send(FrameCodec.encode(Record.Message(it))) }
 
@@ -215,15 +234,104 @@ class Session(
         return wire.size
     }
 
+
+    // ---- gossip phase ----------------------------------------------------------------
+
+    /**
+     * Incidental recent content, offered before it is sent (plan.md §5, sync-spec.md §6.2).
+     *
+     * **Gossip offers; context does not.** The trade is not the same in both directions.
+     * Context is a bounded tail of threads the peer demonstrably cares about, so a round trip
+     * to save a few duplicates is a poor deal. Gossip is unchosen content of unbounded volume
+     * that the peer very likely already has some of, so paying 32 bytes an id to avoid sending
+     * whole messages is obviously worth it.
+     *
+     * **Skippable by design.** Losing the link here costs only discovery: everything either
+     * side actually asked for was persisted when the priority phase completed. This is the
+     * whole reason the phases are applied separately, and it exists because two people syncing
+     * on a train platform get interrupted.
+     */
+    private suspend fun gossipPhase(
+        role: Role,
+        connection: Connection,
+        priority: PriorityResult,
+        summary: SyncSummary,
+    ): SyncSummary {
+        var running = summary
+        if (role == Role.INITIATOR) {
+            running = running.copy(messagesSent = running.messagesSent + offerGossip(connection, priority))
+            running = receiveGossip(connection, priority, running)
+        } else {
+            running = receiveGossip(connection, priority, running)
+            running = running.copy(messagesSent = running.messagesSent + offerGossip(connection, priority))
+        }
+
+        swap(role, connection, Record.SessionDone) as? Record.SessionDone
+            ?: throw Abort(AbortReason.OUT_OF_PHASE)
+
+        return running.copy(gossipPhaseCompleted = true)
+    }
+
+    /** Our half: offer our newest, send back whatever they ask for out of it. */
+    private suspend fun offerGossip(connection: Connection, priority: PriorityResult): Int {
+        // Anything already streamed, or that they told us they hold, would be wasted bytes.
+        val covered = priority.sent + priority.theirHashList
+        val blocklist = store.blocklist()
+        val offer = store.newestHeld(GOSSIP_INTAKE_CAP, excluding = covered)
+            .filterNot { it.author in blocklist.authors || it.threadRoot in blocklist.roots }
+            .map { it.id }
+
+        connection.send(FrameCodec.encode(Record.GossipOffer(offer)))
+
+        val asked = (next(connection) as? Record.GossipRequest
+            ?: throw Abort(AbortReason.OUT_OF_PHASE)).ids
+
+        // Only what we actually offered. A peer is free to ask for any id it likes, and
+        // answering an unoffered one would turn the request into a probe: name a hash, learn
+        // from the reply whether we hold it. What we offered, we already disclosed.
+        val offered = offer.toSet()
+        return deliver(connection, asked.filter { it in offered })
+    }
+
+    /** Their half: take their offer, ask for what we lack, ingest the answer. */
+    private suspend fun receiveGossip(
+        connection: Connection,
+        priority: PriorityResult,
+        summary: SyncSummary,
+    ): SyncSummary {
+        val offered = (next(connection) as? Record.GossipOffer
+            ?: throw Abort(AbortReason.OUT_OF_PHASE)).ids
+
+        val held = store.heldWithIds(offered.toSet()).mapTo(mutableSetOf()) { it.id }
+
+        // Capped by *our* budget, not by what they chose to offer. Someone offering ten
+        // thousand ids gets asked for a thousand, and the rest is simply not our problem.
+        val asked = Reconciler.request(offered, held).take(GOSSIP_INTAKE_CAP)
+        connection.send(FrameCodec.encode(Record.GossipRequest(asked)))
+
+        return receiveUntilPhaseDone(connection, priority.myScope, summary, intakeCap = GOSSIP_INTAKE_CAP)
+    }
+
+    /**
+     * [intakeCap] bounds how much we will *accept*, and is null for the priority phase.
+     *
+     * The asymmetry is deliberate (sync-spec.md §6.7). Wants and in-scope content were asked
+     * for, so refusing them part-way through would be refusing our own request; gossip was
+     * not, so it gets a budget. A peer that ignores the cap and floods anyway simply has the
+     * excess dropped — it is not a rejection, because sending too much is rudeness rather
+     * than evidence of forgery.
+     */
     private suspend fun receiveUntilPhaseDone(
         connection: Connection,
         myScope: ScopeDeclaration,
         summary: SyncSummary,
+        intakeCap: Int? = null,
     ): SyncSummary {
         val ingest = Ingest(
             blocklist = store.blocklist(),
             wants = myScope.wants,
             windowCutoff = myScope.windowCutoff,
+            intakeCap = intakeCap,
         )
 
         var received = 0
@@ -252,6 +360,7 @@ class Session(
             rejected = summary.rejected.merge(outcome.rejected),
             blockedDropped = summary.blockedDropped + ingest.blockedDropped,
             staleDropped = summary.staleDropped + ingest.staleDropped,
+            overBudgetDropped = summary.overBudgetDropped + ingest.overBudgetDropped,
         )
     }
 
@@ -297,6 +406,7 @@ private class Ingest(
     private val blocklist: Blocklist,
     private val wants: Set<MessageId>,
     private val windowCutoff: Long,
+    private val intakeCap: Int? = null,
 ) {
     private val accepted = mutableListOf<Message>()
     private val profiles = mutableListOf<Profile>()
@@ -304,6 +414,7 @@ private class Ingest(
 
     var blockedDropped = 0; private set
     var staleDropped = 0; private set
+    var overBudgetDropped = 0; private set
 
     val rejectionCount: Int get() = rejections.values.sum()
 
@@ -325,6 +436,13 @@ private class Ingest(
         // out of window by claiming to be old.
         if (message.id !in wants && message.body.timestampMillis < windowCutoff) {
             staleDropped++
+            return
+        }
+
+        // Last, so that a flood of gossip cannot push us past the budget by arriving before
+        // the checks that would have thrown it away anyway.
+        if (intakeCap != null && accepted.size >= intakeCap) {
+            overBudgetDropped++
             return
         }
 

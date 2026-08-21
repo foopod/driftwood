@@ -173,6 +173,23 @@ class SessionTest {
     }
 
     @Test
+    fun `the priority phase is uncapped, unlike gossip`() = runTest {
+        // The asymmetry is deliberate (sync-spec.md §6.7). Content in the priority phase was
+        // asked for — by following its author, or by naming its id in a want — so refusing it
+        // part-way through would be refusing our own request. Gossip was not asked for, so it
+        // gets a budget. A cap here would silently truncate a genuine backlog.
+        val backlog = (1..GOSSIP_INTAKE_CAP + 50).map { n ->
+            MessageCodec.encode(alice.root("m$n", NOW - 1000 - n))
+        }
+        val bobStore = InMemorySyncStore().listenTo(alice.key)
+
+        val result = againstScriptedPeer(bobStore) { peerDeliveringMessages(it, backlog) }
+
+        assertEquals(backlog.size, result.summary().messagesAccepted)
+        assertEquals("nothing refused for budget", 0, result.summary().overBudgetDropped)
+    }
+
+    @Test
     fun `too many rejections tears the session down`() = runTest {
         val bobStore = InMemorySyncStore().listenTo(alice.key)
         val garbage = (1..VERIFY_FAIL_CUTOFF + 5).map { n ->

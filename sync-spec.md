@@ -17,9 +17,9 @@ Honest, because the spec runs ahead of the build in places.
 | Profile record (§3.5) | **Built**, tested |
 | Reconciliation (`hashList` / `plan` / `request`) | **Built**, 23 tests including two properties |
 | Framing and record types | **Built**, 18 tests including two fuzz passes |
-| Session state machine | **Built**, handshake through priority phase; gossip phase still to come |
+| Session state machine | **Built**, handshake through session end |
 | Ingest, rejection counting, `PhaseOutcome` | **Built**, tested |
-| Gossip phase | **Specified here, not built** |
+| Gossip phase | **Built**, offer/request/deliver, capped by the receiver |
 | Transport (mock, TCP, Wi-Fi Direct) | **Mock built** (bounded pipe, framed connection); M3a TCP, M3b Wi-Fi Direct |
 
 ---
