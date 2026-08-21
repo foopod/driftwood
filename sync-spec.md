@@ -111,13 +111,13 @@ Every record on the stream:
 | `HASHLIST` | `0x03` | both | ids held for own scope |
 | `MESSAGE` | `0x04` | both | one message wire form, opaque |
 | `PROFILE` | `0x05` | both | one profile wire form, opaque |
-| `CONTEXT_OFFER` | `0x06` | both | ids offered |
-| `CONTEXT_REQUEST` | `0x07` | both | ids wanted from that offer |
-| `PHASE_DONE` | `0x08` | both | — |
-| `GOSSIP_OFFER` | `0x09` | both | ids offered |
-| `GOSSIP_REQUEST` | `0x0A` | both | ids wanted from that offer |
-| `SESSION_DONE` | `0x0B` | both | — |
-| `ABORT` | `0x0C` | both | reason code (u8) |
+| `PHASE_DONE` | `0x06` | both | — |
+| `GOSSIP_OFFER` | `0x07` | both | ids offered |
+| `GOSSIP_REQUEST` | `0x08` | both | ids wanted from that offer |
+| `SESSION_DONE` | `0x09` | both | — |
+| `ABORT` | `0x0A` | both | reason code (u8) |
+
+Only **gossip** offers before sending. Context does not — see §5.2.
 
 `MESSAGE` and `PROFILE` payloads are carried **opaquely**: never decoded and re-encoded in
 transit. §3.2 requires the receiver to hash the bytes as received, and re-serialising would
@@ -180,13 +180,8 @@ converges.
         │───────────────────────────────────▶│
         │◀───────────────────────────────────│  HASHLIST(ids in B's own scope)
         │                                    │
-        │  MESSAGE × n  +  PROFILE × m       │   ── wants, then in-scope, newest first
-        │───────────────────────────────────▶│
-        │  CONTEXT_OFFER(ids)                   │
-        │───────────────────────────────────▶│
-        │◀───────────────────────────────────│  CONTEXT_REQUEST(subset)
-        │  MESSAGE × k                       │
-        │───────────────────────────────────▶│
+        │  MESSAGE × n  +  PROFILE × m       │   ── wants, in-scope, then context
+        │───────────────────────────────────▶│      newest first within each
         │  PHASE_DONE                        │   ── priority phase complete: APPLY NOW
         │───────────────────────────────────▶│
         │                                    │      (B mirrors all of the above)
@@ -229,18 +224,38 @@ Given your holdings, their `SCOPE`, and their `HASHLIST`:
    it explicitly.
 3. **In-scope** — author ∈ their listen set, `effective_time ≥ their cutoff`, id ∉ their
    hash-list, not already planned.
-4. **Context offer** — messages in any thread where you hold a message by an author *they*
-   listen to; same window and hash-list filters; not already planned. **Offered, not sent.**
+4. **Context** — messages in any thread where you hold a message by an author *they* listen
+   to; same window and hash-list filters; not already planned. **Sent, not offered** — their
+   hash-list cannot describe most of it, so some will be duplicates they discard.
 5. **Trim** to `SESSION_INTAKE_CAP` in that order, so truncation drops the least valuable
    first.
 
 Ordering within each group is newest-first by `effective_time`, tie-broken by id bytewise —
 the same total order §3.2 fixes for everything else.
 
-**Why context needs an offer at all.** Its content is written by authors in *neither* side's
-scope — that is what makes them stranger-replies — so their ids appear in no hash-list and you
-cannot tell whether the peer has them. Offering costs 32 bytes against a message of a few
-hundred, and pays for itself the moment they hold any of them.
+**Why context is sent blind.** Its authors are in neither side's scope, so no hash-list
+describes it and you cannot know what the peer holds. An offer/request round would make it
+exact; it is deliberately not used. At the scale this is built for the waste is tiny, and
+content-addressing makes a duplicate free to discard:
+
+| Thread size | Peer already holds | Send blind | Offer, then send | Winner |
+|---|---|---|---|---|
+| 20 | 15 | 6.0 KB | 2.1 KB | offer |
+| 20 | 2 | 6.0 KB | 6.0 KB | tie |
+| 100 | 80 | 30 KB | 9.2 KB | offer |
+| 1000 | 900 | 300 KB | 62 KB | offer |
+
+The offer wins on *bytes* above about 11% overlap — but on a 20-message thread the 4.4 KB it
+saves is under 2 ms on Wi-Fi Direct, less than the round trip it costs, and a round trip is
+also one more place a flaky link can stall. §9 makes the same call about reconciliation
+generally: naive is fine at text scale.
+
+**Revisit when** M5 observes large threads, or a slow radio arrives — over BLE the arithmetic
+inverts completely.
+
+**What this gives up:** the context cap becomes *blind*. A sender can spend its whole
+allowance on messages the peer already had while ones it lacks go unsent until next time.
+Only material at scale, for the same reason.
 
 ### 5.3 Answering an offer
 
@@ -340,13 +355,13 @@ B's hash-list is **empty** — Bob holds nothing written by Alice, the only pers
 | Step | Value |
 |---|---|
 | A → B in-scope | `[m1]` — Alice's message; Bob follows her |
-| A → B context offer | `[m3, m2]` — both sit in T1, which contains Alice's message; newest first |
-| B → A `CONTEXT_REQUEST` | `[m3]` — Bob already has Carol's reply |
-| A → B | `m3` |
+| A → B context | `[m3, m2]` — both sit in T1, which contains Alice's message; newest first |
+| Bob, on arrival | keeps m3, discards m2 as a duplicate |
 
-Bob ends up with the thread whole. **m2 was never re-sent, and no hash-list could have
-prevented that**, because Carol is in nobody's declared scope — which is the entire reason the
-context is offered rather than pushed.
+Bob ends up with the thread whole. **m2 was sent needlessly**, and no hash-list could have
+prevented it, because Carol is in nobody's declared scope. That is accepted: one duplicate
+message is a few hundred bytes, content-addressing makes discarding it free, and asking first
+would have cost a round trip to save less (§5.2).
 
 *Why context exists at all:* without it Bob receives Alice's message and nothing else, and reads
 a conversation with every other voice removed. He would see Alice apparently talking to
@@ -423,7 +438,7 @@ does not widen what you will accept.*
 *Alice has been off the grid for two months and has a lot Bob has not seen.*
 
 ```
-Owed to Bob: 3 wants, 1500 in-scope, 1500 context candidates.   CONTEXT_OFFER_CAP = 1000
+Owed to Bob: 3 wants, 1500 in-scope, 1500 context candidates.   CONTEXT_SEND_CAP = 1000
 ```
 
 | Group | Sent | Why |
@@ -496,7 +511,7 @@ for the handful of identities they actually care about.
 |---|---|---|
 | `PROTOCOL_VERSION` | 1 | `HELLO`; mismatch refuses |
 | `MSG_FORMAT_VERSION` | 1 | first field of every message |
-| `CONTEXT_OFFER_CAP` | 1000 | context offered per session |
+| `CONTEXT_SEND_CAP` | 1000 | context sent per session |
 | `GOSSIP_INTAKE_CAP` | 1000 | gossip accepted per session; wants and in-scope are uncapped |
 | `VERIFY_FAIL_CUTOFF` | 20 | rejections from one peer before abort |
 | `MAX_FRAME_BYTES` | 1 MiB | checked before allocation |

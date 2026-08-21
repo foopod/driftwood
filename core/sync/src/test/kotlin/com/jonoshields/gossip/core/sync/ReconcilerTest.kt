@@ -160,7 +160,7 @@ class ReconcilerTest {
     // ---- context -----------------------------------------------------------------
 
     @Test
-    fun `stranger replies in their people's threads are offered, not sent`() {
+    fun `stranger replies in their people's threads are sent as context`() {
         val theirs = held(theirAuthor, 10, threadA)
         val strangerReply = held(stranger, 20, threadA)
 
@@ -171,8 +171,25 @@ class ReconcilerTest {
             blocklist = noBlocks(),
         )
 
-        assertEquals("their own author's message is sent outright", listOf(theirs.id), delivery.inScope)
-        assertEquals("the stranger's is only offered", listOf(strangerReply.id), delivery.contextOffer)
+        assertEquals("what they follow", listOf(theirs.id), delivery.inScope)
+        assertEquals("and the stranger's reply that completes the thread", listOf(strangerReply.id), delivery.context)
+        assertTrue("both go in this phase", strangerReply.id in delivery.sendNow)
+    }
+
+    @Test
+    fun `context the peer already holds is still not re-sent`() {
+        // Their hash-list cannot describe most context, but where it does, spending bytes
+        // on a duplicate would be pointless.
+        val theirs = held(theirAuthor, 10, threadA)
+        val strangerReply = held(stranger, 20, threadA)
+
+        val delivery = Reconciler.plan(
+            held = listOf(theirs, strangerReply),
+            peer = scope(listen = setOf(theirAuthor, stranger)),
+            peerHolds = setOf(strangerReply.id),
+            blocklist = noBlocks(),
+        )
+
         assertTrue(strangerReply.id !in delivery.sendNow)
     }
 
@@ -188,7 +205,7 @@ class ReconcilerTest {
             blocklist = noBlocks(),
         )
 
-        assertTrue("$delivery", delivery.contextOffer.isEmpty())
+        assertTrue("$delivery", delivery.context.isEmpty())
     }
 
     @Test
@@ -279,8 +296,8 @@ class ReconcilerTest {
         )
 
         assertEquals(listOf(anchor.id), delivery.inScope)
-        assertEquals(10, delivery.contextOffer.size)
-        assertEquals("newest first", strangerReplies.last().id, delivery.contextOffer.first())
+        assertEquals(10, delivery.context.size)
+        assertEquals("newest first", strangerReplies.last().id, delivery.context.first())
     }
 
     @Test
@@ -297,7 +314,7 @@ class ReconcilerTest {
         )
 
         assertEquals(listOf(theirs.id), delivery.inScope)
-        assertTrue(delivery.contextOffer.isEmpty())
+        assertTrue(delivery.context.isEmpty())
     }
 
     @Test
@@ -321,7 +338,7 @@ class ReconcilerTest {
     fun `nothing is ever planned that the peer already holds`() {
         forEachRandomCase { held, peer, peerHolds, blocklist ->
             val delivery = Reconciler.plan(held, peer, peerHolds, blocklist)
-            (delivery.inScope + delivery.contextOffer).forEach { id ->
+            (delivery.inScope + delivery.context).forEach { id ->
                 assertTrue("planned $id which the peer already holds", id !in peerHolds)
             }
         }
@@ -331,7 +348,7 @@ class ReconcilerTest {
     fun `nothing in their scope and window is left behind`() {
         forEachRandomCase { held, peer, peerHolds, blocklist ->
             val delivery = Reconciler.plan(held, peer, peerHolds, blocklist, contextCap = Int.MAX_VALUE)
-            val planned = (delivery.wanted + delivery.inScope + delivery.contextOffer).toSet()
+            val planned = (delivery.wanted + delivery.inScope + delivery.context).toSet()
 
             held.filter { it.author in peer.listen }
                 .filter { it.effectiveTime >= peer.windowCutoff }
@@ -345,7 +362,7 @@ class ReconcilerTest {
     fun `no message is planned twice in one direction`() {
         forEachRandomCase { held, peer, peerHolds, blocklist ->
             val delivery = Reconciler.plan(held, peer, peerHolds, blocklist, contextCap = Int.MAX_VALUE)
-            val all = delivery.wanted + delivery.inScope + delivery.contextOffer
+            val all = delivery.wanted + delivery.inScope + delivery.context
             assertEquals("planned the same id more than once", all.size, all.toSet().size)
         }
     }
@@ -375,10 +392,10 @@ class ReconcilerTest {
             // reason the hash-lists are exchanged before anything is planned.
             val theirIds = theirs.mapTo(mutableSetOf()) { it.id }
             val myIds = mine.mapTo(mutableSetOf()) { it.id }
-            (iSend.inScope + iSend.contextOffer).forEach {
+            (iSend.inScope + iSend.context).forEach {
                 assertTrue("sent them something they had", it !in theirIds)
             }
-            (theySend.inScope + theySend.contextOffer).forEach {
+            (theySend.inScope + theySend.context).forEach {
                 assertTrue("they sent us something we had", it !in myIds)
             }
         }

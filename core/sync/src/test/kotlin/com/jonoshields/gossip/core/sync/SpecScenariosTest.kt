@@ -41,7 +41,7 @@ class SpecScenariosTest {
             aliceHolds, bobScope, Reconciler.hashList(bobHolds, bobScope), noBlocks(),
         )
         assertEquals("newest first", listOf(m3.id, m2.id), aliceToBob.inScope)
-        assertTrue("nothing left to offer", aliceToBob.contextOffer.isEmpty())
+        assertTrue("nothing left to offer", aliceToBob.context.isEmpty())
 
         val bobToAlice = Reconciler.plan(
             bobHolds, aliceScope, Reconciler.hashList(aliceHolds, aliceScope), noBlocks(),
@@ -64,12 +64,14 @@ class SpecScenariosTest {
 
         val plan = Reconciler.plan(aliceHolds, bobScope, bobsList, noBlocks())
         assertEquals(listOf(m1.id), plan.inScope)
-        assertEquals("newest first", listOf(m3.id, m2.id), plan.contextOffer)
 
-        // Bob answers the offer with only what he lacks — no hash-list could have done this,
-        // because Carol and Dave are in nobody's scope.
-        val requested = Reconciler.request(plan.contextOffer, bobHolds.mapTo(mutableSetOf()) { it.id })
-        assertEquals(listOf(m3.id), requested)
+        // Both stranger replies are sent, including m2 which Bob already has. No hash-list
+        // could have told Alice otherwise — Carol and Dave are in nobody's scope — and at
+        // this scale the duplicate costs less than a round trip would.
+        assertEquals("newest first", listOf(m3.id, m2.id), plan.context)
+        // Of the two, only m3 is new to Bob; m2 is a duplicate he discards on arrival.
+        val newToBob = Reconciler.request(plan.context, bobHolds.mapTo(mutableSetOf()) { it.id })
+        assertEquals(listOf(m3.id), newToBob)
     }
 
     @Test
@@ -119,7 +121,7 @@ class SpecScenariosTest {
 
         assertEquals("wants are never withheld", 3, plan.wanted.size)
         assertEquals("everything Bob follows goes", 1500, plan.inScope.size)
-        assertEquals("context is bounded", 1000, plan.contextOffer.size)
-        assertEquals("newest first", context.last().id, plan.contextOffer.first())
+        assertEquals("context is bounded", 1000, plan.context.size)
+        assertEquals("newest first", context.last().id, plan.context.first())
     }
 }

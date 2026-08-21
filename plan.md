@@ -268,7 +268,7 @@ one-line change. The values are deliberate starting points, not researched optim
 | `SIG` | Ed25519 | 32-byte pubkeys, 64-byte signatures. |
 | `PROTOCOL_VERSION` | 1 | Exchanged in the handshake; mismatch refuses. |
 | `MSG_FORMAT_VERSION` (`v`) | 1 | First field of every message. |
-| `CONTEXT_OFFER_CAP` | 1000 | Max context offered per session. Starting point; revisit in M2 against observed sizes. |
+| `CONTEXT_SEND_CAP` | 1000 | Max context sent per session. Starting point; revisit in M2 against observed sizes. |
 | `GOSSIP_INTAKE_CAP` | 1000 | Max gossip accepted per session. |
 | `VERIFY_FAIL_CUTOFF` | 20 | Rejected (unverifiable) messages from one peer in one session before the session is aborted. |
 | `NICKNAME_MAX_CHARS` | 32 | Unicode scalar values after NFC, like `MSG_MAX_CHARS`. |
@@ -539,20 +539,24 @@ publishes your interests to them** — noted in §9.
      which is exactly why both ends have to filter.
    - (Naive full hash-list diff is fine at text scale; optimize later only if forced.)
 
-   **Context cannot be reconciled this way, and needs its own offer/request round.** Its
-   whole point is carrying messages from authors in *neither* side's scope — that is what
-   makes them stranger-replies — so their ids appear in no hash-list, and a sender has no way
-   to tell whether the peer already holds them. Sending blind would re-transmit entire
-   threads, which is precisely the waste the reconciliation exists to prevent. So the sender
-   **offers** the context ids, the peer replies with the subset it lacks, and only those are
-   streamed. This is the same shape the gossip phase already uses in step 5, so it introduces
-   no new idea; an id is 32 bytes against a message of a few hundred, so offering costs about
-   a tenth of sending and pays for itself the moment the peer holds any of them.
+   **Context cannot be reconciled at all, and is sent anyway.** Its whole point is carrying
+   messages from authors in *neither* side's scope — that is what makes them stranger-replies
+   — so their ids appear in no hash-list and a sender cannot know whether the peer holds them.
+   An offer/request round would make it exact, and is deliberately **not** used: at the scale
+   this is built for, a twenty-message thread where the peer already holds fifteen wastes
+   about 4 KiB, which is under 2 ms on Wi-Fi Direct — less than the round trip an offer would
+   have cost. Content-addressing makes the duplicate free to discard on arrival. This is the
+   same call §9 already makes about reconciliation generally: naive is fine at text scale.
+   - The break-even is around 11% — an offer starts winning once the peer already holds more
+     than about a ninth of a thread — so this should be revisited if M5 sees large threads, or
+     when a slow radio arrives where the arithmetic inverts completely.
+   - What is given up, and it is worth naming: the context cap becomes **blind**. A sender can
+     spend its whole context allowance on messages the peer already had, while ones it lacks
+     go unsent until the next session. Only material at scale, for the same reason.
 
 4. **Deliver (priority phase).** Each side streams its delta — in-scope content the peer
-   lacks, the peer's wants it holds, and the context the peer asked for after the offer
-   in step 3 — **plus the profile records (§3.5) it holds for the authors appearing in that
-   delta**. Names ride with content rather than
+   lacks, the peer's wants it holds, and the context that keeps those threads whole —
+   **plus the profile records (§3.5) it holds for the authors appearing in that delta**. Names ride with content rather than
    getting a phase of their own: receiving somebody's message is exactly when their name
    becomes useful, and it means a name can never be pushed for a key whose content you were
    not already accepting. Context is sent
@@ -599,7 +603,7 @@ publishes your interests to them** — noted in §9.
   asked for. A peer sending garbage instead is caught by `VERIFY_FAIL_CUTOFF`, which is the
   right tool: capping would throttle the honest case to defend against one a cap does not
   stop anyway.
-- **Context is capped** at `CONTEXT_OFFER_CAP`, and gossip at `GOSSIP_INTAKE_CAP`. Both are
+- **Context is capped** at `CONTEXT_SEND_CAP`, and gossip at `GOSSIP_INTAKE_CAP`. Both are
   content you did not choose: context is written by strangers into threads that have no size
   limit, and gossip is unchosen by definition. Those are the two places volume is not bounded
   by your own decisions, so those are the two places that need a bound.
