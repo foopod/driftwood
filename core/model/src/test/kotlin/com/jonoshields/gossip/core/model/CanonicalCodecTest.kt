@@ -63,6 +63,25 @@ class CanonicalCodecTest {
     }
 
     @Test
+    fun `decoding then re-encoding reproduces the original bytes exactly`() {
+        // The invariant relaying depends on. A relayed message is re-encoded from stored
+        // fields, so if the decoder ever accepted something the encoder cannot reproduce,
+        // the relayed copy would hash to a different id — and the next hop would reject it
+        // with no way to tell why. Strict decoding is what makes this hold: every accepted
+        // encoding is the canonical one.
+        val random = Random(20260821)
+        repeat(5_000) {
+            val original = CanonicalCodec.encode(randomBody(random))
+            val decoded = CanonicalCodec.decode(original)
+            assertTrue("$decoded", decoded is BodyDecodeResult.Success)
+            assertArrayEquals(
+                original,
+                CanonicalCodec.encode((decoded as BodyDecodeResult.Success).body),
+            )
+        }
+    }
+
+    @Test
     fun `field order is v author root parent timestamp text`() {
         // Swapping any two field values must change the bytes, which it only does if the
         // fields occupy fixed distinct positions.
