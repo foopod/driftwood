@@ -4,6 +4,7 @@ import java.io.PipedInputStream
 import java.io.PipedOutputStream
 import kotlin.random.Random
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
@@ -82,6 +83,41 @@ class PipeTest {
 
         assertArrayEquals(byteArrayOf(1), b.receive())
         assertArrayEquals(byteArrayOf(2), a.receive())
+    }
+
+    @Test(timeout = 10_000)
+    fun `closing frees a peer stuck mid-send`() = runBlocking {
+        // The trap this exists to pin down. `Channel.close()` only signals the *receiver*: a
+        // sender already suspended against a full buffer stays suspended forever, so a peer
+        // flooding us could never be shaken off no matter how firmly we hung up. Only
+        // `cancel()` frees it, which is why `close()` treats the two directions differently.
+        //
+        // This is the exact shape of a hostile peer — write without ever reading — so a Pipe
+        // that got it wrong would hang the session tests rather than fail them.
+        val (a, b) = Pipe.open(capacity = 2)
+        val flooder = launch {
+            runCatching { repeat(1_000) { a.send(byteArrayOf(it.toByte())) } }
+        }
+        repeat(10) { yield() }   // long enough for it to fill the buffer and park
+
+        b.close()
+
+        flooder.join()   // hangs here if close() ever goes back to being graceful both ways
+        assertTrue("the flooder was released", flooder.isCompleted)
+    }
+
+    @Test(timeout = 10_000)
+    fun `frames already handed over still arrive after the sender closes`() = runBlocking {
+        // The other half of the asymmetry: outgoing closes gracefully, so an ABORT written
+        // just before hanging up is still readable by the peer.
+        val (a, b) = Pipe.open(capacity = 4)
+        a.send(byteArrayOf(1))
+        a.send(byteArrayOf(2))
+        a.close()
+
+        assertArrayEquals(byteArrayOf(1), b.receive())
+        assertArrayEquals(byteArrayOf(2), b.receive())
+        assertNull("then the end of the link", b.receive())
     }
 }
 
@@ -179,4 +215,5 @@ class FramedConnectionTest {
             assertArrayEquals(frame, connection.receive())
         }
     }
+
 }

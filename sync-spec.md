@@ -16,11 +16,11 @@ Honest, because the spec runs ahead of the build in places.
 | Message canonical form and wire form | **Built**, golden vectors, cross-checked against an independent implementation |
 | Profile record (§3.5) | **Built**, tested |
 | Reconciliation (`hashList` / `plan` / `request`) | **Built**, 23 tests including two properties |
-| Framing and record types | **Specified here, not built** |
-| Session state machine | **Specified here, not built** |
-| Ingest, rejection counting, `PhaseOutcome` | **Specified here, not built** |
+| Framing and record types | **Built**, 18 tests including two fuzz passes |
+| Session state machine | **Built**, handshake through priority phase; gossip phase still to come |
+| Ingest, rejection counting, `PhaseOutcome` | **Built**, tested |
 | Gossip phase | **Specified here, not built** |
-| Transport (mock, TCP, Wi-Fi Direct) | Not started — M2 mock, M3a TCP, M3b Wi-Fi Direct |
+| Transport (mock, TCP, Wi-Fi Direct) | **Mock built** (bounded pipe, framed connection); M3a TCP, M3b Wi-Fi Direct |
 
 ---
 
@@ -398,6 +398,13 @@ nobody could have known to exclude. So a message satisfying a want is ingested r
 age, and then treated like anything else. Most are recent (a parent is rarely much older than
 the reply that named it); a genuinely ancient one is accepted and dropped at the next prune,
 which costs little and keeps the rule to one sentence.
+
+The prune is where the age finally bites, and starring is the escape hatch. If Alice starred
+the thread, the window does not apply to it (§4) and the recovered parent stays; if she did
+not, it arrives, completes the thread for that session, and is gone by the next one. That is
+the honest limit of the mechanism, and the right one — content older than the window has aged
+out of the network by design, and holding it back permanently would undo the bound that keeps
+storage finite. A star is how a person says *this thread is the exception*.
 
 *Why wants are opportunistic and not requests:* if nobody Alice meets happens to hold `p`, the
 counter increments and the want is dropped after `WANT_TTL` (10) fruitless syncs. The network

@@ -26,6 +26,13 @@ enum class AbortReason(val code: Int) {
     OUT_OF_PHASE(3),
     FRAME_TOO_LARGE(4),
     TOO_MANY_REJECTIONS(5),
+
+    /**
+     * The peer closed mid-session. Distinct from a malformed frame: an interrupted sync is
+     * ordinary — people walk out of range — and misreporting it as a protocol violation would
+     * make honest peers look hostile in the logs.
+     */
+    PEER_CLOSED(6),
     ;
 
     companion object {
