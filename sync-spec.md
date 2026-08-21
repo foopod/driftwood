@@ -24,7 +24,53 @@ Honest, because the spec runs ahead of the build in places.
 
 ---
 
-## 1. Vocabulary
+## 1. What this is modelled on
+
+The protocol is shaped by how gossip actually behaves between people, not by how a server
+would prefer to move rows. Almost every rule below follows from one of these, and the ones
+that look arbitrary usually are not.
+
+**Gossip travels because people meet.** Nothing syncs in the background. Two people decide to
+sync, in a room, at a moment — so a session is short, interruptible, and worth nothing unless
+it is useful the instant it stops. That is why the priority phase is independently valid, and
+why phases are applied as they complete rather than at the end. If the bus arrives, what you
+already exchanged is yours.
+
+**You hear about people through the people you know.** You do not subscribe to the world; you
+follow a handful of people, and *their* conversations bring you everyone else. That is what
+thread-bump is: a reply from a stranger is worth carrying when it lands in a thread one of
+your people is in. Without it you would watch your friends talking to themselves, which is not
+a conversation — it is a transcript with half the speakers removed.
+
+**You hear things out of order, and you hear some things never.** A thread whose beginning you
+missed is normal. A reply to something you never saw is normal. The software renders those
+calmly rather than as errors, because in a gossip network they are not errors. What it does
+*not* do is instruct people to write self-contained messages; how much context to include is a
+writer's judgement, and they will calibrate it once they feel how impermanent the medium is.
+
+**Gossip is forgotten.** Content ages out of the window and storage is capped. The network
+carries a moving present, not an archive. Someone who wants a thing to last has to say so —
+that is what starring a thread means, and it is deliberately a personal act rather than a
+property of the content.
+
+**Nobody is in charge, so fairness has to come from the shape.** There is no moderator to
+appeal to, so a loud account cannot be dealt with by policy — it is dealt with by giving every
+identity an equal share of the space, so shouting louder wins nothing. Blocking exists for
+what structure cannot fix, and it is deliberately *personal*: local, private, never announced,
+never imposed on anyone else.
+
+**Nobody owns a name.** There is no registry, so a nickname is a claim rather than an
+identifier, and two people can honestly both be "sam". The only trustworthy name is one you
+assigned yourself, to a key you confirmed in person. Everything the protocol does with names
+follows from taking that seriously.
+
+**Syncing with someone shows them something about you.** Your listen list is public in MVP,
+because declaring it is how the other side knows what to send. The cost is real: sync with a
+stranger and they learn who you follow. It is a deliberate trade for MVP, not an oversight.
+
+---
+
+## 2. Vocabulary
 
 | Term | Meaning |
 |---|---|
@@ -42,7 +88,7 @@ never taken from a peer.
 
 ---
 
-## 2. Framing
+## 3. Framing
 
 Every record on the stream:
 
@@ -114,7 +160,7 @@ A **reply** differs only in that `root` carries 32 bytes and `parent` may too:
 
 ---
 
-## 3. Session
+## 4. Session
 
 Symmetric in content. One side is *initiator* purely to decide who speaks first; both run the
 same state machine. Every exchange is a single offer answered once — never a negotiation that
@@ -159,11 +205,11 @@ independently valid by design, and discarding it would make a partial sync worse
 
 ---
 
-## 4. Reconciliation rules
+## 5. Reconciliation rules
 
 These are implemented and tested in `core/sync/.../Reconciler.kt`.
 
-### 4.1 Building your hash-list
+### 5.1 Building your hash-list
 
 > Every id you hold whose **author is in your own declared scope**.
 
@@ -173,7 +219,7 @@ These are implemented and tested in `core/sync/.../Reconciler.kt`.
 - **Not window-filtered.** A starred thread is exempt from pruning (§4), so you can hold
   content older than your own cutoff. Naming it is exactly what stops a peer re-sending it.
 
-### 4.2 Planning what you owe a peer
+### 5.2 Planning what you owe a peer
 
 Given your holdings, their `SCOPE`, and their `HASHLIST`:
 
@@ -196,12 +242,12 @@ scope — that is what makes them stranger-replies — so their ids appear in no
 cannot tell whether the peer has them. Offering costs 32 bytes against a message of a few
 hundred, and pays for itself the moment they hold any of them.
 
-### 4.3 Answering an offer
+### 5.3 Answering an offer
 
 > Return the offered ids you do not hold, **in the order offered**, so the sender's
 > newest-first priority survives the round trip.
 
-### 4.4 Two invariants, asserted as property tests
+### 5.4 Two invariants, asserted as property tests
 
 - **Nothing is planned that the peer already holds.**
 - **Nothing in their scope and window is left behind.**
@@ -210,150 +256,221 @@ Converging proves only that nothing was *lost*. These are what prove nothing was
 
 ---
 
-## 5. Scenarios
+## 6. Scenarios
 
-Four identities — **Ana**, **Ben**, **Cal**, **Dee** — and two devices, **A** (Ana's) and
-**B** (Ben's). `mN(author, thread, time)`.
+Four people — **Alice**, **Bob**, **Carol** and **Dave** — and their phones, **A** and **B**.
+Messages are written `mN(author, thread, effective_time)`.
 
-### 5.1 The ordinary case — friends with overlapping interests
+Each scenario states the human situation first, because in most cases the rule only makes
+sense once you know what it is protecting.
+
+> **These are executed, not illustrative.** Scenarios 6.1, 6.3, 6.5, 6.6 and 6.7 run against
+> the real reconciler in `core/sync/src/test/.../SpecScenariosTest.kt`, asserting the exact
+> outcomes printed below. Writing them caught an error in 6.1 that had been hand-waved — it
+> moves two messages, not one. A specification whose examples were never run drifts from the
+> code silently, and a reader has no way to tell.
+
+### 6.1 The ordinary case — two friends who follow some of the same people
+
+*Alice and Bob are friends. Both follow Carol. They are in the same room and decide to sync.*
 
 ```
-A holds   m1(Ben, T1, 1200)   m2(Cal, T2, 1100)   m3(Ana, T1, 1300)
-  scope   listen {Ben, Cal}   cutoff 1000
+A (Alice)  holds   m1(Carol, T1, 1200)   m2(Carol, T2, 1100)   m3(Alice, T1, 1300)
+           scope   listen {Carol}        cutoff 1000
 
-B holds   m1(Ben, T1, 1200)   m4(Ana, T3, 1500)
-  scope   listen {Ana}        cutoff 900
+B (Bob)    holds   m1(Carol, T1, 1200)   m4(Alice, T3, 1500)
+           scope   listen {Alice, Carol} cutoff 900
 ```
 
 | Step | Value |
 |---|---|
-| A's hash-list (own scope: Ben, Cal) | `{m1, m2}` |
-| B's hash-list (own scope: Ana) | `{m4}` |
-| A → B in-scope | `[m3]` — Ana's, not in B's list, ≥ 900 |
-| A → B bump offer | `[m1]` — T1 contains Ana's m3, and m1 is by Ben, in nobody's declared scope here |
-| B's reply | `BUMP_REQUEST []` — B already holds m1 |
-| B → A anything | nothing: B's only Ben/Cal content is m1, which A's hash-list already showed |
+| A's hash-list — own scope, so Carol only | `{m1, m2}` |
+| B's hash-list — own scope, Alice and Carol | `{m1, m4}` |
+| A → B in-scope | `[m3, m2]` — newest first: Alice's own message, and the Carol message Bob lacks |
+| A → B bump offer | `[]` — everything in those threads is already going as in-scope content |
+| B → A in-scope | `[]` — Bob's only Carol content is m1, and Alice's hash-list shows she has it |
 
-**One message transferred.** Note the offer earning its keep: B's hash-list covers only Ana,
-so A genuinely could not know B had m1 — and asking cost 32 bytes instead of re-sending it.
+**Two messages move, both in one direction.** Nothing either side already held is re-sent —
+m1 crosses in neither direction, because each hash-list revealed it.
 
-### 5.2 Strangers
+*Why it works out this way:* Bob follows Alice, so Alice's own messages are the point of the
+exchange. Carol's messages are equally interesting to both, which is exactly why the
+hash-lists prevent them being pushed back and forth every time these two meet — and they meet
+often, being friends.
 
-```
-A  listen {Ben}    B  listen {Dee}
-Neither holds anything authored by the other's people.
-```
+### 6.2 Strangers
 
-Hash-lists are exchanged, both deltas compute empty, both bump offers empty, `PHASE_DONE`
-immediately. **Everything of interest happens in the gossip phase** — which is exactly what
-§5 predicts a stranger sync to be: a snapshot of someone else's world.
-
-The cost, stated plainly: A has told B it listens to Ben, and B has told A it listens to Dee.
-Listen lists are public in MVP, and syncing with a stranger publishes your interests to them.
-
-### 5.3 Thread-bump, in detail
+*Alice gets talking to Dave at a bus stop. They follow nobody in common — they have never met
+before. They sync anyway.*
 
 ```
-A holds   m1(Ana, T1, 100)   m2(Cal, T1, 110)   m3(Dee, T1, 120)
-B holds   m2(Cal, T1, 110)
-B scope   listen {Ana}   cutoff 0
+A (Alice)  listen {Carol}      D (Dave)  listen {Erin}
+Neither holds anything written by the other's people.
 ```
 
-B's hash-list is **empty** — B holds nothing authored by Ana.
+Hash-lists are exchanged, both deltas compute empty, both bump offers are empty, and
+`PHASE_DONE` follows almost immediately. **Everything interesting happens in the gossip
+phase** — a slice of recent content from each other's world, which is precisely what a
+stranger sync is for.
+
+*The social cost, stated plainly:* Alice has now told Dave that she follows Carol, and Dave
+has told Alice he follows Erin. Listen lists are public in MVP because declaring them is the
+mechanism, so syncing with a stranger publishes your interests to them. That is a real
+trade — someone might reasonably not want a bus-stop acquaintance knowing who they read — and
+the fix (interest-hiding sync) is deliberately deferred rather than pretended away.
+
+*Why it still matters:* this is how content reaches people who are not already connected. If
+strangers exchanged nothing, the network would be a set of sealed friendship groups and gossip
+would never travel.
+
+### 6.3 Thread-bump — keeping a conversation whole
+
+*Bob follows Alice but has never heard of Carol or Dave. Alice started a thread, and Carol and
+Dave replied to it. Bob's phone has picked up Carol's reply from somewhere, but not Alice's
+original and not Dave's.*
+
+```
+A (Alice)  holds   m1(Alice, T1, 100)   m2(Carol, T1, 110)   m3(Dave, T1, 120)
+B (Bob)    holds   m2(Carol, T1, 110)
+           scope   listen {Alice}   cutoff 0
+```
+
+B's hash-list is **empty** — Bob holds nothing written by Alice, the only person he follows.
 
 | Step | Value |
 |---|---|
-| A → B in-scope | `[m1]` — Ana's message |
-| A → B bump offer | `[m3, m2]` — both in T1, newest first, neither in B's (empty) hash-list |
-| B → A request | `[m3]` — B already holds m2 |
+| A → B in-scope | `[m1]` — Alice's message; Bob follows her |
+| A → B bump offer | `[m3, m2]` — both sit in T1, which contains Alice's message; newest first |
+| B → A `BUMP_REQUEST` | `[m3]` — Bob already has Carol's reply |
 | A → B | `m3` |
 
-B ends with the whole thread. **m2 was never re-sent**, and no hash-list could have prevented
-that, because Cal is in nobody's scope.
+Bob ends up with the thread whole. **m2 was never re-sent, and no hash-list could have
+prevented that**, because Carol is in nobody's declared scope — which is the entire reason the
+bump is offered rather than pushed.
 
-### 5.4 A want is satisfied
+*Why bump exists at all:* without it Bob receives Alice's message and nothing else, and reads
+a conversation with every other voice removed. He would see Alice apparently talking to
+herself. Carol and Dave are strangers to Bob, but their words are part of something he
+actually follows, so they are worth carrying — as *context*, which is why they land in a
+different storage tier from his subscriptions and get evicted first when space runs short.
 
-```
-A holds a reply whose parent p it does not have  →  A's wants = {p}
-B holds p, authored by Cal, whom A does not listen to
-```
+### 6.4 A want is filled
 
-B's plan puts `p` in **wanted** — delivered despite being outside A's scope, because A named
-it by id. A's want-list drops `p` on ingest; had nobody held it, its unsatisfied counter would
-increment, and it is dropped after `WANT_TTL` (10) fruitless syncs rather than chased forever.
-
-### 5.5 Blocked content, filtered twice
-
-```
-A blocked Cal.        B blocked Dee.
-A holds m2(Cal, …)    B listens to Cal.
-A holds m3(Dee, …)    B does not block Cal.
-```
-
-- A **never sends m2**, though B listens to Cal and asked for exactly that. You do not relay
-  for someone you blocked.
-- A **does send m3** (Dee), and **B discards it on ingest**, because Dee is on B's blocklist.
-
-Neither blocklist is ever transmitted — they are local and private (§3.3). That is precisely
-why both ends filter: the sender cannot know the receiver's list, and vice versa.
-
-### 5.6 Mismatched windows
+*Alice's phone holds a reply that answers something she never received. She knows the missing
+message's id, because the reply names it as its parent — but not its content.*
 
 ```
-A cutoff 1000     B cutoff 500
+A's wants = {p}          B holds p, written by Carol
+Alice does not follow Carol.
 ```
 
-A sends B anything from `500` onward; B sends A only from `1000` onward. Each side filters to
-the **receiver's** cutoff, because §4 refuses out-of-window messages on ingest — sending them
-is bandwidth spent on something the peer will drop on arrival.
+B's plan puts `p` in **wanted**, and it is delivered despite being outside Alice's scope,
+because she named it by id rather than by author. Her want-list drops `p` on ingest.
 
-A's hash-list may still name content older than 1000, if it sits in a starred thread. That is
-intended: it prevents a re-send. Starring protects what you already hold; it does not widen
-what you will accept.
+*Why wants are opportunistic and not requests:* if nobody Alice meets happens to hold `p`, the
+counter increments and the want is dropped after `WANT_TTL` (10) fruitless syncs. The network
+is never interrogated and nothing is ever chased. A message that has aged out everywhere is
+simply gone, and the design treats that as an ordinary outcome rather than a failure to
+recover from.
 
-### 5.7 Over the cap
+### 6.5 Blocking — personal, private, and enforced at both ends
 
-```
-A owes B: 3 wants, 1500 in-scope, 900 bump candidates.   SESSION_INTAKE_CAP = 1000
-```
+*Alice has blocked Carol; she does not want Carol's words on her phone or passing through it.
+Bob has blocked Dave. Neither knows about the other's block, and neither ever will.*
 
-| Group | Sent |
+| What happens | Why |
 |---|---|
-| Wants | all 3 — asked for by id, cheapest and most valuable |
-| In-scope | the newest 997 |
-| Bump offer | none — budget exhausted |
+| Alice **does not send** Carol's messages, even though Bob follows Carol and they are exactly what he asked for | You do not relay for someone you blocked. Blocking means "not through me", not just "not in my feed". |
+| Alice **does send** Dave's messages, innocently | She has no idea Bob blocked him — blocklists are never transmitted |
+| Bob **discards them on ingest** | His block is enforced on his own device, where it belongs |
 
-The remainder is not lost, only deferred: the next session reconciles from the new state. The
-sender trims **as courtesy**; the receiver enforces its own cap independently, because a
-hostile sender simply ignores this.
+*Why both ends filter:* because neither list travels. Announcing a blocklist would tell the
+blocked person they were blocked, and would push one person's judgement onto everyone
+downstream. Keeping it private means each device can only enforce its own — so both must.
 
-### 5.8 The connection drops mid-gossip
+*The honest limit:* Bob still receives Dave's content over the wire before discarding it, so
+blocking saves him from seeing it, not from carrying it briefly. And Alice refusing to relay
+Carol costs Bob content he wanted, from someone he has no problem with. That is the price of
+blocks being personal, and it is the right price — the alternative is one person's block
+silently becoming everyone's.
 
-Priority phase completed and `PHASE_DONE` was applied. The link then dies.
+### 6.6 Mismatched windows
 
-**The sync succeeded.** Wants were filled, in-scope content arrived, bump was reconciled, and
-all of it is persisted. The gossip phase is best-effort by design and its loss costs only
-discovery. This is why phases are applied on completion rather than at session end.
+*Alice keeps three months. Bob keeps one — his phone is nearly full.*
 
-### 5.9 A hostile peer
+```
+A cutoff 1000      B cutoff 500
+```
+
+Each side filters to the **receiver's** cutoff. Alice sends Bob anything from 500 onward; Bob
+sends Alice only from 1000 onward. Sending outside it would be bandwidth spent on something
+the peer discards on arrival, since §4 refuses out-of-window messages on ingest.
+
+Alice's hash-list may still name content older than her own cutoff, if it sits in a thread she
+starred. That is intended: it prevents a re-send. *Starring protects what you already have; it
+does not widen what you will accept.*
+
+### 6.7 More than fits
+
+*Alice has been off the grid for two months and has a lot Bob has not seen.*
+
+```
+Owed to Bob: 3 wants, 1500 in-scope, 900 bump candidates.   SESSION_INTAKE_CAP = 1000
+```
+
+| Group | Sent | Why first |
+|---|---|---|
+| Wants | all 3 | Asked for by id — the cheapest and most precisely useful thing available |
+| In-scope | newest 997 | The people Bob actually follows |
+| Bump offer | none | Budget spent |
+
+Nothing is lost, only deferred: the next time they meet, reconciliation starts from the new
+state and picks up where this left off. The sender trims **as a courtesy**; the receiver
+enforces its own cap regardless, because a hostile sender simply ignores this.
+
+*Why newest-first:* in a medium that forgets, the recent is what people are still talking
+about. Older content is more likely to have aged out on the far side anyway.
+
+### 6.8 The bus arrives
+
+*Alice and Bob are mid-sync when Bob has to leave. The connection dies during the gossip
+phase.*
+
+**The sync succeeded.** `PHASE_DONE` for the priority phase had already been applied: wants
+filled, followed content delivered, the bump reconciled, all persisted. The gossip phase is
+best-effort and its loss costs only discovery.
+
+*Why phases are applied as they complete:* two people syncing in the world get interrupted.
+Holding everything until a clean finish would mean a sync that is 90% done is worth exactly
+nothing, which is the wrong shape for a protocol whose whole premise is brief encounters.
+
+### 6.9 Someone trying it on
+
+*Bob's phone is talking to a peer that is not behaving.*
 
 | Behaviour | Response |
 |---|---|
-| Message with a flipped bit | Rejected: hash mismatch. Counted. Never stored, never relayed. |
-| Message signed by the wrong key | Rejected: bad signature. Counted. |
-| Profile renamed in transit | Rejected: the claim is signed by the key it names, so a relay cannot edit it. |
+| A message with a flipped bit | Rejected: the hash does not match the id. Counted. Never stored, never relayed. |
+| A message signed by the wrong key | Rejected: bad signature. Counted. |
+| A profile renamed in transit | Rejected: the claim is signed by the key it names, so a relay can withhold a name but never edit one. |
 | More than `VERIFY_FAIL_CUTOFF` (20) rejections | Session aborted. Content already merged stays — each piece was individually valid. |
-| Frame claiming > `MAX_FRAME_BYTES` | Abort before allocating. |
+| A frame claiming more than `MAX_FRAME_BYTES` | Abort *before* allocating. |
 | `MESSAGE` arriving during the `SCOPE` phase | Abort — no record is harmless out of phase. |
-| Offering 10 000 gossip ids | Bounded by the *receiver's* gossip budget regardless of what is offered. |
-| A flood of unverifiable garbage | Nothing that fails verification consumes storage: an unauthenticated `author` cannot be attributed to any fair share, so it can never take up space. |
+| Offering 10 000 gossip ids | Bounded by the *receiver's* gossip budget, regardless of what is offered. |
+| A flood of unverifiable garbage | Nothing that fails verification consumes storage. An unauthenticated `author` cannot be attributed to anyone's fair share, so it can never take up space. |
 
-Rejections are counted per peer per session and surfaced in the sync summary ("14 messages
-from this peer failed verification"). The bytes are discarded; the signal is not.
+*Why rejections are counted rather than just dropped:* the bytes are worthless but the signal
+is not. "14 messages from this peer failed verification" is the difference between noticing a
+bad actor and noticing nothing. It is also how a format bug between two builds shows up as
+something other than silence.
 
----
+*What none of this defends against:* someone standing in front of you claiming to be someone
+else. Identities are free, so a short fingerprint can be ground to match in minutes and a
+colour in a few dozen attempts. The only real answer is a petname — a name you assigned to a
+key you confirmed in person — which is why the design keeps steering people toward doing that
+for the handful of identities they actually care about.
 
-## 6. Constants
+## 7. Constants
 
 | Constant | Value | Where it binds |
 |---|---|---|
@@ -369,7 +486,7 @@ from this peer failed verification"). The bytes are discarded; the signal is not
 
 ---
 
-## 7. Open questions
+## 8. Open questions
 
 **Does a want override the window?** Wants are currently planned without a window filter — the
 peer named the id, so it is sent. But §4 says out-of-window messages are not ingested, so the
