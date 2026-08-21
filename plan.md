@@ -470,6 +470,10 @@ content.
 
 ## 5. Sync protocol (the heartbeat)
 
+> Implementable detail — framing, record types, worked byte examples and scenario walkthroughs
+> — lives in **`sync-spec.md`**. This section is the design intent; that one is what you build
+> against. Keep them in step.
+
 Purposeful, between two present devices over Wi-Fi Direct (or a shared LAN). A session is
 **symmetric**: both sides declare what they want *up front*, and each then computes locally
 what it owes the other. There is no interactive repair loop and no back-and-forth negotiation
