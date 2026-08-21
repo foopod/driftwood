@@ -96,9 +96,14 @@ Every record on the stream:
 [type: u8][length: u32 big-endian][payload: length bytes]
 ```
 
-- `length` counts the payload only, and **must not exceed `MAX_FRAME_BYTES` (1 MiB)**. A
+- `length` counts the payload only, and **must not exceed `MAX_FRAME_BYTES` (4 MiB)**. A
   larger value is not an error to negotiate — the session aborts immediately. Allocating what
   a peer claims before checking it is how a one-line message becomes a memory exhaustion.
+- The cap is sized by the worst case that has to fit: a hash-list covering a full listen
+  partition is 65,536 ids at 32 bytes, or 2 MiB. Four leaves room for the whole store at the
+  default budget without chunking.
+- **The length is signed.** `0xFFFFFFFF` arrives as `-1`, which passes a naive upper-bound
+  check and then asks for a negative-size allocation, so the lower bound is checked too.
 - Payload fields use the same encoding discipline as §3.2: `uint16` big-endian length prefix,
   then bytes. Strict decoding throughout — reject, never repair.
 - A record arriving **out of phase** aborts the session. There is no state in which an
@@ -118,6 +123,10 @@ Every record on the stream:
 | `ABORT` | `0x0A` | both | reason code (u8) |
 
 Only **gossip** offers before sending. Context does not — see §5.2.
+
+Id lists (`HASHLIST`, `GOSSIP_OFFER`, `GOSSIP_REQUEST`) are bare concatenated 32-byte ids with
+no inner count: the frame length already says how many there are, and a second source of truth
+is a second thing that can disagree. A payload that is not a whole number of ids is refused.
 
 `MESSAGE` and `PROFILE` payloads are carried **opaquely**: never decoded and re-encoded in
 transit. §3.2 requires the receiver to hash the bytes as received, and re-serialising would
@@ -514,7 +523,7 @@ for the handful of identities they actually care about.
 | `CONTEXT_SEND_CAP` | 1000 | context sent per session |
 | `GOSSIP_INTAKE_CAP` | 1000 | gossip accepted per session; wants and in-scope are uncapped |
 | `VERIFY_FAIL_CUTOFF` | 20 | rejections from one peer before abort |
-| `MAX_FRAME_BYTES` | 1 MiB | checked before allocation |
+| `MAX_FRAME_BYTES` | 4 MiB | checked, both bounds, before allocation |
 | `WANT_TTL` | 10 | fruitless syncs before a want is dropped |
 | `WINDOW_DEFAULT` | 90 days | user-configurable |
 | `NICKNAME_MAX_CHARS` | 32 | after NFC |
