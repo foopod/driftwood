@@ -15,11 +15,16 @@ unclear, resolve it back to these.
 - **Design from the medium, not onto it.** Gossip is intermittent, transitive, and
   partial. Do not import guarantees (global consistency, addressed delivery, complete
   threads, permanent deletion) the medium can't keep.
-- **Messages are standalone and self-verifying.** Every message is independently signed
-  and independently meaningful. Parent links are *context and structure only* — never
-  validity or trust. A missing parent costs context, never integrity.
+- **Messages are standalone and self-verifying.** Every message is independently signed and
+  independently *valid* — it can be checked with nothing else in hand. Parent links are
+  *context and structure only* — never validity or trust. A missing parent costs context,
+  never integrity. (Whether a message still makes *sense* without its parent is a matter for
+  its author; the system's job is that it still verifies and still renders.)
 - **Fragmentation is normal.** Partial threads are expected and rendered calmly, not as
-  errors. Content should be written to stand alone.
+  errors. Every message stays *readable* without its neighbours, because the software never
+  assumes context is present — that is a constraint on the system, not an instruction to
+  authors. How much context to include is the writer's call, and they will calibrate it
+  from how impermanent the medium turns out to feel. The UI does not advise them.
 - **Purposeful sync.** Two present devices sync because the users choose to. No
   background execution in the MVP.
 - **Bounded and windowed.** Devices never hold everything. Storage is capped; content
