@@ -20,7 +20,7 @@ Honest, because the spec runs ahead of the build in places.
 | Session state machine | **Built**, handshake through session end |
 | Ingest, rejection counting, `PhaseOutcome` | **Built**, tested |
 | Gossip phase | **Built**, offer/request/deliver, capped by the receiver |
-| Transport (mock, TCP, Wi-Fi Direct) | **Mock built** (bounded pipe, framed connection); M3a TCP, M3b Wi-Fi Direct |
+| Transport (mock, TCP, Wi-Fi Direct) | **Mock + TCP built** (bounded pipe; `TcpTransport` over real sockets, tested over localhost); M3b Wi-Fi Direct not yet built |
 
 ---
 

@@ -1,5 +1,6 @@
 package com.jonoshields.gossip.core.sync
 
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import kotlinx.coroutines.Dispatchers
@@ -8,19 +9,14 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
- * How two devices reach each other. Discovery and connection differ per radio; everything
- * above this line does not (plan.md §7).
+ * An open link, carrying whole frames. Closing it mid-session is an expected outcome.
  *
- * The sync engine assumes nothing beyond a reliable, ordered, bidirectional byte stream — no
- * latency, no bandwidth, no promise the link survives. BLE and LoRa are slow and flaky, and
+ * How two devices reach each other differs per radio; the sync engine talks only to this and
+ * assumes nothing beyond a reliable, ordered, bidirectional byte stream — no latency, no
+ * bandwidth, no promise the link survives (plan.md §7). BLE and LoRa are slow and flaky, and
  * the protocol is already shaped for that: the priority phase is independently valid, so a
  * link that dies early still did something useful.
  */
-interface Transport {
-    suspend fun connect(): Connection
-}
-
-/** An open link, carrying whole frames. Closing it mid-session is an expected outcome. */
 interface Connection : AutoCloseable {
     suspend fun send(frame: ByteArray)
 
@@ -41,6 +37,11 @@ class ConnectionClosed(message: String, cause: Throwable? = null) : Exception(me
  * Reads are strict about length before they are generous with memory: the header is checked
  * through [FrameCodec.payloadLength], which refuses anything above the cap *or below zero*,
  * so a peer never gets to choose the size of an allocation.
+ *
+ * A real socket fails loudly — `IOException` ("connection reset", "broken pipe") — where the
+ * [Pipe] mock only ever closes quietly. Both `send` and `receive` normalise that into
+ * [ConnectionClosed], the same outcome an orderly close already produces, so [Session] stays
+ * ignorant of the transport underneath it and does not need a socket-specific catch clause.
  */
 class FramedConnection(
     private val input: InputStream,
@@ -53,19 +54,27 @@ class FramedConnection(
     private val sending = Mutex()
 
     override suspend fun send(frame: ByteArray) = withContext(Dispatchers.IO) {
-        sending.withLock {
-            output.write(frame)
-            output.flush()
+        try {
+            sending.withLock {
+                output.write(frame)
+                output.flush()
+            }
+        } catch (e: IOException) {
+            throw ConnectionClosed("write failed", e)
         }
     }
 
     override suspend fun receive(): ByteArray? = withContext(Dispatchers.IO) {
-        val header = readFully(FrameCodec.HEADER_BYTES) ?: return@withContext null
-        val length = FrameCodec.payloadLength(header)
-            ?: throw ConnectionClosed("peer declared an unusable frame length")
-        val payload = readFully(length)
-            ?: throw ConnectionClosed("stream ended $length bytes into a frame")
-        header + payload
+        try {
+            val header = readFully(FrameCodec.HEADER_BYTES) ?: return@withContext null
+            val length = FrameCodec.payloadLength(header)
+                ?: throw ConnectionClosed("peer declared an unusable frame length")
+            val payload = readFully(length)
+                ?: throw ConnectionClosed("stream ended $length bytes into a frame")
+            header + payload
+        } catch (e: IOException) {
+            throw ConnectionClosed("read failed", e)
+        }
     }
 
     override fun close() = closer()
