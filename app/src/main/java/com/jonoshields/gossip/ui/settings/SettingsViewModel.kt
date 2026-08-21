@@ -6,8 +6,12 @@ import com.jonoshields.gossip.core.data.DirectoryRepository
 import com.jonoshields.gossip.core.data.MessageRepository
 import com.jonoshields.gossip.core.identity.IdentityState
 import com.jonoshields.gossip.core.identity.IdentityStore
+import com.jonoshields.gossip.core.store.Clock
 import com.jonoshields.gossip.core.store.EvictionReason
 import com.jonoshields.gossip.core.store.StorageConfig
+import com.jonoshields.gossip.core.sync.SessionResult
+import com.jonoshields.gossip.core.sync.SyncStore
+import com.jonoshields.gossip.sync.DebugSync
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +31,8 @@ data class SettingsUiState(
     val budgetMegabytes: Long = 0,
     val budgetSplit: String = "",
     val lastPruneSummary: String? = null,
+    val debugSyncRunning: Boolean = false,
+    val debugSyncSummary: String? = null,
 )
 
 @HiltViewModel
@@ -35,6 +41,8 @@ class SettingsViewModel @Inject constructor(
     private val directory: DirectoryRepository,
     private val identity: IdentityStore,
     private val config: StorageConfig,
+    private val syncStore: SyncStore,
+    private val clock: Clock,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -124,5 +132,39 @@ class SettingsViewModel @Inject constructor(
         EvictionReason.OUT_OF_WINDOW -> "aged out"
         EvictionReason.OVER_FAIR_SHARE -> "over the cap"
         null -> "unknown"
+    }
+
+    /**
+     * Runs a real sync session against an in-process synthetic peer (M2 plan, step 6).
+     * There is no real transport yet, so this is the only way to see the protocol — real
+     * framing, reconciliation, verification and ingest — actually move content into the
+     * Room store before M3a exists.
+     */
+    fun syncWithDebugPeer() {
+        if (_uiState.value.debugSyncRunning) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(debugSyncRunning = true, debugSyncSummary = null) }
+            val result = DebugSync.run(syncStore, clock)
+            _uiState.update {
+                it.copy(debugSyncRunning = false, debugSyncSummary = describeSync(result))
+            }
+        }
+    }
+
+    private fun describeSync(result: SessionResult): String = when (result) {
+        is SessionResult.Completed -> describeSummary(result.summary)
+        is SessionResult.Aborted ->
+            "Stopped (${result.reason.name.lowercase().replace('_', ' ')}): " +
+                describeSummary(result.summary)
+    }
+
+    private fun describeSummary(summary: com.jonoshields.gossip.core.sync.SyncSummary): String {
+        if (summary.messagesAccepted == 0 && summary.profilesAccepted == 0) {
+            return "Nothing new — already up to date with the debug peer."
+        }
+        val parts = mutableListOf<String>()
+        if (summary.messagesAccepted > 0) parts += "${summary.messagesAccepted} messages"
+        if (summary.profilesAccepted > 0) parts += "${summary.profilesAccepted} names"
+        return "Fetched " + parts.joinToString(", ") + "."
     }
 }

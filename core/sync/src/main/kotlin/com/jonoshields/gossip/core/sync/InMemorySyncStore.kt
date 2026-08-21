@@ -22,8 +22,13 @@ import com.jonoshields.gossip.core.store.StorageDefaults
  * really tracks a want-list, so a test that passes against it is testing behaviour and not a
  * script of expected calls. What it does not do is SQL — that is the Room implementation's
  * job, and its own instrumented tests.
+ *
+ * It lives in main sources rather than test sources because it is the port's **reference
+ * implementation**, not only a test double: the debug peer in the app runs a genuine session
+ * against one, and cannot reach test sources. Keeping one implementation for both means the
+ * thing the convergence suite proves is the same thing the app talks to.
  */
-internal class InMemorySyncStore(
+class InMemorySyncStore(
     private val listen: MutableSet<AuthorId> = mutableSetOf(),
     private var blocklist: Blocklist = Blocklist(emptySet(), emptySet()),
     private val windowMillis: Long = StorageDefaults.WINDOW_MILLIS,

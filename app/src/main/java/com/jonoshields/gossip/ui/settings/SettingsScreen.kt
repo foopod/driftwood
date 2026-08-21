@@ -5,9 +5,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +40,7 @@ fun SettingsScreen(
         onPrune = viewModel::prune,
         onNicknameChange = viewModel::updateNickname,
         onSaveNickname = viewModel::saveNickname,
+        onSyncWithDebugPeer = viewModel::syncWithDebugPeer,
         modifier = modifier,
     )
 }
@@ -50,6 +53,7 @@ internal fun SettingsContent(
     onPrune: () -> Unit,
     onNicknameChange: (String) -> Unit,
     onSaveNickname: () -> Unit,
+    onSyncWithDebugPeer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -132,6 +136,34 @@ internal fun SettingsContent(
                     Text("Run pruning now")
                 }
                 state.lastPruneSummary?.let {
+                    Text(it, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+
+            Section("Debug peer") {
+                Text(
+                    "There is no real transport yet (M3a). This runs a genuine sync " +
+                        "session — real framing, verification and ingest — against an " +
+                        "in-process peer holding a few invented identities, so the " +
+                        "protocol can be seen working before any radio exists.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(
+                    onClick = onSyncWithDebugPeer,
+                    enabled = !state.debugSyncRunning,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (state.debugSyncRunning) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Text("Sync with debug peer")
+                    }
+                }
+                state.debugSyncSummary?.let {
                     Text(it, style = MaterialTheme.typography.bodyMedium)
                 }
             }

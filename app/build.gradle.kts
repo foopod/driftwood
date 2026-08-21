@@ -32,6 +32,7 @@ dependencies {
   implementation(project(":core:store"))
   implementation(project(":core:identity"))
   implementation(project(":core:data"))
+  implementation(project(":core:sync"))
 
   // DI. Only :app applies Hilt — the core modules stay dependency-injection agnostic and
   // are constructed by the modules below.

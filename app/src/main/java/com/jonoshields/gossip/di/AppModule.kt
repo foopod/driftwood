@@ -9,6 +9,7 @@ import com.jonoshields.gossip.core.identity.IdentityStore
 import com.jonoshields.gossip.core.identity.KeystoreSeedCipher
 import com.jonoshields.gossip.core.store.Clock
 import com.jonoshields.gossip.core.store.StorageConfig
+import com.jonoshields.gossip.core.sync.SyncStore
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -63,4 +64,9 @@ object AppModule {
     @Provides
     @Singleton
     fun directoryRepository(store: GossipStore): DirectoryRepository = store.directory
+
+    /** What the debug-sync action in Settings drives a session against. */
+    @Provides
+    @Singleton
+    fun syncStore(store: GossipStore): SyncStore = store.sync
 }
