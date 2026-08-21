@@ -471,10 +471,9 @@ content.
 ## 5. Sync protocol (the heartbeat)
 
 Purposeful, between two present devices over Wi-Fi Direct (or a shared LAN). A session is
-**symmetric**: both sides declare what they want *up front*, before any reconciliation, so
-the session reconciles **once** and each side computes both deltas from the same exchanged
-hash-lists. There is no interactive repair loop — scope-filtering already delivers threads
-as complete as the sender can make them.
+**symmetric**: both sides declare what they want *up front*, and each then computes locally
+what it owes the other. There is no interactive repair loop and no back-and-forth negotiation
+— every exchange is a single offer answered once, never a conversation that converges.
 
 A session has **two phases**: first the **priority phase** (scoped + wanted + thread-bumped
 content — this feeds both the **listen** and **context** tiers, the latter via the
@@ -508,20 +507,39 @@ publishes your interests to them** — noted in §9.
    their **want-list** ids. Both declarations are on the table before anything is
    reconciled. (Reminder: listen lists are public in MVP; this is the mechanism.)
 
-3. **Reconcile (once, over the union of both scopes).** Each side sends a compact
-   **hash-list** of the message-ids it holds (raw 32-byte ids) for authors in
-   `A.scope ∪ B.scope`, within the wider of the two window cutoffs. From this single
-   exchange each side computes, locally, the delta *the other* lacks: in-scope messages,
-   **plus** any of the peer's want-list ids it holds, **plus** thread-bump — messages
-   sharing a `root` with something in the peer's scope (the stranger-replies that belong to
-   the peer's people's threads). Because the reconciliation covers both scopes at once,
-   nothing is exchanged or re-sent twice. (Naive full hash-list diff is fine at text scale;
-   optimize later only if forced.)
-   - Both deltas exclude blocked-author content (§4) before anything is sent.
+3. **Reconcile (each side over its *own* scope).** Each side sends a compact **hash-list**
+   of the message-ids it holds (raw 32-byte ids) for the authors *it* declared listening to.
+   Each list means one thing: *this is what I already have of what I asked for.* From that
+   single exchange each side computes, locally, what the other lacks — because A only ever
+   sends B content in **B's** scope, and B's own-scope list describes exactly that space.
+   - An earlier draft had both sides list the *union* of both scopes. That is strictly
+     larger with no benefit: ids for authors the peer never asked about can never be sent to
+     them. Own-scope lists are smaller and leak less — a stranger learns your holdings only
+     for authors you already declared listening to.
+   - Delivery is filtered to the **receiver's** window, not the sender's and not the wider of
+     the two: §4 refuses out-of-window messages on ingest, so sending them is pure waste. (A
+     hash-list may still name content past the window, since a starred thread is exempt from
+     pruning — that only prevents a re-send, which is the point.)
+   - Both deltas exclude blocked-author content (§4) before anything is sent. Blocking is
+     enforced twice and independently: the sender drops content from *its* blocklist when
+     planning, the receiver drops on *its* own at ingest. Neither list is ever disclosed,
+     which is exactly why both ends have to filter.
+   - (Naive full hash-list diff is fine at text scale; optimize later only if forced.)
 
-4. **Deliver (priority phase).** Each side streams its delta; the most complete thread
-   subgraphs it holds for those roots are included, **plus the profile records (§3.5) it
-   holds for the authors appearing in that delta**. Names ride with content rather than
+   **Thread-bump cannot be reconciled this way, and needs its own offer/request round.** Its
+   whole point is carrying messages from authors in *neither* side's scope — that is what
+   makes them stranger-replies — so their ids appear in no hash-list, and a sender has no way
+   to tell whether the peer already holds them. Sending blind would re-transmit entire
+   threads, which is precisely the waste the reconciliation exists to prevent. So the sender
+   **offers** the bump ids, the peer replies with the subset it lacks, and only those are
+   streamed. This is the same shape the gossip phase already uses in step 5, so it introduces
+   no new idea; an id is 32 bytes against a message of a few hundred, so offering costs about
+   a tenth of sending and pays for itself the moment the peer holds any of them.
+
+4. **Deliver (priority phase).** Each side streams its delta — in-scope content the peer
+   lacks, the peer's wants it holds, and the bump content the peer asked for after the offer
+   in step 3 — **plus the profile records (§3.5) it holds for the authors appearing in that
+   delta**. Names ride with content rather than
    getting a phase of their own: receiving somebody's message is exactly when their name
    becomes useful, and it means a name can never be pushed for a key whose content you were
    not already accepting. Thread-bump content is sent
