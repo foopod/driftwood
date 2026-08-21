@@ -6,8 +6,23 @@ import com.jonoshields.gossip.core.model.OrderKey
 import com.jonoshields.gossip.core.store.Blocklist
 import com.jonoshields.gossip.core.store.HeldMessage
 
-/** plan.md §3.4: max messages accepted per phase per session. */
-const val SESSION_INTAKE_CAP: Int = 1000
+/**
+ * Cap on the **context** a single session will offer (plan.md §3.4).
+ *
+ * Wants and in-scope content are deliberately *uncapped*: every message must verify against
+ * the key that signed it, so a peer cannot manufacture content from people you follow. The
+ * volume is bounded by what those people actually wrote, and that is exactly what you asked
+ * for. A peer sending garbage instead is caught by `VERIFY_FAIL_CUTOFF`, not by a cap.
+ *
+ * Context is the exception, and the reason is social rather than cryptographic: it is written
+ * by strangers, and a single thread has no size limit (§5). Someone can flood replies into a
+ * thread one of your people is in, and every one of them verifies. So the one part of the
+ * priority phase whose volume you did not choose is the one part that stays bounded.
+ */
+const val CONTEXT_OFFER_CAP: Int = 1000
+
+/** Cap on the gossip phase, which is entirely unchosen content (plan.md §3.4). */
+const val GOSSIP_INTAKE_CAP: Int = 1000
 
 /**
  * What a peer tells us up front (plan.md §5 step 2).
@@ -25,18 +40,18 @@ data class ScopeDeclaration(
 /**
  * What we owe a peer, in the order it should go.
  *
- * [bumpOffer] is *offered*, not sent: thread-bump carries messages from authors in neither
+ * [contextOffer] is *offered*, not sent: context carries messages from authors in neither
  * side's scope, so no hash-list can describe them and the peer has to say which it lacks.
  */
 data class Delivery(
     val wanted: List<MessageId>,
     val inScope: List<MessageId>,
-    val bumpOffer: List<MessageId>,
+    val contextOffer: List<MessageId>,
 ) {
     /** Everything actually streamed in the priority phase; the offer is not content. */
     val sendNow: List<MessageId> get() = wanted + inScope
 
-    val isEmpty: Boolean get() = wanted.isEmpty() && inScope.isEmpty() && bumpOffer.isEmpty()
+    val isEmpty: Boolean get() = wanted.isEmpty() && inScope.isEmpty() && contextOffer.isEmpty()
 }
 
 /**
@@ -77,16 +92,18 @@ object Reconciler {
         peer: ScopeDeclaration,
         peerHolds: Set<MessageId>,
         blocklist: Blocklist,
-        cap: Int = SESSION_INTAKE_CAP,
+        contextCap: Int = CONTEXT_OFFER_CAP,
     ): Delivery {
-        require(cap >= 0) { "cap must not be negative" }
+        require(contextCap >= 0) { "context cap must not be negative" }
 
         val sendable = held.filterNot {
             it.author in blocklist.authors || it.threadRoot in blocklist.roots
         }
 
         // Wants are explicit: they told us exactly which ids they lack, so there is nothing
-        // to reconcile and no window to respect — they asked for it by id.
+        // to reconcile. Deliberately not window-filtered either — a want is only ever an id,
+        // with no timestamp attached, so neither side can know how old it is until it
+        // arrives. Filtering here would refuse content nobody could have known to exclude.
         val wanted = sendable
             .filter { it.id in peer.wants }
             .sortedNewestFirst()
@@ -104,15 +121,15 @@ object Reconciler {
 
         alreadyPlanned += inScope.map { it.id }
 
-        // Thread-bump: the stranger-replies that keep their people's conversations whole.
-        // A thread qualifies when we hold a message in it from someone they listen to —
+        // Context: the stranger-replies that keep their people's conversations whole. A
+        // thread qualifies when we hold a message in it from someone they listen to —
         // computed from *our* holdings, since we cannot see theirs.
-        val bumpedThreads = sendable.asSequence()
+        val contextThreads = sendable.asSequence()
             .filter { it.author in peer.listen }
             .mapTo(mutableSetOf()) { it.threadRoot }
 
-        val bumpOffer = sendable
-            .filter { it.threadRoot in bumpedThreads }
+        val contextOffer = sendable
+            .filter { it.threadRoot in contextThreads }
             .filter { it.effectiveTime >= peer.windowCutoff }
             // The offer exists to cover ids their hash-list *cannot* describe — bump
             // authors are in nobody's scope. Where it does describe one, that is knowledge
@@ -121,14 +138,12 @@ object Reconciler {
             .filter { it.id !in peerHolds && it.id !in alreadyPlanned }
             .sortedNewestFirst()
 
-        // Trimmed in priority order so that truncation drops the least valuable first. This
-        // is courtesy, not defence: a hostile sender ignores it, so the receiver caps
-        // independently (§5).
-        val budget = Budget(cap)
+        // Only context is trimmed. Trimming is courtesy rather than defence in any case —
+        // a hostile sender ignores it, so the receiver enforces its own limit (§5).
         return Delivery(
-            wanted = budget.take(wanted),
-            inScope = budget.take(inScope),
-            bumpOffer = budget.take(bumpOffer),
+            wanted = wanted.map { it.id },
+            inScope = inScope.map { it.id },
+            contextOffer = contextOffer.take(contextCap).map { it.id },
         )
     }
 
@@ -142,12 +157,4 @@ object Reconciler {
     /** Newest first by `effective_time`, tie-broken by id — the ordering §3.2 already fixes. */
     private fun List<HeldMessage>.sortedNewestFirst(): List<HeldMessage> =
         sortedByDescending { OrderKey(it.effectiveTime, it.id) }
-
-    private class Budget(private var remaining: Int) {
-        fun take(messages: List<HeldMessage>): List<MessageId> {
-            val taken = messages.take(remaining)
-            remaining -= taken.size
-            return taken.map { it.id }
-        }
-    }
 }

@@ -42,7 +42,7 @@ data class PruningPlan(
  *     counted. Note this exempts the *whole* thread, including replies that arrive later
  *     and replies from strangers, so a starred thread can grow without any cap on it.
  *  4. **Classify** what remains into tiers (starred threads included, since a favourited
- *     message from a listened author still bumps its thread into context for everyone else).
+ *     message from a listened author still makes its thread context for everyone else).
  *  5. **Fair share** within each partition, evicting oldest-first.
  *
  * Pruning is local. Two devices are never required to agree on what they keep, so the

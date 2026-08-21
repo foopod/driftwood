@@ -42,7 +42,7 @@ class TierClassifierTest {
     }
 
     @Test
-    fun `the thread bump does not reach across threads`() {
+    fun `context does not reach across threads`() {
         val mine = held(listened, 1, threadA)
         val elsewhere = held(stranger, 2, threadB)
         val tiers = classify(listOf(mine, elsewhere), setOf(listened))
@@ -61,7 +61,7 @@ class TierClassifierTest {
     }
 
     @Test
-    fun `several strangers in one bumped thread all become context`() {
+    fun `several strangers in one context thread all become context`() {
         val mine = held(listened, 1, threadA)
         val s1 = held(stranger, 2, threadA)
         val s2 = held(otherStranger, 3, threadA)

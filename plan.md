@@ -268,7 +268,8 @@ one-line change. The values are deliberate starting points, not researched optim
 | `SIG` | Ed25519 | 32-byte pubkeys, 64-byte signatures. |
 | `PROTOCOL_VERSION` | 1 | Exchanged in the handshake; mismatch refuses. |
 | `MSG_FORMAT_VERSION` (`v`) | 1 | First field of every message. |
-| `SESSION_INTAKE_CAP` | 1000 | Max messages accepted per phase per session. Starting point; revisit in M2 against observed sizes. |
+| `CONTEXT_OFFER_CAP` | 1000 | Max context offered per session. Starting point; revisit in M2 against observed sizes. |
+| `GOSSIP_INTAKE_CAP` | 1000 | Max gossip accepted per session. |
 | `VERIFY_FAIL_CUTOFF` | 20 | Rejected (unverifiable) messages from one peer in one session before the session is aborted. |
 | `NICKNAME_MAX_CHARS` | 32 | Unicode scalar values after NFC, like `MSG_MAX_CHARS`. |
 | `DIRECTORY_TTL` | 180 days | Since `last_seen_post`, before a name ages out. Deliberately longer than `WINDOW_DEFAULT` so a partly-pruned thread still shows who said what. |
@@ -349,6 +350,14 @@ Verification on ingest mirrors §3.2: strict decode, structural checks, then sig
   is *in-window* if `effective_time >= (now - window)`.
 - Out-of-window messages are not ingested and are pruned once they age out. A message
   legitimately older than the window simply isn't carried; that's expected fragmentation.
+- **Wants are the one exception, because they cannot be filtered.** A want is an id and
+  nothing else — you learned it from a `parent` link, so you have no timestamp for it and
+  cannot know whether it falls inside your window until it arrives. Filtering at any earlier
+  point would mean refusing content nobody could have known to exclude, so a message that
+  satisfies a want is ingested regardless of age and then treated normally. Most are recent
+  anyway (a parent is usually not much older than the reply that named it); a genuinely
+  ancient one is accepted and then dropped at the next prune, which costs a little and keeps
+  the rule simple.
 
 **Partitions (three, each a hard cap).**
 - Three partitions: `listen`, `context`, `gossip`, each with its own hard storage cap.
@@ -373,7 +382,7 @@ storage partition and cap:
 
 - **Listen tier** — `author` is in your listen list. Your subscriptions. Highest priority.
 - **Context tier** — `author` is *not* listened to, but the message shares a `root` with
-  at least one message you hold whose author you *do* listen to (the **thread-bump** rule).
+  at least one message you hold whose author you *do* listen to (the **context** rule).
   These are strangers' contributions to your people's threads: kept so conversations stay
   whole, but understood as *context, not subscriptions*. Middle priority.
 - **Gossip tier** — everything else: incidental content carried for discovery. Lowest
@@ -479,9 +488,9 @@ Purposeful, between two present devices over Wi-Fi Direct (or a shared LAN). A s
 what it owes the other. There is no interactive repair loop and no back-and-forth negotiation
 — every exchange is a single offer answered once, never a conversation that converges.
 
-A session has **two phases**: first the **priority phase** (scoped + wanted + thread-bumped
+A session has **two phases**: first the **priority phase** (scoped + wanted + context
 content — this feeds both the **listen** and **context** tiers, the latter via the
-thread-bumped stranger-replies), then the **gossip phase** (incidental discovery content →
+contexted stranger-replies), then the **gossip phase** (incidental discovery content →
 gossip tier). The gossip phase is always secondary and best-effort. Note the two *sync
 phases* don't map one-to-one to the three *storage tiers*: the priority phase's delivered
 messages get classified into listen vs context on ingest per §4, and the gossip phase feeds
@@ -530,23 +539,23 @@ publishes your interests to them** — noted in §9.
      which is exactly why both ends have to filter.
    - (Naive full hash-list diff is fine at text scale; optimize later only if forced.)
 
-   **Thread-bump cannot be reconciled this way, and needs its own offer/request round.** Its
+   **Context cannot be reconciled this way, and needs its own offer/request round.** Its
    whole point is carrying messages from authors in *neither* side's scope — that is what
    makes them stranger-replies — so their ids appear in no hash-list, and a sender has no way
    to tell whether the peer already holds them. Sending blind would re-transmit entire
    threads, which is precisely the waste the reconciliation exists to prevent. So the sender
-   **offers** the bump ids, the peer replies with the subset it lacks, and only those are
+   **offers** the context ids, the peer replies with the subset it lacks, and only those are
    streamed. This is the same shape the gossip phase already uses in step 5, so it introduces
    no new idea; an id is 32 bytes against a message of a few hundred, so offering costs about
    a tenth of sending and pays for itself the moment the peer holds any of them.
 
 4. **Deliver (priority phase).** Each side streams its delta — in-scope content the peer
-   lacks, the peer's wants it holds, and the bump content the peer asked for after the offer
+   lacks, the peer's wants it holds, and the context the peer asked for after the offer
    in step 3 — **plus the profile records (§3.5) it holds for the authors appearing in that
    delta**. Names ride with content rather than
    getting a phase of their own: receiving somebody's message is exactly when their name
    becomes useful, and it means a name can never be pushed for a key whose content you were
-   not already accepting. Thread-bump content is sent
+   not already accepting. Context is sent
    **newest-first by `effective_time`** and shares the phase's `SESSION_INTAKE_CAP`. There
    is deliberately **no per-root cap** in MVP: a large thread that is *entirely recent* is
    legitimately worth its size, and older tail content (often including the root itself)
@@ -584,8 +593,16 @@ publishes your interests to them** — noted in §9.
   locally on ingest.
 
 **Abuse guards.**
-- Cap total messages accepted per session per phase at `SESSION_INTAKE_CAP` (1000 to
-  start) so a peer can't flood a single sync.
+- **Wants and in-scope content are deliberately uncapped.** Every message must verify against
+  the key that signed it, so a peer cannot manufacture content from people you listen to —
+  the volume is bounded by what those people actually wrote, which is precisely what you
+  asked for. A peer sending garbage instead is caught by `VERIFY_FAIL_CUTOFF`, which is the
+  right tool: capping would throttle the honest case to defend against one a cap does not
+  stop anyway.
+- **Context is capped** at `CONTEXT_OFFER_CAP`, and gossip at `GOSSIP_INTAKE_CAP`. Both are
+  content you did not choose: context is written by strangers into threads that have no size
+  limit, and gossip is unchosen by definition. Those are the two places volume is not bounded
+  by your own decisions, so those are the two places that need a bound.
 - A peer exceeding `VERIFY_FAIL_CUTOFF` (20) rejected messages in one session has the
   session aborted; content already merged from it stays (it was individually valid).
 - The gossip phase is strictly bounded by the local gossip budget regardless of what the
@@ -721,7 +738,7 @@ Keep it calm and honest about partial data. Text-only keeps the surface small.
 **M1 — Local single-device app (no networking)**
 - Generate identity + forced backup + import.
 - Compose, store, and display your own messages. Thread assembly (tree + flatten-to-root).
-- Storage caps + **three-tier classification** (listen / context via thread-bump / gossip)
+- Storage caps + **three-tier classification** (listen / context via context / gossip)
   + per-author fair-share pruning within each partition + favourite exemption + **blocklist
   drop** (author and blocked-root). Verify pruning behaviour with synthetic data.
 - *Done when:* with a synthetic corpus exceeding caps, pruning leaves exactly the expected
@@ -746,12 +763,12 @@ Keep it calm and honest about partial data. Text-only keeps the surface small.
 
 **M2 — Sync core, transport-mocked**
 - Implement the symmetric declaration round, the single union-scope reconciliation
-  (hash-list diff), thread-bump delivery, gossip-phase exchange, want-list handling,
+  (hash-list diff), context delivery, gossip-phase exchange, want-list handling,
   verification-and-reject, and merge — all behind the `Transport` interface, tested over an
   in-process / loopback mock transport.
 - *Done when:* two in-process stores with **divergent but overlapping** message sets, each
   with its own listen list and window, **converge** after one full session to the correct
-  expected sets on each side — with: listened-for + thread-bumped content delivered, wants
+  expected sets on each side — with: listened-for + context delivered, wants
   resolved where holdable, gossip content delivered within budget, unverifiable messages
   rejected and counted (never stored, never relayed), blocked content neither stored nor
   delivered, caps respected post-merge, and **each id exchanged at most once across the whole
@@ -798,7 +815,7 @@ Keep it calm and honest about partial data. Text-only keeps the surface small.
 - Real-world test with a few trusted devices. Iterate on the fragmented-thread UX.
 - **Watch two things specifically** (both accepted-with-eyes-open in the design): whether
   sybil authors distort fair-share in the gossip partition (§4), and whether a single large
-  thread starves a session via unbounded thread-bump (§5).
+  thread starves a session via unbounded context (§5).
 
 ---
 

@@ -41,7 +41,7 @@ class SpecScenariosTest {
             aliceHolds, bobScope, Reconciler.hashList(bobHolds, bobScope), noBlocks(),
         )
         assertEquals("newest first", listOf(m3.id, m2.id), aliceToBob.inScope)
-        assertTrue("nothing left to offer", aliceToBob.bumpOffer.isEmpty())
+        assertTrue("nothing left to offer", aliceToBob.contextOffer.isEmpty())
 
         val bobToAlice = Reconciler.plan(
             bobHolds, aliceScope, Reconciler.hashList(aliceHolds, aliceScope), noBlocks(),
@@ -50,7 +50,7 @@ class SpecScenariosTest {
     }
 
     @Test
-    fun `6_3 thread-bump keeps a conversation whole`() {
+    fun `6_3 context keeps a conversation whole`() {
         val m1 = held(alice, 100, t1)
         val m2 = held(carol, 110, t1)
         val m3 = held(dave, 120, t1)
@@ -64,11 +64,11 @@ class SpecScenariosTest {
 
         val plan = Reconciler.plan(aliceHolds, bobScope, bobsList, noBlocks())
         assertEquals(listOf(m1.id), plan.inScope)
-        assertEquals("newest first", listOf(m3.id, m2.id), plan.bumpOffer)
+        assertEquals("newest first", listOf(m3.id, m2.id), plan.contextOffer)
 
         // Bob answers the offer with only what he lacks — no hash-list could have done this,
         // because Carol and Dave are in nobody's scope.
-        val requested = Reconciler.request(plan.bumpOffer, bobHolds.mapTo(mutableSetOf()) { it.id })
+        val requested = Reconciler.request(plan.contextOffer, bobHolds.mapTo(mutableSetOf()) { it.id })
         assertEquals(listOf(m3.id), requested)
     }
 
@@ -104,23 +104,22 @@ class SpecScenariosTest {
     }
 
     @Test
-    fun `6_7 the cap keeps wants, then the newest`() {
+    fun `6_7 the priority phase is uncapped, and only context is bounded`() {
         val wants = (1..3).map { held(dave, it.toLong(), t3) }
         val inScope = (1..1500).map { held(carol, 1000L + it, t1) }
-        val bumpCandidates = (1..900).map { held(dave, 1000L + it, t1) }
+        val context = (1..1500).map { held(dave, 1000L + it, t1) }
 
         val plan = Reconciler.plan(
-            held = inScope + wants + bumpCandidates,
+            held = inScope + wants + context,
             peer = scope(listen = setOf(carol), windowCutoff = 0, wants = wants.mapTo(mutableSetOf()) { it.id }),
             peerHolds = emptySet(),
             blocklist = noBlocks(),
-            cap = 1000,
+            contextCap = 1000,
         )
 
-        assertEquals(3, plan.wanted.size)
-        assertEquals(997, plan.inScope.size)
-        assertEquals("the newest survive", inScope.last().id, plan.inScope.first())
-        assertTrue("budget spent", plan.bumpOffer.isEmpty())
-        assertEquals(1000, plan.sendNow.size)
+        assertEquals("wants are never withheld", 3, plan.wanted.size)
+        assertEquals("everything Bob follows goes", 1500, plan.inScope.size)
+        assertEquals("context is bounded", 1000, plan.contextOffer.size)
+        assertEquals("newest first", context.last().id, plan.contextOffer.first())
     }
 }

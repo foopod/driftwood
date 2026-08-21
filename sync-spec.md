@@ -38,7 +38,7 @@ already exchanged is yours.
 
 **You hear about people through the people you know.** You do not subscribe to the world; you
 follow a handful of people, and *their* conversations bring you everyone else. That is what
-thread-bump is: a reply from a stranger is worth carrying when it lands in a thread one of
+context is: a reply from a stranger is worth carrying when it lands in a thread one of
 your people is in. Without it you would watch your friends talking to themselves, which is not
 a conversation — it is a transcript with half the speakers removed.
 
@@ -79,8 +79,8 @@ stranger and they learn who you follow. It is a deliberate trade for MVP, not an
 | **Window cutoff** | A lower bound on `effective_time`. A device refuses anything older on ingest. |
 | **Hash-list** | The ids a device holds *for authors in its own scope*. |
 | **Want** | An id a device is missing and would accept — always a `parent`, never a `root`. |
-| **Thread-bump** | Messages sharing a thread with content from an author the peer listens to, written by someone in nobody's scope. |
-| **Priority phase** | Wants, in-scope content, bump. Independently valid — a session that stops here succeeded. |
+| **Context** | Messages sharing a thread with content from an author the peer listens to, written by someone in nobody's scope. The same word §4 uses for the storage tier they land in — they are the same idea. |
+| **Priority phase** | Wants, in-scope content, context. Independently valid — a session that stops here succeeded. |
 | **Gossip phase** | Incidental recent content for discovery. Best-effort, skippable. |
 
 `effective_time = min(claimed_timestamp, first_received_time)` — always recomputed locally,
@@ -111,8 +111,8 @@ Every record on the stream:
 | `HASHLIST` | `0x03` | both | ids held for own scope |
 | `MESSAGE` | `0x04` | both | one message wire form, opaque |
 | `PROFILE` | `0x05` | both | one profile wire form, opaque |
-| `BUMP_OFFER` | `0x06` | both | ids offered |
-| `BUMP_REQUEST` | `0x07` | both | ids wanted from that offer |
+| `CONTEXT_OFFER` | `0x06` | both | ids offered |
+| `CONTEXT_REQUEST` | `0x07` | both | ids wanted from that offer |
 | `PHASE_DONE` | `0x08` | both | — |
 | `GOSSIP_OFFER` | `0x09` | both | ids offered |
 | `GOSSIP_REQUEST` | `0x0A` | both | ids wanted from that offer |
@@ -182,9 +182,9 @@ converges.
         │                                    │
         │  MESSAGE × n  +  PROFILE × m       │   ── wants, then in-scope, newest first
         │───────────────────────────────────▶│
-        │  BUMP_OFFER(ids)                   │
+        │  CONTEXT_OFFER(ids)                   │
         │───────────────────────────────────▶│
-        │◀───────────────────────────────────│  BUMP_REQUEST(subset)
+        │◀───────────────────────────────────│  CONTEXT_REQUEST(subset)
         │  MESSAGE × k                       │
         │───────────────────────────────────▶│
         │  PHASE_DONE                        │   ── priority phase complete: APPLY NOW
@@ -229,7 +229,7 @@ Given your holdings, their `SCOPE`, and their `HASHLIST`:
    it explicitly.
 3. **In-scope** — author ∈ their listen set, `effective_time ≥ their cutoff`, id ∉ their
    hash-list, not already planned.
-4. **Bump offer** — messages in any thread where you hold a message by an author *they*
+4. **Context offer** — messages in any thread where you hold a message by an author *they*
    listen to; same window and hash-list filters; not already planned. **Offered, not sent.**
 5. **Trim** to `SESSION_INTAKE_CAP` in that order, so truncation drops the least valuable
    first.
@@ -237,7 +237,7 @@ Given your holdings, their `SCOPE`, and their `HASHLIST`:
 Ordering within each group is newest-first by `effective_time`, tie-broken by id bytewise —
 the same total order §3.2 fixes for everything else.
 
-**Why bump needs an offer at all.** Its content is written by authors in *neither* side's
+**Why context needs an offer at all.** Its content is written by authors in *neither* side's
 scope — that is what makes them stranger-replies — so their ids appear in no hash-list and you
 cannot tell whether the peer has them. Offering costs 32 bytes against a message of a few
 hundred, and pays for itself the moment they hold any of them.
@@ -287,7 +287,7 @@ B (Bob)    holds   m1(Carol, T1, 1200)   m4(Alice, T3, 1500)
 | A's hash-list — own scope, so Carol only | `{m1, m2}` |
 | B's hash-list — own scope, Alice and Carol | `{m1, m4}` |
 | A → B in-scope | `[m3, m2]` — newest first: Alice's own message, and the Carol message Bob lacks |
-| A → B bump offer | `[]` — everything in those threads is already going as in-scope content |
+| A → B context offer | `[]` — everything in those threads is already going as in-scope content |
 | B → A in-scope | `[]` — Bob's only Carol content is m1, and Alice's hash-list shows she has it |
 
 **Two messages move, both in one direction.** Nothing either side already held is re-sent —
@@ -308,7 +308,7 @@ A (Alice)  listen {Carol}      D (Dave)  listen {Erin}
 Neither holds anything written by the other's people.
 ```
 
-Hash-lists are exchanged, both deltas compute empty, both bump offers are empty, and
+Hash-lists are exchanged, both deltas compute empty, both context offers are empty, and
 `PHASE_DONE` follows almost immediately. **Everything interesting happens in the gossip
 phase** — a slice of recent content from each other's world, which is precisely what a
 stranger sync is for.
@@ -323,7 +323,7 @@ the fix (interest-hiding sync) is deliberately deferred rather than pretended aw
 strangers exchanged nothing, the network would be a set of sealed friendship groups and gossip
 would never travel.
 
-### 6.3 Thread-bump — keeping a conversation whole
+### 6.3 Context — keeping a conversation whole
 
 *Bob follows Alice but has never heard of Carol or Dave. Alice started a thread, and Carol and
 Dave replied to it. Bob's phone has picked up Carol's reply from somewhere, but not Alice's
@@ -340,15 +340,15 @@ B's hash-list is **empty** — Bob holds nothing written by Alice, the only pers
 | Step | Value |
 |---|---|
 | A → B in-scope | `[m1]` — Alice's message; Bob follows her |
-| A → B bump offer | `[m3, m2]` — both sit in T1, which contains Alice's message; newest first |
-| B → A `BUMP_REQUEST` | `[m3]` — Bob already has Carol's reply |
+| A → B context offer | `[m3, m2]` — both sit in T1, which contains Alice's message; newest first |
+| B → A `CONTEXT_REQUEST` | `[m3]` — Bob already has Carol's reply |
 | A → B | `m3` |
 
 Bob ends up with the thread whole. **m2 was never re-sent, and no hash-list could have
 prevented that**, because Carol is in nobody's declared scope — which is the entire reason the
-bump is offered rather than pushed.
+context is offered rather than pushed.
 
-*Why bump exists at all:* without it Bob receives Alice's message and nothing else, and reads
+*Why context exists at all:* without it Bob receives Alice's message and nothing else, and reads
 a conversation with every other voice removed. He would see Alice apparently talking to
 herself. Carol and Dave are strangers to Bob, but their words are part of something he
 actually follows, so they are worth carrying — as *context*, which is why they land in a
@@ -366,6 +366,14 @@ Alice does not follow Carol.
 
 B's plan puts `p` in **wanted**, and it is delivered despite being outside Alice's scope,
 because she named it by id rather than by author. Her want-list drops `p` on ingest.
+
+*Wants ignore the window, because they cannot do otherwise.* A want is an id and nothing
+else — Alice learned it from a `parent` link, so she has no timestamp for `p` and cannot know
+whether it falls inside her window until it arrives. Any earlier filter would refuse content
+nobody could have known to exclude. So a message satisfying a want is ingested regardless of
+age, and then treated like anything else. Most are recent (a parent is rarely much older than
+the reply that named it); a genuinely ancient one is accepted and dropped at the next prune,
+which costs little and keeps the rule to one sentence.
 
 *Why wants are opportunistic and not requests:* if nobody Alice meets happens to hold `p`, the
 counter increments and the want is dropped after `WANT_TTL` (10) fruitless syncs. The network
@@ -415,18 +423,30 @@ does not widen what you will accept.*
 *Alice has been off the grid for two months and has a lot Bob has not seen.*
 
 ```
-Owed to Bob: 3 wants, 1500 in-scope, 900 bump candidates.   SESSION_INTAKE_CAP = 1000
+Owed to Bob: 3 wants, 1500 in-scope, 1500 context candidates.   CONTEXT_OFFER_CAP = 1000
 ```
 
-| Group | Sent | Why first |
+| Group | Sent | Why |
 |---|---|---|
-| Wants | all 3 | Asked for by id — the cheapest and most precisely useful thing available |
-| In-scope | newest 997 | The people Bob actually follows |
-| Bump offer | none | Budget spent |
+| Wants | all 3 | Named by id; the most precisely useful thing available |
+| In-scope | all 1500 | **Uncapped** — see below |
+| Context offer | newest 1000 | Bounded |
+
+*Why the priority phase is uncapped.* Every message must verify against the key that signed
+it, so a peer cannot manufacture content from people Bob follows. The volume is bounded by
+what Alice and Carol actually wrote — which is exactly what Bob asked for by following them.
+A peer sending garbage instead does not get further by sending more of it: that is what
+`VERIFY_FAIL_CUTOFF` is for. Capping here would throttle the honest case in order to defend
+against one a cap does not stop anyway.
+
+*Why context is the exception.* It is written by strangers, into threads that have no size
+limit. Someone can flood replies into a thread one of Bob's people is in, and every one of
+them verifies, because they genuinely wrote them. Context is the one part of the priority
+phase whose volume Bob did not choose, so it is the one part that stays bounded.
 
 Nothing is lost, only deferred: the next time they meet, reconciliation starts from the new
-state and picks up where this left off. The sender trims **as a courtesy**; the receiver
-enforces its own cap regardless, because a hostile sender simply ignores this.
+state. The sender trims **as a courtesy**; the receiver enforces its own limits regardless,
+because a hostile sender simply ignores this.
 
 *Why newest-first:* in a medium that forgets, the recent is what people are still talking
 about. Older content is more likely to have aged out on the far side anyway.
@@ -437,7 +457,7 @@ about. Older content is more likely to have aged out on the far side anyway.
 phase.*
 
 **The sync succeeded.** `PHASE_DONE` for the priority phase had already been applied: wants
-filled, followed content delivered, the bump reconciled, all persisted. The gossip phase is
+filled, followed content delivered, context reconciled, all persisted. The gossip phase is
 best-effort and its loss costs only discovery.
 
 *Why phases are applied as they complete:* two people syncing in the world get interrupted.
@@ -476,7 +496,8 @@ for the handful of identities they actually care about.
 |---|---|---|
 | `PROTOCOL_VERSION` | 1 | `HELLO`; mismatch refuses |
 | `MSG_FORMAT_VERSION` | 1 | first field of every message |
-| `SESSION_INTAKE_CAP` | 1000 | per phase, per session, enforced by the receiver |
+| `CONTEXT_OFFER_CAP` | 1000 | context offered per session |
+| `GOSSIP_INTAKE_CAP` | 1000 | gossip accepted per session; wants and in-scope are uncapped |
 | `VERIFY_FAIL_CUTOFF` | 20 | rejections from one peer before abort |
 | `MAX_FRAME_BYTES` | 1 MiB | checked before allocation |
 | `WANT_TTL` | 10 | fruitless syncs before a want is dropped |
@@ -488,23 +509,15 @@ for the handful of identities they actually care about.
 
 ## 8. Open questions
 
-**Does a want override the window?** Wants are currently planned without a window filter — the
-peer named the id, so it is sent. But §4 says out-of-window messages are not ingested, so the
-receiver may refuse the very thing it asked for. A want is by definition an orphan *parent*,
-which is older than the child that made it interesting, so this is the common case rather than
-an edge one.
+Both questions this document opened with are now settled, and the reasoning is recorded above
+rather than here: wants ignore the window because they cannot be filtered (§6.4), and the
+intake cap applies to context and gossip rather than to the whole phase (§6.7).
 
-Three ways out, none yet chosen:
+What remains open is smaller and belongs to later milestones:
 
-1. **Wants override the window on ingest.** You asked for it by id; you get it. The want-list
-   is small and TTL-bounded, so the storage exposure is slight. *Recommended* — otherwise the
-   want-list is useless for exactly the case it exists to serve.
-2. **Wants respect the window**, and the sender filters them like everything else. Consistent,
-   but then a want for anything older than the window can never be satisfied and is pure
-   round-trip cost until its TTL expires.
-3. **Wants are never issued for ids that would be out of window**, moving the decision to
-   want-list construction rather than delivery.
-
-**Should the gossip phase have its own cap, separate from the priority phase?** §5 says
-`SESSION_INTAKE_CAP` is per phase, so a session can accept up to 2000 messages total. Whether
-that is the intent or an accident of wording is worth settling before the phase is built.
+- **Whether one thread can starve a session.** Context is capped per session, but there is
+  still no per-thread cap (§5), so a single very busy thread can fill the whole context
+  allowance. Deliberate for MVP — a large thread that is entirely recent is legitimately worth
+  its size — and worth revisiting if M5 observes it happening.
+- **Hash-list size on slow radios.** 2 MiB worst case is nothing over Wi-Fi Direct and minutes
+  over BLE. Post-MVP, with bucketed digests already named as the fix (§10).
