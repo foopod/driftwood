@@ -34,7 +34,7 @@ class HomeThreadClassifierTest {
     @Test
     fun `a thread authored entirely by someone you listen to is in Listening`() {
         val root = myRoot("hello")
-        val result = HomeThreadClassifier.classify(listOf(root), listenScope = setOf(me))
+        val result = HomeThreadClassifier.classify(listOf(root), listenScope = setOf(me), myAuthor = null)
 
         assertEquals(setOf(root.threadRoot), rootIdsIn(result.listening))
         assertTrue(result.gossip.isEmpty())
@@ -43,7 +43,7 @@ class HomeThreadClassifierTest {
     @Test
     fun `a thread with no listened author anywhere in it is Gossip`() {
         val root = theirRoot("did you hear")
-        val result = HomeThreadClassifier.classify(listOf(root), listenScope = setOf(me))
+        val result = HomeThreadClassifier.classify(listOf(root), listenScope = setOf(me), myAuthor = null)
 
         assertTrue(result.listening.isEmpty())
         assertEquals(setOf(root.threadRoot), rootIdsIn(result.gossip))
@@ -55,7 +55,7 @@ class HomeThreadClassifierTest {
         // replying in a thread you follow doesn't fragment that conversation into Gossip.
         val root = myRoot("thoughts on the meetup?")
         val reply = theirReply(root.id, root.id, "count me in")
-        val result = HomeThreadClassifier.classify(listOf(root, reply), listenScope = setOf(me))
+        val result = HomeThreadClassifier.classify(listOf(root, reply), listenScope = setOf(me), myAuthor = null)
 
         assertEquals(setOf(root.threadRoot), rootIdsIn(result.listening))
         assertTrue(result.gossip.isEmpty())
@@ -64,8 +64,8 @@ class HomeThreadClassifierTest {
     @Test
     fun `removing the last listened author demotes a thread back to Gossip`() {
         val root = myRoot("hello")
-        val withListen = HomeThreadClassifier.classify(listOf(root), listenScope = setOf(me))
-        val withoutListen = HomeThreadClassifier.classify(listOf(root), listenScope = emptySet())
+        val withListen = HomeThreadClassifier.classify(listOf(root), listenScope = setOf(me), myAuthor = null)
+        val withoutListen = HomeThreadClassifier.classify(listOf(root), listenScope = emptySet(), myAuthor = null)
 
         assertEquals(setOf(root.threadRoot), rootIdsIn(withListen.listening))
         assertEquals(setOf(root.threadRoot), rootIdsIn(withoutListen.gossip))
@@ -75,7 +75,7 @@ class HomeThreadClassifierTest {
     fun `unrelated threads sort independently into their own tabs`() {
         val mine = myRoot("hello")
         val theirs = theirRoot("unrelated")
-        val result = HomeThreadClassifier.classify(listOf(mine, theirs), listenScope = setOf(me))
+        val result = HomeThreadClassifier.classify(listOf(mine, theirs), listenScope = setOf(me), myAuthor = null)
 
         assertEquals(setOf(mine.threadRoot), rootIdsIn(result.listening))
         assertEquals(setOf(theirs.threadRoot), rootIdsIn(result.gossip))
@@ -84,7 +84,7 @@ class HomeThreadClassifierTest {
     @Test
     fun `an author who is not you can also be listened to`() {
         val root = theirRoot("hello from a stranger you follow")
-        val result = HomeThreadClassifier.classify(listOf(root), listenScope = setOf(stranger))
+        val result = HomeThreadClassifier.classify(listOf(root), listenScope = setOf(stranger), myAuthor = null)
 
         assertEquals(setOf(root.threadRoot), rootIdsIn(result.listening))
     }
@@ -93,7 +93,7 @@ class HomeThreadClassifierTest {
     fun `with nobody listened to, everything held lands in Gossip`() {
         val mine = myRoot("hello")
         val theirs = theirRoot("unrelated")
-        val result = HomeThreadClassifier.classify(listOf(mine, theirs), listenScope = emptySet())
+        val result = HomeThreadClassifier.classify(listOf(mine, theirs), listenScope = emptySet(), myAuthor = null)
 
         assertTrue(result.listening.isEmpty())
         assertEquals(setOf(mine.threadRoot, theirs.threadRoot), rootIdsIn(result.gossip))
@@ -102,7 +102,7 @@ class HomeThreadClassifierTest {
     @Test
     fun `a preview carries the root's author, text and timestamp`() {
         val root = myRoot("thoughts on the meetup?")
-        val result = HomeThreadClassifier.classify(listOf(root), listenScope = setOf(me))
+        val result = HomeThreadClassifier.classify(listOf(root), listenScope = setOf(me), myAuthor = null)
 
         val summary = summaryFor(root.threadRoot, result.listening)
         assertEquals(me, summary.rootAuthor)
@@ -114,7 +114,7 @@ class HomeThreadClassifierTest {
     fun `a missing root leaves the preview's root fields null`() {
         val root = theirRoot("pruned away")
         val reply = theirReply(root.id, root.id, "what is left")
-        val result = HomeThreadClassifier.classify(listOf(reply), listenScope = emptySet())
+        val result = HomeThreadClassifier.classify(listOf(reply), listenScope = emptySet(), myAuthor = null)
 
         val summary = summaryFor(root.threadRoot, result.gossip)
         assertEquals(null, summary.rootAuthor)
@@ -126,7 +126,7 @@ class HomeThreadClassifierTest {
     fun `a reply from a listened author sets the latest-listened preview`() {
         val root = theirRoot("did you hear")
         val reply = myReply(root.id, root.id, "yes, and here's more")
-        val result = HomeThreadClassifier.classify(listOf(root, reply), listenScope = setOf(me))
+        val result = HomeThreadClassifier.classify(listOf(root, reply), listenScope = setOf(me), myAuthor = null)
 
         val summary = summaryFor(root.threadRoot, result.listening)
         assertEquals(me, summary.latestListenedAuthor)
@@ -139,7 +139,7 @@ class HomeThreadClassifierTest {
         // Root plus reply is the rule only when a *reply* exists — showing the root's own
         // author a second time as "the latest listened reply" would be a redundant no-op.
         val root = myRoot("hello")
-        val result = HomeThreadClassifier.classify(listOf(root), listenScope = setOf(me))
+        val result = HomeThreadClassifier.classify(listOf(root), listenScope = setOf(me), myAuthor = null)
 
         val summary = summaryFor(root.threadRoot, result.listening)
         assertEquals(null, summary.latestListenedAuthor)
@@ -153,7 +153,7 @@ class HomeThreadClassifierTest {
         // but pinned explicitly since it's exactly the invariant the two tabs rely on.
         val root = theirRoot("did you hear")
         val reply = theirReply(root.id, root.id, "not from me")
-        val result = HomeThreadClassifier.classify(listOf(root, reply), listenScope = setOf(me))
+        val result = HomeThreadClassifier.classify(listOf(root, reply), listenScope = setOf(me), myAuthor = null)
 
         val summary = summaryFor(root.threadRoot, result.gossip)
         assertEquals(null, summary.latestListenedAuthor)
@@ -164,9 +164,50 @@ class HomeThreadClassifierTest {
         val root = theirRoot("did you hear")
         val first = myReply(root.id, root.id, "first thought")
         val second = myReply(root.id, root.id, "actually, more importantly")
-        val result = HomeThreadClassifier.classify(listOf(root, first, second), listenScope = setOf(me))
+        val result = HomeThreadClassifier.classify(listOf(root, first, second), listenScope = setOf(me), myAuthor = null)
 
         val summary = summaryFor(root.threadRoot, result.listening)
         assertEquals("actually, more importantly", summary.latestListenedText)
+    }
+
+    @Test
+    fun `a thread you started lands in Listening, even with nobody listened to`() {
+        val root = myRoot("hello")
+        val result = HomeThreadClassifier.classify(listOf(root), listenScope = emptySet(), myAuthor = me)
+
+        assertEquals(setOf(root.threadRoot), rootIdsIn(result.listening))
+        assertTrue(result.gossip.isEmpty())
+    }
+
+    @Test
+    fun `a thread you only replied to also lands in Listening`() {
+        val root = theirRoot("did you hear")
+        val reply = myReply(root.id, root.id, "yes, actually")
+        val result = HomeThreadClassifier.classify(listOf(root, reply), listenScope = emptySet(), myAuthor = me)
+
+        assertEquals(setOf(root.threadRoot), rootIdsIn(result.listening))
+        assertTrue(result.gossip.isEmpty())
+    }
+
+    @Test
+    fun `without myAuthor, a thread with only your own messages is Gossip as before`() {
+        // Pins the default: this is opt-in behaviour, not something that happens by accident
+        // when a caller forgets to pass an identity.
+        val root = myRoot("hello")
+        val result = HomeThreadClassifier.classify(listOf(root), listenScope = emptySet(), myAuthor = null)
+
+        assertTrue(result.listening.isEmpty())
+        assertEquals(setOf(root.threadRoot), rootIdsIn(result.gossip))
+    }
+
+    @Test
+    fun `your own reply can also be the latest-listened preview`() {
+        val root = theirRoot("did you hear")
+        val reply = myReply(root.id, root.id, "yes, actually")
+        val result = HomeThreadClassifier.classify(listOf(root, reply), listenScope = emptySet(), myAuthor = me)
+
+        val summary = summaryFor(root.threadRoot, result.listening)
+        assertEquals(me, summary.latestListenedAuthor)
+        assertEquals("yes, actually", summary.latestListenedText)
     }
 }
