@@ -15,16 +15,15 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-// A tall viewport, per ThreadContentTest/SyncContentTest: the tab row plus a "Manage"
-// header sit above the list, and a short default viewport leaves later items — and their
-// click targets — positioned outside the root's laid-out bounds.
+// A tall viewport, per ThreadContentTest/SyncContentTest: the tab row sits above the list,
+// and a short default viewport leaves later items — and their click targets — positioned
+// outside the root's laid-out bounds.
 @Config(sdk = [36], qualifiers = "w400dp-h3000dp")
 class HomeContentTest {
 
     @get:Rule val compose = createComposeRule()
 
     private var openedThread: MessageId? = null
-    private var managedListening = false
 
     private fun summary(seed: Int, opening: String) =
         ThreadSummary(MessageId.of(ByteArray(32) { seed.toByte() }), opening, 1, seed.toLong(), rootHeld = true)
@@ -37,7 +36,6 @@ class HomeContentTest {
                 onCompose = {},
                 onSettings = {},
                 onSync = {},
-                onManageListening = { managedListening = true },
             )
         }
     }
@@ -87,24 +85,6 @@ class HomeContentTest {
         show(HomeUiState.Threads(listening = emptyList(), gossip = emptyList()))
 
         compose.onNodeWithText("Nobody you listen to has posted yet.").assertExists()
-    }
-
-    @Test
-    fun `manage listening list is offered on the Listening tab and calls through`() {
-        show(HomeUiState.Threads(listening = emptyList(), gossip = emptyList()))
-
-        compose.onNodeWithText("Manage listening list").performClick()
-
-        assertEquals(true, managedListening)
-    }
-
-    @Test
-    fun `manage listening list is not offered on the Gossip tab`() {
-        show(HomeUiState.Threads(listening = emptyList(), gossip = emptyList()))
-
-        compose.onNodeWithText("Gossip (0)").performClick()
-
-        compose.onNodeWithText("Manage listening list").assertDoesNotExist()
     }
 
     @Test

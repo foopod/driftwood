@@ -21,3 +21,6 @@ data class Compose(
 @Serializable data object Sync : NavKey
 
 @Serializable data object ListenList : NavKey
+
+/** One identity, addressed by its public key in hex. */
+@Serializable data class Contact(val authorHex: String) : NavKey

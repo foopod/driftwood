@@ -30,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onManageListening: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
@@ -41,6 +42,7 @@ fun SettingsScreen(
         onUsernameChange = viewModel::updateUsername,
         onSaveUsername = viewModel::saveUsername,
         onSyncWithDebugPeer = viewModel::syncWithDebugPeer,
+        onManageListening = onManageListening,
         modifier = modifier,
     )
 }
@@ -54,6 +56,7 @@ internal fun SettingsContent(
     onUsernameChange: (String) -> Unit,
     onSaveUsername: () -> Unit,
     onSyncWithDebugPeer: () -> Unit,
+    onManageListening: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -109,6 +112,18 @@ internal fun SettingsContent(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+
+            Section("Listening") {
+                Text(
+                    "Choose whose posts always land in the Listening tab, wherever they " +
+                        "turn up in the network.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(onClick = onManageListening, modifier = Modifier.fillMaxWidth()) {
+                    Text("Manage listening list")
+                }
             }
 
             Section("Storage") {

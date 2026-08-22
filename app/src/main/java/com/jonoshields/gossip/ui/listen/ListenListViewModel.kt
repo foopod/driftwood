@@ -33,8 +33,4 @@ class ListenListViewModel @Inject constructor(
     fun listenTo(author: AuthorId) {
         viewModelScope.launch { directory.listenTo(author) }
     }
-
-    fun stopListening(author: AuthorId) {
-        viewModelScope.launch { directory.stopListening(author) }
-    }
 }

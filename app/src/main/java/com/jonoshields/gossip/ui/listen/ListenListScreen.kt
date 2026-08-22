@@ -1,8 +1,8 @@
 package com.jonoshields.gossip.ui.listen
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -22,7 +22,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -34,6 +33,7 @@ import com.jonoshields.gossip.ui.common.AuthorName
 @Composable
 fun ListenListScreen(
     onBack: () -> Unit,
+    onOpenContact: (AuthorId) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: ListenListViewModel = hiltViewModel(),
 ) {
@@ -42,7 +42,7 @@ fun ListenListScreen(
         entries = entries,
         onBack = onBack,
         onListenTo = viewModel::listenTo,
-        onStopListening = viewModel::stopListening,
+        onOpenContact = onOpenContact,
         modifier = modifier,
     )
 }
@@ -53,7 +53,7 @@ internal fun ListenListContent(
     entries: List<ListenEntry>,
     onBack: () -> Unit,
     onListenTo: (AuthorId) -> Unit,
-    onStopListening: (AuthorId) -> Unit,
+    onOpenContact: (AuthorId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -82,14 +82,13 @@ internal fun ListenListContent(
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(entries, key = { it.author.toHex() }) { entry ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            AuthorName(entry.displayName)
-                            TextButton(onClick = { onStopListening(entry.author) }) { Text("Stop") }
-                        }
+                        // Same destination as tapping a name in a thread: change the
+                        // nickname, stop listening, or block — all one place, plan.md's
+                        // "confirm a key once, manage it from anywhere after" idea.
+                        AuthorName(
+                            entry.displayName,
+                            modifier = Modifier.fillMaxWidth().clickable { onOpenContact(entry.author) },
+                        )
                     }
                 }
             }

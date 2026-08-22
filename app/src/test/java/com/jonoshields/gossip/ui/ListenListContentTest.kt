@@ -30,7 +30,7 @@ class ListenListContentTest {
 
     private var backPressed = false
     private var listenedTo: AuthorId? = null
-    private var stoppedListening: AuthorId? = null
+    private var openedContact: AuthorId? = null
 
     private fun show(entries: List<ListenEntry>) {
         compose.setContent {
@@ -38,7 +38,7 @@ class ListenListContentTest {
                 entries = entries,
                 onBack = { backPressed = true },
                 onListenTo = { listenedTo = it },
-                onStopListening = { stoppedListening = it },
+                onOpenContact = { openedContact = it },
             )
         }
     }
@@ -51,15 +51,14 @@ class ListenListContentTest {
     }
 
     @Test
-    fun `an entry shows its display name and can be stopped`() {
+    fun `tapping an entry opens its contact actions`() {
         val entry = ListenEntry(someone, NameResolver.resolve(someone, nickname = "Sam", username = null))
         show(listOf(entry))
 
         compose.onNodeWithText("Sam").assertExists()
+        compose.onNodeWithText("Sam").performClick()
 
-        compose.onNodeWithText("Stop").performClick()
-
-        assertEquals(someone, stoppedListening)
+        assertEquals(someone, openedContact)
     }
 
     @Test

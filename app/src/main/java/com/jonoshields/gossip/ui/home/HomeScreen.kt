@@ -4,7 +4,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -41,12 +40,11 @@ fun HomeScreen(
     onCompose: () -> Unit,
     onSettings: () -> Unit,
     onSync: () -> Unit,
-    onManageListening: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    HomeContent(state, onOpenThread, onCompose, onSettings, onSync, onManageListening, modifier)
+    HomeContent(state, onOpenThread, onCompose, onSettings, onSync, modifier)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,7 +55,6 @@ internal fun HomeContent(
     onCompose: () -> Unit,
     onSettings: () -> Unit,
     onSync: () -> Unit,
-    onManageListening: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // 0 = Listening, 1 = Gossip (plan.md §6's two tabs). Not tied to HomeUiState, since which
@@ -100,11 +97,6 @@ internal fun HomeContent(
                         threads = state.listening,
                         emptyMessage = "Nobody you listen to has posted yet.",
                         onOpenThread = onOpenThread,
-                        header = {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                TextButton(onClick = onManageListening) { Text("Manage listening list") }
-                            }
-                        },
                     )
                 } else {
                     ThreadTab(
@@ -123,14 +115,12 @@ private fun ThreadTab(
     threads: List<ThreadSummary>,
     emptyMessage: String,
     onOpenThread: (MessageId) -> Unit,
-    header: (@Composable () -> Unit)? = null,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        header?.let { item { it() } }
         if (threads.isEmpty()) {
             item {
                 Text(
@@ -189,7 +179,7 @@ private fun ThreadRow(thread: ThreadSummary, onClick: () -> Unit) {
 @Preview(showBackground = true)
 @Composable
 private fun EmptyPreview() {
-    GossipTheme { HomeContent(HomeUiState.Empty, {}, {}, {}, {}, {}) }
+    GossipTheme { HomeContent(HomeUiState.Empty, {}, {}, {}, {}) }
 }
 
 @Preview(showBackground = true)
@@ -205,7 +195,7 @@ private fun ThreadsPreview() {
                     ThreadSummary(MessageId.of(ByteArray(32) { 2 }), "…and it kept going from there.", 4, 0, false),
                 ),
             ),
-            {}, {}, {}, {}, {},
+            {}, {}, {}, {},
         )
     }
 }

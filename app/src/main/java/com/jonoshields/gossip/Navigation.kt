@@ -10,8 +10,10 @@ import androidx.compose.ui.Modifier
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
+import com.jonoshields.gossip.core.model.AuthorId
 import com.jonoshields.gossip.core.model.MessageId
 import com.jonoshields.gossip.ui.compose.ComposeScreen
+import com.jonoshields.gossip.ui.contact.ContactScreen
 import com.jonoshields.gossip.ui.firstrun.FirstRunScreen
 import com.jonoshields.gossip.ui.home.HomeScreen
 import com.jonoshields.gossip.ui.listen.ListenListScreen
@@ -55,7 +57,6 @@ private fun MainNavigation() {
                     onCompose = { backStack.add(Compose()) },
                     onSettings = { backStack.add(Settings) },
                     onSync = { backStack.add(Sync) },
-                    onManageListening = { backStack.add(ListenList) },
                     modifier = Modifier.safeDrawingPadding(),
                 )
             }
@@ -81,6 +82,7 @@ private fun MainNavigation() {
             entry<Settings> {
                 SettingsScreen(
                     onBack = { backStack.removeLastOrNull() },
+                    onManageListening = { backStack.add(ListenList) },
                     modifier = Modifier.safeDrawingPadding(),
                 )
             }
@@ -92,6 +94,14 @@ private fun MainNavigation() {
             }
             entry<ListenList> {
                 ListenListScreen(
+                    onBack = { backStack.removeLastOrNull() },
+                    onOpenContact = { backStack.add(Contact(it.toHex())) },
+                    modifier = Modifier.safeDrawingPadding(),
+                )
+            }
+            entry<Contact> { key ->
+                ContactScreen(
+                    author = AuthorId.fromHex(key.authorHex),
                     onBack = { backStack.removeLastOrNull() },
                     modifier = Modifier.safeDrawingPadding(),
                 )
