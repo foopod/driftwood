@@ -115,12 +115,14 @@ internal class WantEntity(
 @Entity(tableName = "contacts")
 internal class ContactEntity(
     @PrimaryKey val author: AuthorId,
-    @ColumnInfo(name = "display_name") val displayName: String,
+    // Column keeps its original name — this is a vocabulary rename (petname -> nickname),
+    // not a schema change, and both dev devices hold real data under the old column name.
+    @ColumnInfo(name = "display_name") val nickname: String,
     @ColumnInfo(name = "added_at") val addedAt: Long,
 )
 
 /**
- * A claimed nickname we have heard for an identity (plan.md §3.5).
+ * A claimed username we have heard for an identity (plan.md §3.5).
  *
  * A cache of other people's claims, never authority. [claimedAt] is the author's own
  * timestamp and decides which claim is current; [lastSeenPost] drives ageing.
@@ -128,7 +130,9 @@ internal class ContactEntity(
 @Entity(tableName = "directory")
 internal class DirectoryEntity(
     @PrimaryKey val author: AuthorId,
-    val nickname: String,
+    // Column keeps its original name (nickname -> username is the vocabulary rename here)
+    // for the same reason as ContactEntity.nickname above.
+    @ColumnInfo(name = "nickname") val username: String,
     @ColumnInfo(name = "claimed_at") val claimedAt: Long,
     @ColumnInfo(name = "first_received") val firstReceived: Long,
     @ColumnInfo(name = "last_seen_post") val lastSeenPost: Long,

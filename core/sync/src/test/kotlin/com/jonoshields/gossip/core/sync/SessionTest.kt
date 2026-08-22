@@ -50,7 +50,7 @@ class SessionTest {
 
         sync(aliceStore, bobStore)
 
-        assertEquals("alice", bobStore.nicknameFor(alice.key))
+        assertEquals("alice", bobStore.usernameFor(alice.key))
     }
 
     @Test

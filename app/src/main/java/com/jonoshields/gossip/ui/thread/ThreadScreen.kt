@@ -57,7 +57,7 @@ fun ThreadScreen(
         onReply = onReply,
         onBack = onBack,
         onToggleStar = viewModel::toggleStar,
-        onSetPetname = viewModel::setPetname,
+        onSetNickname = viewModel::setNickname,
         onToggleListen = viewModel::toggleListen,
         onBlock = viewModel::block,
         modifier = modifier,
@@ -72,7 +72,7 @@ internal fun ThreadContent(
     onReply: (MessageId, MessageId?) -> Unit,
     onBack: () -> Unit,
     onToggleStar: () -> Unit,
-    onSetPetname: (AuthorId, String) -> Unit,
+    onSetNickname: (AuthorId, String) -> Unit,
     onToggleListen: (AuthorId) -> Unit,
     onBlock: (AuthorId) -> Unit,
     modifier: Modifier = Modifier,
@@ -119,7 +119,7 @@ internal fun ThreadContent(
                     ContactActionsBody(
                         displayName = state.nameOf(author),
                         isListening = author in state.listenScope,
-                        onSetPetname = { name -> onSetPetname(author, name) },
+                        onSetNickname = { name -> onSetNickname(author, name) },
                         onToggleListen = { onToggleListen(author) },
                         onBlock = {
                             onBlock(author)
@@ -149,7 +149,7 @@ internal fun ThreadContent(
 private fun ContactActionsBody(
     displayName: DisplayName,
     isListening: Boolean,
-    onSetPetname: (String) -> Unit,
+    onSetNickname: (String) -> Unit,
     onToggleListen: () -> Unit,
     onBlock: () -> Unit,
     onClose: () -> Unit,
@@ -179,9 +179,9 @@ private fun ContactActionsBody(
             }
         } else {
             ContactControls(
-                currentPetname = if (displayName.verified) displayName.label else null,
+                currentNickname = if (displayName.verified) displayName.label else null,
                 isListening = isListening,
-                onSetPetname = onSetPetname,
+                onSetNickname = onSetNickname,
                 onToggleListen = onToggleListen,
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

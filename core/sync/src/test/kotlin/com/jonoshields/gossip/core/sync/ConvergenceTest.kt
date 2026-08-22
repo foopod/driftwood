@@ -120,8 +120,8 @@ class ConvergenceTest {
 
         sync(aliceStore(), b)
 
-        assertEquals("carol", b.nicknameFor(carol.key))
-        assertEquals("Alice published no profile, so none can arrive", null, b.nicknameFor(alice.key))
+        assertEquals("carol", b.usernameFor(carol.key))
+        assertEquals("Alice published no profile, so none can arrive", null, b.usernameFor(alice.key))
     }
 
     @Test

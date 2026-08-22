@@ -127,7 +127,7 @@ class InMemorySyncStoreTest {
 
         store.apply(PhaseOutcome(emptyList(), listOf(profile), emptyMap()), clock)
 
-        assertEquals("carol", store.nicknameFor(carol))
+        assertEquals("carol", store.usernameFor(carol))
         assertEquals(1, store.readProfiles(setOf(carol)).size)
         assertTrue("nothing for an author we know nothing about", store.readProfiles(setOf(alice)).isEmpty())
     }

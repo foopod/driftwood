@@ -18,8 +18,8 @@ import com.jonoshields.gossip.core.store.DisplayName
 /**
  * How an identity appears anywhere in the app (plan.md §3.1).
  *
- * A **petname** — a name you assigned after confirming someone's key in person — is plain
- * text with no chip. A **claimed** name sits on a colour derived from the key, with the
+ * A **nickname** — a name you assigned after confirming someone's key in person — is plain
+ * text with no chip. A **claimed username** sits on a colour derived from the key, with the
  * fingerprint beside it.
  *
  * The two must never look alike: "I vouched for this person" and "this person says so" are

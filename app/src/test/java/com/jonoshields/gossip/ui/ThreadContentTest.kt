@@ -44,7 +44,7 @@ class ThreadContentTest {
     private var repliedToRoot: MessageId? = null
     private var repliedToParent: MessageId? = null
     private var parentWasProvided = false
-    private var petnameSet: Pair<com.jonoshields.gossip.core.model.AuthorId, String>? = null
+    private var nicknameSet: Pair<com.jonoshields.gossip.core.model.AuthorId, String>? = null
     private var listenToggled: com.jonoshields.gossip.core.model.AuthorId? = null
     private var blocked: com.jonoshields.gossip.core.model.AuthorId? = null
 
@@ -56,7 +56,7 @@ class ThreadContentTest {
                 onReply = { r, p -> repliedToRoot = r; repliedToParent = p; parentWasProvided = true },
                 onBack = {},
                 onToggleStar = {},
-                onSetPetname = { author, name -> petnameSet = author to name },
+                onSetNickname = { author, name -> nicknameSet = author to name },
                 onToggleListen = { author -> listenToggled = author },
                 onBlock = { author -> blocked = author },
             )
@@ -151,29 +151,29 @@ class ThreadContentTest {
         // Colour does the glancing, but it is unreadable for a colour-blind user and is
         // only a few bits anyway, so the fingerprint must be on screen as well.
         val r = root("hello")
-        val claimed = NameResolver.resolve(me, petname = null, claimed = "jono")
-        show(loaded(r.id, listOf(r), names = mapOf(me to claimed)))
+        val username = NameResolver.resolve(me, nickname = null, username = "jono")
+        show(loaded(r.id, listOf(r), names = mapOf(me to username)))
 
         compose.onNodeWithText("jono").assertExists()
-        compose.onNodeWithText(claimed.fingerprint).assertExists()
+        compose.onNodeWithText(username.fingerprint).assertExists()
     }
 
     @Test
-    fun `a petname is shown without a fingerprint`() {
+    fun `a nickname is shown without a fingerprint`() {
         // The visible difference between "I vouched for this person" and "they say so".
         val r = root("hello")
-        val petname = NameResolver.resolve(me, petname = "Dad", claimed = null)
-        show(loaded(r.id, listOf(r), names = mapOf(me to petname)))
+        val nickname = NameResolver.resolve(me, nickname = "Dad", username = null)
+        show(loaded(r.id, listOf(r), names = mapOf(me to nickname)))
 
         compose.onNodeWithText("Dad").assertExists()
-        compose.onNodeWithText(petname.fingerprint).assertDoesNotExist()
+        compose.onNodeWithText(nickname.fingerprint).assertDoesNotExist()
     }
 
     @Test
-    fun `a petname you assigned is shown alone`() {
+    fun `a nickname you assigned is shown alone`() {
         val r = root("hello")
-        val petname = NameResolver.resolve(me, petname = "Dad", claimed = "someone else")
-        show(loaded(r.id, listOf(r), names = mapOf(me to petname)))
+        val nickname = NameResolver.resolve(me, nickname = "Dad", username = "someone else")
+        show(loaded(r.id, listOf(r), names = mapOf(me to nickname)))
 
         compose.onNodeWithText("Dad").assertExists()
     }
@@ -213,7 +213,7 @@ class ThreadContentTest {
 
         compose.onNodeWithText(NameResolver.fingerprint(them)).performClick()
 
-        compose.onNodeWithText("Save petname").assertExists()
+        compose.onNodeWithText("Save nickname").assertExists()
     }
 
     @Test
@@ -223,20 +223,20 @@ class ThreadContentTest {
 
         compose.onNodeWithText(NameResolver.fingerprint(me)).performClick()
 
-        compose.onNodeWithText("Save petname").assertDoesNotExist()
+        compose.onNodeWithText("Save nickname").assertDoesNotExist()
     }
 
     @Test
-    fun `saving a petname calls through with the typed name`() {
+    fun `saving a nickname calls through with the typed name`() {
         val r = theirRoot("hello")
         show(loaded(r.id, listOf(r)), myAuthor = me)
         compose.onNodeWithText(NameResolver.fingerprint(them)).performClick()
 
-        compose.onNodeWithText("Petname").performTextInput("Sam")
-        compose.onNodeWithText("Save petname").performClick()
+        compose.onNodeWithText("Nickname").performTextInput("Sam")
+        compose.onNodeWithText("Save nickname").performClick()
 
-        assertEquals(them, petnameSet?.first)
-        assertEquals("Sam", petnameSet?.second)
+        assertEquals(them, nicknameSet?.first)
+        assertEquals("Sam", nicknameSet?.second)
     }
 
     @Test
@@ -279,6 +279,6 @@ class ThreadContentTest {
         compose.onNodeWithText("Cancel").performClick()
 
         assertNull(blocked)
-        compose.onNodeWithText("Save petname").assertExists()
+        compose.onNodeWithText("Save nickname").assertExists()
     }
 }

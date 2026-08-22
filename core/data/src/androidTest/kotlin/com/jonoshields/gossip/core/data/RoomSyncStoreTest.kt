@@ -233,7 +233,7 @@ class RoomSyncStoreTest {
     fun aProfileArrivingWithContentBecomesAReadableName() = runTest {
         store.apply(PhaseOutcome(emptyList(), listOf(alice.profile(now - 1_000)), emptyMap()), now)
 
-        assertEquals("alice", database.directory().find(alice.key)!!.nickname)
+        assertEquals("alice", database.directory().find(alice.key)!!.username)
         assertNotNull("the signed record is kept so it can be relayed on", store.readProfiles(setOf(alice.key)).singleOrNull())
     }
 

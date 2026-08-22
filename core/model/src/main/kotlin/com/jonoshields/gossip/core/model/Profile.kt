@@ -21,7 +21,7 @@ const val PROFILE_FORMAT_VERSION: Int = 1
  */
 class Profile internal constructor(
     val author: AuthorId,
-    val nickname: String,
+    val username: String,
     val timestampMillis: Long,
     signature: ByteArray,
     val version: Int = PROFILE_FORMAT_VERSION,
@@ -32,17 +32,17 @@ class Profile internal constructor(
 
     internal fun unsafeSignature(): ByteArray = rawSignature
 
-    override fun toString(): String = "Profile(${author.toHex().take(8)}… = \"$nickname\")"
+    override fun toString(): String = "Profile(${author.toHex().take(8)}… = \"$username\")"
 
     companion object {
         /** Assembles without checking the signature. For the verifier and for fixtures. */
         fun unverified(
             author: AuthorId,
-            nickname: String,
+            username: String,
             timestampMillis: Long,
             signature: ByteArray,
             version: Int = PROFILE_FORMAT_VERSION,
-        ) = Profile(author, nickname, timestampMillis, signature, version)
+        ) = Profile(author, username, timestampMillis, signature, version)
     }
 }
 
@@ -56,7 +56,7 @@ sealed interface ProfileVerifyResult {
  * binary layout, same strict decoding — so there is one serialization idea in the system
  * rather than two.
  *
- * Field order: `v`, `author`, `nickname`, `timestamp`. Wire form is `sig || preimage`; there
+ * Field order: `v`, `author`, `username`, `timestamp`. Wire form is `sig || preimage`; there
  * is no id to carry, because profiles are keyed by author rather than content-addressed.
  */
 object ProfileCodec {
@@ -68,11 +68,11 @@ object ProfileCodec {
 
     fun encodePreimage(
         author: AuthorId,
-        nickname: String,
+        username: String,
         timestampMillis: Long,
         version: Int = PROFILE_FORMAT_VERSION,
     ): ByteArray {
-        val nameBytes = nickname.toByteArray(StandardCharsets.UTF_8)
+        val nameBytes = username.toByteArray(StandardCharsets.UTF_8)
         val buffer = ByteBuffer.allocate(
             2 + VERSION_FIELD_LENGTH + 2 + ID_LENGTH + 2 + nameBytes.size + 2 + TIMESTAMP_FIELD_LENGTH
         )
@@ -89,14 +89,14 @@ object ProfileCodec {
 
     fun encode(profile: Profile): ByteArray =
         profile.unsafeSignature() + encodePreimage(
-            profile.author, profile.nickname, profile.timestampMillis, profile.version
+            profile.author, profile.username, profile.timestampMillis, profile.version
         )
 
-    fun create(author: AuthorId, rawNickname: String, timestampMillis: Long, signer: Signer): Profile {
-        val nickname = Nickname.validate(rawNickname).getOrThrow()
+    fun create(author: AuthorId, rawUsername: String, timestampMillis: Long, signer: Signer): Profile {
+        val username = Username.validate(rawUsername).getOrThrow()
         require(timestampMillis >= 0) { "timestamp must not be negative" }
-        val preimage = encodePreimage(author, nickname, timestampMillis)
-        return Profile(author, nickname, timestampMillis, signer.sign(preimage))
+        val preimage = encodePreimage(author, username, timestampMillis)
+        return Profile(author, username, timestampMillis, signer.sign(preimage))
     }
 
     /** Same order as §3.2: decode, structural checks, then the expensive signature check. */
@@ -110,7 +110,7 @@ object ProfileCodec {
         val reader = FieldReader(preimage)
         val version = reader.next(VERSION_FIELD_LENGTH) ?: return malformed("version field")
         val author = reader.next(ID_LENGTH) ?: return malformed("author field")
-        val nameBytes = reader.next() ?: return malformed("nickname field")
+        val nameBytes = reader.next() ?: return malformed("username field")
         val timestamp = reader.next(TIMESTAMP_FIELD_LENGTH) ?: return malformed("timestamp field")
         if (reader.hasRemaining()) return malformed("${reader.remaining()} trailing bytes")
 
@@ -123,13 +123,13 @@ object ProfileCodec {
         val name = try {
             decodeStrictUtf8(nameBytes)
         } catch (e: CharacterCodingException) {
-            return malformed("nickname is not valid UTF-8")
+            return malformed("username is not valid UTF-8")
         }
-        // The received bytes must already be a valid, normalised nickname. Repairing one
+        // The received bytes must already be a valid, normalised username. Repairing one
         // would change the bytes the signature was made over.
-        val validated = Nickname.validate(name)
+        val validated = Username.validate(name)
         if (validated.isFailure || validated.getOrThrow() != name) {
-            return malformed("nickname is not acceptable as sent")
+            return malformed("username is not acceptable as sent")
         }
 
         val authorId = AuthorId.of(author)

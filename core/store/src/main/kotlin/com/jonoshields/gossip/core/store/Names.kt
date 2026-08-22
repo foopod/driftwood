@@ -8,7 +8,7 @@ const val DIRECTORY_TTL_MILLIS: Long = 180L * 24 * 60 * 60 * 1000
 /**
  * How an identity should be shown (plan.md §3.1, §6).
  *
- * [verified] means *you* bound this name to this key — a petname from your contacts. It is
+ * [verified] means *you* bound this name to this key — a nickname from your contacts. It is
  * the only kind of name that can be trusted, and the only kind shown without a fingerprint.
  */
 data class DisplayName(
@@ -44,15 +44,15 @@ object NameResolver {
     }
 
     /**
-     * [petname] is what you called them; [claimed] is what they call themselves. A petname
-     * always wins, and where there is neither, the key stands for itself.
+     * [nickname] is what you called them; [username] is what they call themselves. A
+     * nickname always wins, and where there is neither, the key stands for itself.
      */
-    fun resolve(author: AuthorId, petname: String?, claimed: String?): DisplayName {
+    fun resolve(author: AuthorId, nickname: String?, username: String?): DisplayName {
         val fingerprint = fingerprint(author)
         val hue = hue(author)
         return when {
-            petname != null -> DisplayName(petname, fingerprint, verified = true, hue = hue)
-            claimed != null -> DisplayName(claimed, fingerprint, verified = false, hue = hue)
+            nickname != null -> DisplayName(nickname, fingerprint, verified = true, hue = hue)
+            username != null -> DisplayName(username, fingerprint, verified = false, hue = hue)
             else -> DisplayName(null, fingerprint, verified = false, hue = hue)
         }
     }
@@ -64,7 +64,7 @@ object NameResolver {
      * sharing a name, without making every line of the UI carry hex. It is **not** a
      * defence. There are only a handful of reliably distinguishable hues, so matching a
      * target's colour costs an attacker a few dozen throwaway keypairs — and keypairs are
-     * free (§4). The fingerprint beside it and the petname above it are what carry weight.
+     * free (§4). The fingerprint beside it and the nickname above it are what carry weight.
      *
      * Drawn from bytes the fingerprint does not display, so the two channels are
      * independent: an impersonator has to match both, not one.
@@ -79,7 +79,7 @@ object NameResolver {
 /** One row of the name directory — a cache of other people's claims (plan.md §3.3). */
 data class DirectoryEntry(
     val author: AuthorId,
-    val nickname: String,
+    val username: String,
     val lastSeenPost: Long,
 )
 

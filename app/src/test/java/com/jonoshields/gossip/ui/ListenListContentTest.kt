@@ -52,7 +52,7 @@ class ListenListContentTest {
 
     @Test
     fun `an entry shows its display name and can be stopped`() {
-        val entry = ListenEntry(someone, NameResolver.resolve(someone, petname = "Sam", claimed = null))
+        val entry = ListenEntry(someone, NameResolver.resolve(someone, nickname = "Sam", username = null))
         show(listOf(entry))
 
         compose.onNodeWithText("Sam").assertExists()

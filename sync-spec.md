@@ -59,7 +59,7 @@ identity an equal share of the space, so shouting louder wins nothing. Blocking 
 what structure cannot fix, and it is deliberately *personal*: local, private, never announced,
 never imposed on anyone else.
 
-**Nobody owns a name.** There is no registry, so a nickname is a claim rather than an
+**Nobody owns a name.** There is no registry, so a username is a claim rather than an
 identifier, and two people can honestly both be "sam". The only trustworthy name is one you
 assigned yourself, to a key you confirmed in person. Everything the protocol does with names
 follows from taking that seriously.
@@ -524,7 +524,7 @@ something other than silence.
 
 *What none of this defends against:* someone standing in front of you claiming to be someone
 else. Identities are free, so a short fingerprint can be ground to match in minutes and a
-colour in a few dozen attempts. The only real answer is a petname — a name you assigned to a
+colour in a few dozen attempts. The only real answer is a nickname — a name you assigned to a
 key you confirmed in person — which is why the design keeps steering people toward doing that
 for the handful of identities they actually care about.
 
@@ -540,7 +540,7 @@ for the handful of identities they actually care about.
 | `MAX_FRAME_BYTES` | 4 MiB | checked, both bounds, before allocation |
 | `WANT_TTL` | 10 | fruitless syncs before a want is dropped |
 | `WINDOW_DEFAULT` | 90 days | user-configurable |
-| `NICKNAME_MAX_CHARS` | 32 | after NFC |
+| `USERNAME_MAX_CHARS` | 32 | after NFC |
 | `MSG_MAX_CHARS` | 320 | after NFC |
 
 ---

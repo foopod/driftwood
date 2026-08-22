@@ -62,30 +62,30 @@ class DirectoryRepositoryTest {
         ProfileCodec.encode(ProfileCodec.create(stranger, name, at, strangerSigner))
 
     @Test
-    fun ownNicknameIsSignedAndStored() = runTest {
+    fun ownUsernameIsSignedAndStored() = runTest {
         val repository = directory()
 
-        val profile = repository.setMyNickname("jono").getOrThrow()
+        val profile = repository.setMyUsername("jono").getOrThrow()
 
-        assertEquals("jono", profile.nickname)
+        assertEquals("jono", profile.username)
         assertEquals(identity.publicKey(), profile.author)
-        assertEquals("jono", repository.myProfile().getOrThrow()?.nickname)
+        assertEquals("jono", repository.myProfile().getOrThrow()?.username)
     }
 
     @Test
-    fun ownNicknameCanBeChanged() = runTest {
+    fun ownUsernameCanBeChanged() = runTest {
         val repository = directory()
-        repository.setMyNickname("jono").getOrThrow()
+        repository.setMyUsername("jono").getOrThrow()
         now += 1000
-        repository.setMyNickname("jonathan").getOrThrow()
+        repository.setMyUsername("jonathan").getOrThrow()
 
-        assertEquals("jonathan", repository.myProfile().getOrThrow()?.nickname)
+        assertEquals("jonathan", repository.myProfile().getOrThrow()?.username)
     }
 
     @Test
-    fun anUnusableNicknameIsATypedErrorNotACrash() = runTest {
+    fun anUnusableUsernameIsATypedErrorNotACrash() = runTest {
         val repository = directory()
-        val error = repository.setMyNickname("").exceptionOrNull()
+        val error = repository.setMyUsername("").exceptionOrNull()
         assertTrue("got $error", error is DataError.InvalidMessage)
     }
 
@@ -95,7 +95,7 @@ class DirectoryRepositoryTest {
 
         val ingested = repository.ingest(strangerClaims("sam", now), now).getOrThrow()
 
-        assertEquals("sam", ingested?.nickname)
+        assertEquals("sam", ingested?.username)
         assertEquals("sam", repository.observeNames().first()[stranger]?.label)
     }
 
@@ -142,12 +142,12 @@ class DirectoryRepositoryTest {
         now += 10_000
         val later = repository.ingest(strangerClaims("second", now), now).getOrThrow()
 
-        assertEquals("second", later?.nickname)
+        assertEquals("second", later?.username)
         assertEquals("second", repository.observeNames().first()[stranger]?.label)
     }
 
     @Test
-    fun aPetnameWinsOverAClaimedName() = runTest {
+    fun aNicknameWinsOverAClaimedName() = runTest {
         val repository = directory()
         repository.ingest(strangerClaims("definitely not dad", now), now).getOrThrow()
         database.contacts().upsert(ContactEntity(stranger, "Dad", now))
@@ -192,7 +192,7 @@ class DirectoryRepositoryTest {
         // Your own messages, so the author is you — held content keeps the name alive well
         // past the TTL.
         val repository = directory()
-        repository.setMyNickname("jono").getOrThrow()
+        repository.setMyUsername("jono").getOrThrow()
         messages().post("something").getOrThrow()
 
         now += com.jonoshields.gossip.core.store.DIRECTORY_TTL_MILLIS + 1
@@ -216,7 +216,7 @@ class DirectoryRepositoryTest {
         // You are not trying to establish whether you are really you, so your own messages
         // should not carry the apparatus for doing so.
         val repository = directory()
-        repository.setMyNickname("jono").getOrThrow()
+        repository.setMyUsername("jono").getOrThrow()
 
         val mine = repository.observeNames().first().getValue(identity.publicKey())
 
@@ -234,11 +234,11 @@ class DirectoryRepositoryTest {
     }
 
     @Test
-    fun settingAPetnameMakesTheDisplayNameVerified() = runTest {
+    fun settingANicknameMakesTheDisplayNameVerified() = runTest {
         val repository = directory()
         repository.ingest(strangerClaims("definitely not dad", now), now).getOrThrow()
 
-        repository.setPetname(stranger, "Dad").getOrThrow()
+        repository.setNickname(stranger, "Dad").getOrThrow()
 
         val name = repository.observeNames().first().getValue(stranger)
         assertTrue(name.verified)
@@ -246,9 +246,9 @@ class DirectoryRepositoryTest {
     }
 
     @Test
-    fun anUnusablePetnameIsATypedErrorNotACrash() = runTest {
+    fun anUnusableNicknameIsATypedErrorNotACrash() = runTest {
         val repository = directory()
-        val error = repository.setPetname(stranger, "").exceptionOrNull()
+        val error = repository.setNickname(stranger, "").exceptionOrNull()
         assertTrue("got $error", error is DataError.InvalidMessage)
     }
 

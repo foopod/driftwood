@@ -21,10 +21,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class SettingsUiState(
-    val nickname: String? = null,
-    val nicknameDraft: String = "",
-    val nicknameError: String? = null,
-    val nicknameSaved: Boolean = false,
+    val username: String? = null,
+    val usernameDraft: String = "",
+    val usernameError: String? = null,
+    val usernameSaved: Boolean = false,
     val publicKey: String? = null,
     val messageCount: Int = 0,
     val windowDays: Long = 0,
@@ -68,33 +68,33 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             val mine = directory.myProfile().getOrNull()
             _uiState.update {
-                it.copy(nickname = mine?.nickname, nicknameDraft = mine?.nickname.orEmpty())
+                it.copy(username = mine?.username, usernameDraft = mine?.username.orEmpty())
             }
         }
     }
 
-    fun updateNickname(value: String) {
-        _uiState.update { it.copy(nicknameDraft = value, nicknameError = null, nicknameSaved = false) }
+    fun updateUsername(value: String) {
+        _uiState.update { it.copy(usernameDraft = value, usernameError = null, usernameSaved = false) }
     }
 
     /**
      * Signs a fresh claim. Names are mutable by design — latest claim wins (plan.md §3.5) —
      * so this is the ordinary path, not an exceptional one.
      */
-    fun saveNickname() {
-        val draft = _uiState.value.nicknameDraft
+    fun saveUsername() {
+        val draft = _uiState.value.usernameDraft
         if (draft.isBlank()) return
         viewModelScope.launch {
-            directory.setMyNickname(draft)
+            directory.setMyUsername(draft)
                 .onSuccess { profile ->
                     _uiState.update {
-                        it.copy(nickname = profile.nickname, nicknameSaved = true, nicknameError = null)
+                        it.copy(username = profile.username, usernameSaved = true, usernameError = null)
                     }
                 }
                 .onFailure { failure ->
                     _uiState.update {
                         it.copy(
-                            nicknameError = failure.cause?.message
+                            usernameError = failure.cause?.message
                                 ?: failure.message ?: "That name can't be used",
                         )
                     }

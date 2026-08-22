@@ -72,10 +72,10 @@ class InMemorySyncStore(
 
     fun holds(id: MessageId): Boolean = id in messages
 
-    fun nicknameFor(author: AuthorId): String? =
+    fun usernameFor(author: AuthorId): String? =
         profiles[author]?.let { ProfileCodec.verify(it) }
             ?.let { it as? com.jonoshields.gossip.core.model.ProfileVerifyResult.Valid }
-            ?.profile?.nickname
+            ?.profile?.username
 
     val outstandingWants: Set<MessageId> get() = wantList.keys.toSet()
 

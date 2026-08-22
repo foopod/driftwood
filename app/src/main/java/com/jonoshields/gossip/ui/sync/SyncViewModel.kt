@@ -38,8 +38,8 @@ class SyncViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
-     * Names and listen scope, for the confirmation step's petname/listen controls — the
-     * moment plan.md actually calls out for assigning a petname, since you are looking at a
+     * Names and listen scope, for the confirmation step's nickname/listen controls — the
+     * moment plan.md actually calls out for assigning a nickname, since you are looking at a
      * key you just confirmed in person. Independent of Confirm/Decline: recording either one
      * doesn't need the sync to actually proceed.
      */
@@ -61,8 +61,8 @@ class SyncViewModel @Inject constructor(
 
     fun reset() = coordinator.reset()
 
-    fun setPetname(author: AuthorId, petname: String) {
-        viewModelScope.launch { directory.setPetname(author, petname) }
+    fun setNickname(author: AuthorId, nickname: String) {
+        viewModelScope.launch { directory.setNickname(author, nickname) }
     }
 
     fun toggleListen(author: AuthorId) {

@@ -30,8 +30,8 @@ sealed interface FirstRunUiState {
      * the key, and a name is a label on it, so nothing about naming may delay backing the
      * key up.
      */
-    data class ChooseNickname(
-        val nickname: String = "",
+    data class ChooseUsername(
+        val username: String = "",
         val error: String? = null,
         val saving: Boolean = false,
         /**
@@ -41,7 +41,7 @@ sealed interface FirstRunUiState {
          */
         val restoring: Boolean = false,
     ) : FirstRunUiState {
-        val canSubmit: Boolean get() = !saving && nickname.isNotBlank()
+        val canSubmit: Boolean get() = !saving && username.isNotBlank()
     }
 
     /** Typing a 24-word phrase back in to recover an existing identity. */

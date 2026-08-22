@@ -22,41 +22,41 @@ import androidx.compose.ui.unit.dp
 
 /**
  * What you can privately do about one identity, wherever you're currently looking at it: a
- * petname — plan.md §3.1's only kind of name shown without a fingerprint, because it's a
+ * nickname — plan.md §3.1's only kind of name shown without a fingerprint, because it's a
  * claim *you* made after confirming the key rather than one the key made about itself — and
  * whether you listen to them.
  *
  * Shared between tapping a name in a thread and the sync confirmation screen, the moment
- * plan.md actually calls out for assigning a petname: "you confirmed a key in person once,
+ * plan.md actually calls out for assigning a nickname: "you confirmed a key in person once,
  * and your local name for it is authoritative from then on."
  */
 @Composable
 fun ContactControls(
-    currentPetname: String?,
+    currentNickname: String?,
     isListening: Boolean,
-    onSetPetname: (String) -> Unit,
+    onSetNickname: (String) -> Unit,
     onToggleListen: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Keyed on currentPetname so a save (or a different identity entirely) resets the draft,
+    // Keyed on currentNickname so a save (or a different identity entirely) resets the draft,
     // while typing in between doesn't fight the remembered value.
-    var draft by rememberSaveable(currentPetname) { mutableStateOf(currentPetname.orEmpty()) }
+    var draft by rememberSaveable(currentNickname) { mutableStateOf(currentNickname.orEmpty()) }
 
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
             value = draft,
             onValueChange = { draft = it },
-            label = { Text("Petname") },
+            label = { Text("Nickname") },
             placeholder = { Text("What you call them") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
         OutlinedButton(
-            onClick = { onSetPetname(draft) },
-            enabled = draft.isNotBlank() && draft != currentPetname,
+            onClick = { onSetNickname(draft) },
+            enabled = draft.isNotBlank() && draft != currentNickname,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Save petname")
+            Text("Save nickname")
         }
 
         Row(

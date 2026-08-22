@@ -37,7 +37,7 @@ sealed interface ThreadUiState {
          * is never attributed to nothing.
          */
         fun nameOf(author: AuthorId): DisplayName =
-            names[author] ?: NameResolver.resolve(author, petname = null, claimed = null)
+            names[author] ?: NameResolver.resolve(author, nickname = null, username = null)
     }
 }
 
@@ -84,8 +84,8 @@ class ThreadViewModel @Inject constructor(
         viewModelScope.launch { repository.setThreadFavourite(id, !current) }
     }
 
-    fun setPetname(author: AuthorId, petname: String) {
-        viewModelScope.launch { directory.setPetname(author, petname) }
+    fun setNickname(author: AuthorId, nickname: String) {
+        viewModelScope.launch { directory.setNickname(author, nickname) }
     }
 
     fun toggleListen(author: AuthorId) {

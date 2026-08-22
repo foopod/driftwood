@@ -183,7 +183,7 @@ private fun HeldRow.toHeldMessage() = HeldMessage(id, author, threadRoot, effect
 private fun com.jonoshields.gossip.core.model.Profile.toDirectoryEntity(receivedAtMillis: Long) =
     DirectoryEntity(
         author = author,
-        nickname = nickname,
+        username = username,
         claimedAt = timestampMillis,
         firstReceived = receivedAtMillis,
         lastSeenPost = receivedAtMillis,

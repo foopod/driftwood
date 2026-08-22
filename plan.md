@@ -83,25 +83,25 @@ unclear, resolve it back to these.
 
 **Names: two kinds, never blurred.**
 
-| | Petname | Claimed nickname |
+| | Nickname | Claimed username |
 |---|---|---|
 | Set by | **you** | its owner |
 | Travels | never | yes, signed by its owner |
 | Trust | trustworthy — you bound that name to that key yourself | a claim, nothing more |
 | Lives in | `contacts` | `directory` (§3.5) |
 
-- A **petname** is what you choose to call someone after confirming their key in person
+- A **nickname** is what you choose to call someone after confirming their key in person
   (§6, QR exchange). It is local, and it is the only kind of name that can be trusted.
-- A **claimed nickname** is self-asserted, signed by the key it belongs to, and propagates
+- A **claimed username** is self-asserted, signed by the key it belongs to, and propagates
   through sync so that strangers in the gossip tier are readable rather than hex.
 
 - **Collision is the default outcome, not an edge case.** Nothing stops two keys claiming
-  the same nickname, and in an open network you should expect exactly that, including
+  the same username, and in an open network you should expect exactly that, including
   deliberately. This is Zooko's triangle — human-meaningful, decentralised, secure: pick
   two. The design keeps *decentralised* and *secure*, so names cannot be identifiers.
-- Because the nickname is signed by its own key, a relaying peer cannot rewrite it; the
+- Because the username is signed by its own key, a relaying peer cannot rewrite it; the
   worst a peer can do is withhold it.
-- **Display rule (§6): a petname always wins.** A petname is plain text. A claimed nickname
+- **Display rule (§6): a nickname always wins.** A nickname is plain text. A claimed username
   sits on a **colour derived from the key**, with a short fingerprint beside it. The two must
   never look alike: "I vouched for this person" and "this person says so" are different
   claims, and the difference is structural rather than a matter of shading.
@@ -241,8 +241,8 @@ verify that should not. Decode to *inspect* the fields; hash and verify the *rec
   you have actually seen — see §4.)
 - **Want-list** — orphan parent-ids you'd accept if a peer has them; each entry has a TTL.
   Parents only; roots are never wanted (§3.2).
-- **Directory** — every identity whose claimed nickname you have heard, from anywhere:
-  `author`, `nickname`, `claimed_at`, `first_received`, `last_seen_post`. Purely a cache of
+- **Directory** — every identity whose claimed username you have heard, from anywhere:
+  `author`, `username`, `claimed_at`, `first_received`, `last_seen_post`. Purely a cache of
   other people's claims — losing it costs readability, never integrity.
 - **Storage config** — an overall storage budget plus the three partition caps
   (`listen` / `context` / `gossip`), derived from the default split unless a power user
@@ -271,7 +271,7 @@ one-line change. The values are deliberate starting points, not researched optim
 | `CONTEXT_SEND_CAP` | 1000 | Max context sent per session. Starting point; revisit in M2 against observed sizes. |
 | `GOSSIP_INTAKE_CAP` | 1000 | Max gossip accepted per session. |
 | `VERIFY_FAIL_CUTOFF` | 20 | Rejected (unverifiable) messages from one peer in one session before the session is aborted. |
-| `NICKNAME_MAX_CHARS` | 32 | Unicode scalar values after NFC, like `MSG_MAX_CHARS`. |
+| `USERNAME_MAX_CHARS` | 32 | Unicode scalar values after NFC, like `MSG_MAX_CHARS`. |
 | `DIRECTORY_TTL` | 180 days | Since `last_seen_post`, before a name ages out. Deliberately longer than `WINDOW_DEFAULT` so a partly-pruned thread still shows who said what. |
 | `MIN_SDK` | 33 (Android 13) | Set by Wi-Fi Direct + `NEARBY_WIFI_DEVICES`/`neverForLocation`; API ≤ 32 would force a location permission. See §7. |
 
@@ -285,16 +285,16 @@ every message that identity ever wrote.
 |---|---|
 | `v` | Format version. `1`. |
 | `author` | The key making the claim (32 bytes). Also the primary key — a profile is not content-addressed, because it is mutable by design. |
-| `nickname` | UTF-8, **max 32 characters** (Unicode scalar values, NFC-normalised, counted after normalising, exactly as `text` in §3.2). |
+| `username` | UTF-8, **max 32 characters** (Unicode scalar values, NFC-normalised, counted after normalising, exactly as `text` in §3.2). |
 | `timestamp` | Author-claimed time. Untrusted; see below. |
 | `sig` | Ed25519 over the canonical preimage. |
 
 **Canonical form** follows §3.2 exactly — same length-prefixed binary encoding, same field
 discipline, same strict decoding — so there is one serialization idea in the system rather
-than two. Field order: `v`, `author`, `nickname`, `timestamp`. There is no `id`: profiles are
+than two. Field order: `v`, `author`, `username`, `timestamp`. There is no `id`: profiles are
 keyed by `author`.
 
-**Nickname validation (on create and on ingest).** NFC-normalise, then count code points
+**Username validation (on create and on ingest).** NFC-normalise, then count code points
 against the cap. Reject: unpaired surrogates; any Unicode **control, format or bidi-override**
 character; leading or trailing whitespace; an empty result.
 
@@ -451,7 +451,7 @@ is kept while **any** of these hold:
 
 - the author is in your **listen list** — immune, since a name you deliberately follow is
   the last one you would want to lose;
-- the author is a **contact** (you have a petname for them anyway);
+- the author is a **contact** (you have a nickname for them anyway);
 - you still hold at least one message from them.
 
 Otherwise it ages out `DIRECTORY_TTL` after `last_seen_post`. Keeping names a while *past*
@@ -649,11 +649,11 @@ Keep it calm and honest about partial data. Text-only keeps the surface small.
   is allowed against any `root` id you hold — you need not hold the root message or the rest
   of the thread, and "commenting on gossip whose origin you didn't see" is an intended
   feature, not an edge case.
-- **Names:** a petname you assigned always wins and reads as plain text. Any name you did
-  not assign is shown as `nickname · a3f1…8e2`, with the fingerprint permanently attached
+- **Names:** a nickname you assigned always wins and reads as plain text. Any name you did
+  not assign is shown as `username · a3f1…8e2`, with the fingerprint permanently attached
   and styled as unverified — never as bare text that could be mistaken for an identity.
-  Someone with no claimed nickname at all shows as the fingerprint alone. Two visible keys
-  claiming the same nickname is expected (§3.1), and the always-on fingerprint is what keeps
+  Someone with no claimed username at all shows as the fingerprint alone. Two visible keys
+  claiming the same username is expected (§3.1), and the always-on fingerprint is what keeps
   that merely confusing rather than dangerous.
 - **Listen:** add/remove identities (via scanned QR of their public key, or from seeing
   them in *everything else*). Public in MVP. Because tiers are recomputed at sync (§4), the
@@ -753,15 +753,15 @@ Keep it calm and honest about partial data. Text-only keeps the surface small.
   with deliberate gaps — including a thread whose root is not held.
 
 **M1.1 — Names**
-- Signed profile records (§3.5): canonical form, nickname validation, sign/verify.
-- Nickname chosen during first-run setup; your own profile created and signed.
+- Signed profile records (§3.5): canonical form, username validation, sign/verify.
+- Username chosen during first-run setup; your own profile created and signed.
 - Directory table, plus its TTL/listen-immune pruning (§4).
-- The display rule everywhere a name appears: petname > `nickname · fingerprint` >
+- The display rule everywhere a name appears: nickname > `username · fingerprint` >
   fingerprint alone.
-- *Done when:* a nickname set at first run round-trips through sign/verify; validation
+- *Done when:* a username set at first run round-trips through sign/verify; validation
   rejects over-length, unpaired surrogates and bidi-override characters; the directory
   prunes on the rules above with listened authors immune; and no surface anywhere renders a
-  claimed nickname without its fingerprint.
+  claimed username without its fingerprint.
 - Sync of profiles is **designed here and implemented in M2**, where delivery exists to
   carry them.
 
@@ -874,7 +874,7 @@ Keep it calm and honest about partial data. Text-only keeps the surface small.
 
   So colour and fingerprints are **accident-detection**, not defence. They reliably separate
   two people who honestly share a name; they do not stop someone trying to be mistaken for
-  you. The thing that actually defends is the **petname** — you confirmed a key in person
+  you. The thing that actually defends is the **nickname** — you confirmed a key in person
   once, and your local name for it is authoritative from then on. The design should keep
   steering people toward QR-confirming the handful of identities they actually care about,
   rather than implying that a fingerprint verified anything.
@@ -886,7 +886,7 @@ Keep it calm and honest about partial data. Text-only keeps the surface small.
   recovery phrase but never the fingerprint or colour: do not surface the vanity signal while
   rerolling is still free. Once you have posted and been synced, regenerating costs your
   history.
-- **Nickname squatting and homoglyphs.** Names are claims, not identifiers (§3.1), so two
+- **Username squatting and homoglyphs.** Names are claims, not identifiers (§3.1), so two
   keys claiming `jono` is expected and handled by the always-on fingerprint. What is *not*
   addressed is visual confusability: `jоno` with a Cyrillic `о` renders identically to
   `jono`. Proper detection means Unicode confusable-skeleton matching (UTS #39), which is a

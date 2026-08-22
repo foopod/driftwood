@@ -30,7 +30,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.jonoshields.gossip.core.model.NICKNAME_MAX_CHARS
+import com.jonoshields.gossip.core.model.USERNAME_MAX_CHARS
 import com.jonoshields.gossip.theme.GossipTheme
 
 @Composable
@@ -52,9 +52,9 @@ fun FirstRunScreen(
             onVerificationAnswerChange = viewModel::updateVerificationAnswer,
             onSubmitVerification = viewModel::submitVerification,
             onShowPhraseAgain = viewModel::showPhraseAgain,
-            onNicknameChange = viewModel::updateNickname,
-            onSubmitNickname = viewModel::submitNickname,
-            onSkipNickname = viewModel::skipNickname,
+            onUsernameChange = viewModel::updateUsername,
+            onSubmitUsername = viewModel::submitUsername,
+            onSkipUsername = viewModel::skipUsername,
             onFinished = onFinished,
         ),
         modifier = modifier,
@@ -71,9 +71,9 @@ data class FirstRunActions(
     val onVerificationAnswerChange: (Int, String) -> Unit,
     val onSubmitVerification: () -> Unit,
     val onShowPhraseAgain: () -> Unit,
-    val onNicknameChange: (String) -> Unit,
-    val onSubmitNickname: () -> Unit,
-    val onSkipNickname: () -> Unit,
+    val onUsernameChange: (String) -> Unit,
+    val onSubmitUsername: () -> Unit,
+    val onSkipUsername: () -> Unit,
     val onFinished: () -> Unit,
 )
 
@@ -94,7 +94,7 @@ internal fun FirstRunContent(
             FirstRunUiState.Welcome -> Welcome(actions)
             is FirstRunUiState.ShowPhrase -> ShowPhrase(state, actions)
             is FirstRunUiState.VerifyPhrase -> VerifyPhrase(state, actions)
-            is FirstRunUiState.ChooseNickname -> ChooseNickname(state, actions)
+            is FirstRunUiState.ChooseUsername -> ChooseUsername(state, actions)
             is FirstRunUiState.Restore -> Restore(state, actions)
             FirstRunUiState.Done -> Done(actions)
         }
@@ -198,39 +198,39 @@ private fun VerifyPhrase(state: FirstRunUiState.VerifyPhrase, actions: FirstRunA
 }
 
 @Composable
-private fun ChooseNickname(state: FirstRunUiState.ChooseNickname, actions: FirstRunActions) {
+private fun ChooseUsername(state: FirstRunUiState.ChooseUsername, actions: FirstRunActions) {
     Text("What should people call you?", style = MaterialTheme.typography.headlineMedium)
     if (state.restoring) {
         // Worth explaining rather than silently re-asking: someone restoring reasonably
         // expects everything to come back, and most of it does.
         Text(
-            "Your recovery phrase carries your key, not your name — so this is the one " +
-                "thing it cannot bring back.",
+            "Your recovery phrase carries your key, not your username — so this is the " +
+                "one thing it cannot bring back.",
             style = MaterialTheme.typography.bodyMedium,
         )
         Text(
-            "If you skip it, your old name may return on its own: people who synced with " +
-                "you still hold it, signed by your key, and it comes back the next time " +
-                "you meet one of them. Setting a name here replaces it instead.",
+            "If you skip it, your old username may return on its own: people who synced " +
+                "with you still hold it, signed by your key, and it comes back the next " +
+                "time you meet one of them. Setting a username here replaces it instead.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     } else {
         Text(
-            "This travels with your messages so people can read who said what. It is not " +
-                "a username — nobody owns a name here, anyone can claim any name, and " +
-                "others will always see it alongside a short code derived from your key.",
+            "This travels with your messages so people can read who said what. Nobody " +
+                "owns a username here — anyone can claim any username, and others will " +
+                "always see it alongside a short code derived from your key.",
             style = MaterialTheme.typography.bodyMedium,
         )
     }
 
     OutlinedTextField(
-        value = state.nickname,
-        onValueChange = actions.onNicknameChange,
-        label = { Text("Name") },
+        value = state.username,
+        onValueChange = actions.onUsernameChange,
+        label = { Text("Username") },
         singleLine = true,
         isError = state.error != null,
-        supportingText = { Text("Up to $NICKNAME_MAX_CHARS characters") },
+        supportingText = { Text("Up to $USERNAME_MAX_CHARS characters") },
         modifier = Modifier.fillMaxWidth(),
     )
     state.error?.let {
@@ -238,14 +238,14 @@ private fun ChooseNickname(state: FirstRunUiState.ChooseNickname, actions: First
     }
 
     Button(
-        onClick = actions.onSubmitNickname,
+        onClick = actions.onSubmitUsername,
         enabled = state.canSubmit,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Text("Continue")
     }
     // Optional on purpose: the key is the identity, and it already exists by this point.
-    TextButton(onClick = actions.onSkipNickname, modifier = Modifier.fillMaxWidth()) {
+    TextButton(onClick = actions.onSkipUsername, modifier = Modifier.fillMaxWidth()) {
         Text("Skip for now")
     }
 }
@@ -315,6 +315,6 @@ private fun WelcomePreview() {
 private fun previewActions() = FirstRunActions(
     onCreate = {}, onBeginRestore = {}, onRestoreInputChange = {}, onSubmitRestore = {},
     onBeginVerification = {}, onVerificationAnswerChange = { _, _ -> }, onSubmitVerification = {},
-    onShowPhraseAgain = {}, onNicknameChange = {}, onSubmitNickname = {}, onSkipNickname = {},
+    onShowPhraseAgain = {}, onUsernameChange = {}, onSubmitUsername = {}, onSkipUsername = {},
     onFinished = {},
 )

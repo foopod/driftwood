@@ -14,23 +14,23 @@ class NameResolverTest {
     private val someone = author(1)
 
     @Test
-    fun `a petname is shown alone because you assigned it`() {
-        val name = NameResolver.resolve(someone, petname = "Dad", claimed = "xxx")
+    fun `a nickname is shown alone because you assigned it`() {
+        val name = NameResolver.resolve(someone, nickname = "Dad", username = "xxx")
         assertTrue(name.verified)
         assertEquals("Dad", name.text)
     }
 
     @Test
-    fun `a petname beats whatever they call themselves`() {
+    fun `a nickname beats whatever they call themselves`() {
         // Deliberately the case where the two disagree: your name for someone is the one
         // you can trust, so it wins outright.
-        val name = NameResolver.resolve(someone, petname = "Dad", claimed = "Definitely Not Dad")
+        val name = NameResolver.resolve(someone, nickname = "Dad", username = "Definitely Not Dad")
         assertEquals("Dad", name.text)
     }
 
     @Test
     fun `a claimed name always carries its fingerprint`() {
-        val name = NameResolver.resolve(someone, petname = null, claimed = "jono")
+        val name = NameResolver.resolve(someone, nickname = null, username = "jono")
         assertFalse(name.verified)
         assertTrue("$name", name.text.startsWith("jono ·"))
         assertTrue(name.text.contains(name.fingerprint))
@@ -38,7 +38,7 @@ class NameResolverTest {
 
     @Test
     fun `an unnamed key stands for itself`() {
-        val name = NameResolver.resolve(someone, petname = null, claimed = null)
+        val name = NameResolver.resolve(someone, nickname = null, username = null)
         assertEquals(name.fingerprint, name.text)
     }
 
@@ -159,7 +159,7 @@ class AuthorHueTest {
     fun `a name is never distinguished by colour alone`() {
         // Colour is unusable for a colour-blind reader, so whatever else changes, the
         // fingerprint must remain part of how a claimed name is rendered.
-        val name = NameResolver.resolve(author(3), petname = null, claimed = "sam")
+        val name = NameResolver.resolve(author(3), nickname = null, username = "sam")
         assertTrue(name.text.contains(name.fingerprint))
     }
 }

@@ -40,9 +40,9 @@ class FirstRunContentTest {
     private var created = 0
     private var verified = 0
     private val answers = mutableMapOf<Int, String>()
-    private var typedNickname = ""
-    private var nicknameSubmitted = 0
-    private var nicknameSkipped = 0
+    private var typedUsername = ""
+    private var usernameSubmitted = 0
+    private var usernameSkipped = 0
 
     private fun actions() = FirstRunActions(
         onCreate = { created++ },
@@ -53,9 +53,9 @@ class FirstRunContentTest {
         onVerificationAnswerChange = { slot, value -> answers[slot] = value },
         onSubmitVerification = { verified++ },
         onShowPhraseAgain = {},
-        onNicknameChange = { typedNickname = it },
-        onSubmitNickname = { nicknameSubmitted++ },
-        onSkipNickname = { nicknameSkipped++ },
+        onUsernameChange = { typedUsername = it },
+        onSubmitUsername = { usernameSubmitted++ },
+        onSkipUsername = { usernameSkipped++ },
         onFinished = {},
     )
 
@@ -158,33 +158,33 @@ class FirstRunContentTest {
     }
 
     @Test
-    fun `the nickname step explains that a name is not a username`() {
-        // The single most important thing to say here: nobody owns a name in this system.
-        compose.setContent { FirstRunContent(FirstRunUiState.ChooseNickname(), actions()) }
+    fun `the username step explains that nobody owns a username`() {
+        // The single most important thing to say here: nobody owns a username in this system.
+        compose.setContent { FirstRunContent(FirstRunUiState.ChooseUsername(), actions()) }
 
         compose.onNodeWithText("What should people call you?").assertExists()
-        compose.onNodeWithText("It is not a username", substring = true).assertExists()
+        compose.onNodeWithText("Nobody owns a username here", substring = true).assertExists()
     }
 
     @Test
     fun `a name can be skipped, because the key is the identity`() {
-        compose.setContent { FirstRunContent(FirstRunUiState.ChooseNickname(), actions()) }
+        compose.setContent { FirstRunContent(FirstRunUiState.ChooseUsername(), actions()) }
 
         compose.onNodeWithText("Skip for now").performClick()
 
-        assertEquals(1, nicknameSkipped)
+        assertEquals(1, usernameSkipped)
     }
 
     @Test
     fun `an empty name cannot be submitted`() {
-        compose.setContent { FirstRunContent(FirstRunUiState.ChooseNickname(), actions()) }
+        compose.setContent { FirstRunContent(FirstRunUiState.ChooseUsername(), actions()) }
         compose.onNodeWithText("Continue").assertIsNotEnabled()
     }
 
     @Test
     fun `a rejected name is explained rather than silently dropped`() {
-        val state = FirstRunUiState.ChooseNickname(
-            nickname = "bad",
+        val state = FirstRunUiState.ChooseUsername(
+            username = "bad",
             error = "That name contains invisible characters.",
         )
         compose.setContent { FirstRunContent(state, actions()) }
@@ -196,30 +196,30 @@ class FirstRunContentTest {
     fun `restoring also asks for a name, and says why`() {
         // Someone restoring reasonably expects everything back, and most of it comes back.
         // The name is the exception, so the screen explains rather than silently re-asking.
-        val state = FirstRunUiState.ChooseNickname(restoring = true)
+        val state = FirstRunUiState.ChooseUsername(restoring = true)
         compose.setContent { FirstRunContent(state, actions()) }
 
         compose.onNodeWithText("What should people call you?").assertExists()
-        compose.onNodeWithText("carries your key, not your name", substring = true).assertExists()
+        compose.onNodeWithText("carries your key, not your username", substring = true).assertExists()
     }
 
     @Test
     fun `restoring explains that skipping may bring the old name back`() {
         // True, and worth saying: peers hold the old profile signed by this key, and
         // latest-claim-wins restores it on the next sync.
-        val state = FirstRunUiState.ChooseNickname(restoring = true)
+        val state = FirstRunUiState.ChooseUsername(restoring = true)
         compose.setContent { FirstRunContent(state, actions()) }
 
-        compose.onNodeWithText("your old name may return", substring = true).assertExists()
+        compose.onNodeWithText("your old username may return", substring = true).assertExists()
         compose.onNodeWithText("Skip for now").assertExists()
     }
 
     @Test
     fun `a fresh identity is not told about names coming back`() {
         // There is no old name to return, so that copy would be nonsense here.
-        compose.setContent { FirstRunContent(FirstRunUiState.ChooseNickname(), actions()) }
+        compose.setContent { FirstRunContent(FirstRunUiState.ChooseUsername(), actions()) }
 
-        compose.onNodeWithText("your old name may return", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("your old username may return", substring = true).assertDoesNotExist()
     }
 
     @Test

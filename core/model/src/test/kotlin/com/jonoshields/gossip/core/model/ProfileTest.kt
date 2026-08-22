@@ -26,48 +26,48 @@ class ProfileTest {
     /** The Trojan Source payload: renders as something other than what it contains. */
     private val bidiOverride = "evil" + rightToLeftOverride + "onoj"
 
-    // ---- nickname validation ---------------------------------------------------------
+    // ---- username validation ---------------------------------------------------------
 
     @Test
     fun `accepts ordinary names`() {
-        listOf("jono", "Jono Shields", "日本語", "sam 🙂", "a".repeat(NICKNAME_MAX_CHARS))
-            .forEach { assertTrue(it, Nickname.isValid(it)) }
+        listOf("jono", "Jono Shields", "日本語", "sam 🙂", "a".repeat(USERNAME_MAX_CHARS))
+            .forEach { assertTrue(it, Username.isValid(it)) }
     }
 
     @Test
     fun `normalises before counting, like message text`() {
         val decomposed = "cafe" + Char(0x0301)
-        assertEquals("caf" + Char(0x00E9), Nickname.validate(decomposed).getOrThrow())
+        assertEquals("caf" + Char(0x00E9), Username.validate(decomposed).getOrThrow())
         // 32 decomposed pairs are 64 code points raw and 32 once composed, so they fit.
-        assertTrue(Nickname.isValid(("e" + Char(0x0301)).repeat(NICKNAME_MAX_CHARS)))
+        assertTrue(Username.isValid(("e" + Char(0x0301)).repeat(USERNAME_MAX_CHARS)))
     }
 
     @Test
     fun `rejects empty and padded names`() {
-        assertProblem(NicknameProblem.Empty, "")
-        assertProblem(NicknameProblem.Empty, "   ")
-        assertProblem(NicknameProblem.HasPadding, " jono")
-        assertProblem(NicknameProblem.HasPadding, "jono ")
+        assertProblem(UsernameProblem.Empty, "")
+        assertProblem(UsernameProblem.Empty, "   ")
+        assertProblem(UsernameProblem.HasPadding, " jono")
+        assertProblem(UsernameProblem.HasPadding, "jono ")
     }
 
     @Test
     fun `rejects over-length names`() {
-        val problem = problemFor("a".repeat(NICKNAME_MAX_CHARS + 1))
-        assertTrue("$problem", problem is NicknameProblem.TooLong)
+        val problem = problemFor("a".repeat(USERNAME_MAX_CHARS + 1))
+        assertTrue("$problem", problem is UsernameProblem.TooLong)
     }
 
     @Test
     fun `rejects bidi overrides and other invisibles`() {
-        assertProblem(NicknameProblem.HasInvisibleCharacters, bidiOverride)
-        assertProblem(NicknameProblem.HasInvisibleCharacters, leftToRightOverride + "jono")
-        assertProblem(NicknameProblem.HasInvisibleCharacters, "jo" + zeroWidthSpace + "no")
-        assertProblem(NicknameProblem.HasInvisibleCharacters, "jo" + nul + "no")
-        assertProblem(NicknameProblem.HasInvisibleCharacters, "jo\nno")
+        assertProblem(UsernameProblem.HasInvisibleCharacters, bidiOverride)
+        assertProblem(UsernameProblem.HasInvisibleCharacters, leftToRightOverride + "jono")
+        assertProblem(UsernameProblem.HasInvisibleCharacters, "jo" + zeroWidthSpace + "no")
+        assertProblem(UsernameProblem.HasInvisibleCharacters, "jo" + nul + "no")
+        assertProblem(UsernameProblem.HasInvisibleCharacters, "jo\nno")
     }
 
     @Test
     fun `rejects unpaired surrogates`() {
-        assertProblem(NicknameProblem.NotWellFormed, "jo" + Char(0xD83D) + "no")
+        assertProblem(UsernameProblem.NotWellFormed, "jo" + Char(0xD83D) + "no")
     }
 
     // ---- signing and verification ----------------------------------------------------
@@ -76,7 +76,7 @@ class ProfileTest {
     fun `a created profile verifies`() {
         val result = ProfileCodec.verify(ProfileCodec.encode(profile("jono")))
         assertTrue("$result", result is ProfileVerifyResult.Valid)
-        assertEquals("jono", (result as ProfileVerifyResult.Valid).profile.nickname)
+        assertEquals("jono", (result as ProfileVerifyResult.Valid).profile.username)
         assertEquals(me, result.profile.author)
     }
 
@@ -88,7 +88,7 @@ class ProfileTest {
             val original = profile(name, random.nextLong(0, 1L shl 40))
             val decoded = ProfileCodec.verify(ProfileCodec.encode(original))
             assertTrue(decoded is ProfileVerifyResult.Valid)
-            assertEquals(name, (decoded as ProfileVerifyResult.Valid).profile.nickname)
+            assertEquals(name, (decoded as ProfileVerifyResult.Valid).profile.username)
             assertEquals(original.timestampMillis, decoded.profile.timestampMillis)
         }
     }
@@ -140,7 +140,7 @@ class ProfileTest {
     }
 
     @Test
-    fun `a nickname that is not already normalised is rejected on ingest`() {
+    fun `a username that is not already normalised is rejected on ingest`() {
         // Repairing it would change the bytes the signature was made over — the same rule
         // as message text in section 3.2.
         val preimage = ProfileCodec.encodePreimage(me, "cafe" + Char(0x0301), 1L)
@@ -148,7 +148,7 @@ class ProfileTest {
     }
 
     @Test
-    fun `a signed but invisible-laden nickname is still rejected`() {
+    fun `a signed but invisible-laden username is still rejected`() {
         // Validation is not only a create-time nicety: a hostile peer signs its own claims,
         // so ingest re-checks rather than trusting that the sender bothered.
         val preimage = ProfileCodec.encodePreimage(me, bidiOverride, 1L)
@@ -156,9 +156,9 @@ class ProfileTest {
     }
 
     @Test
-    fun `creating with an unusable nickname throws rather than signing rubbish`() {
-        assertTrue(runCatching { profile("") }.exceptionOrNull() is InvalidNickname)
-        assertTrue(runCatching { profile(bidiOverride) }.exceptionOrNull() is InvalidNickname)
+    fun `creating with an unusable username throws rather than signing rubbish`() {
+        assertTrue(runCatching { profile("") }.exceptionOrNull() is InvalidUsername)
+        assertTrue(runCatching { profile(bidiOverride) }.exceptionOrNull() is InvalidUsername)
     }
 
     @Test
@@ -169,9 +169,9 @@ class ProfileTest {
         )
     }
 
-    private fun problemFor(raw: String): NicknameProblem? =
-        (Nickname.validate(raw).exceptionOrNull() as? InvalidNickname)?.problem
+    private fun problemFor(raw: String): UsernameProblem? =
+        (Username.validate(raw).exceptionOrNull() as? InvalidUsername)?.problem
 
-    private fun assertProblem(expected: NicknameProblem, raw: String) =
+    private fun assertProblem(expected: UsernameProblem, raw: String) =
         assertEquals("for the given input", expected, problemFor(raw))
 }

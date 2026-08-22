@@ -61,7 +61,7 @@ fun SyncScreen(
         onDecline = viewModel::declinePeer,
         onCancel = viewModel::cancel,
         onDone = viewModel::reset,
-        onSetPetname = viewModel::setPetname,
+        onSetNickname = viewModel::setNickname,
         onToggleListen = viewModel::toggleListen,
         modifier = modifier,
     )
@@ -81,7 +81,7 @@ internal fun SyncContent(
     onDecline: () -> Unit,
     onCancel: () -> Unit,
     onDone: () -> Unit,
-    onSetPetname: (AuthorId, String) -> Unit,
+    onSetNickname: (AuthorId, String) -> Unit,
     onToggleListen: (AuthorId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -109,11 +109,11 @@ internal fun SyncContent(
                 is SyncUiState.Connecting -> StatusContent("Connecting to ${state.host}:${state.port}…")
                 is SyncUiState.Confirming -> ConfirmingContent(
                     state = state,
-                    displayName = names[state.peer] ?: NameResolver.resolve(state.peer, petname = null, claimed = null),
+                    displayName = names[state.peer] ?: NameResolver.resolve(state.peer, nickname = null, username = null),
                     isListening = state.peer in listenScope,
                     onConfirm = onConfirm,
                     onDecline = onDecline,
-                    onSetPetname = { name -> onSetPetname(state.peer, name) },
+                    onSetNickname = { name -> onSetNickname(state.peer, name) },
                     onToggleListen = { onToggleListen(state.peer) },
                 )
                 SyncUiState.Running -> StatusContent("Syncing…")
@@ -213,7 +213,7 @@ private fun ConfirmingContent(
     isListening: Boolean,
     onConfirm: () -> Unit,
     onDecline: () -> Unit,
-    onSetPetname: (String) -> Unit,
+    onSetNickname: (String) -> Unit,
     onToggleListen: () -> Unit,
 ) {
     Text("Is this who you're syncing with?", style = MaterialTheme.typography.titleMedium)
@@ -229,16 +229,16 @@ private fun ConfirmingContent(
     }
 
     Text(
-        // The moment plan.md actually calls out for a petname: "you confirmed a key in
+        // The moment plan.md actually calls out for a nickname: "you confirmed a key in
         // person once, and your local name for it is authoritative from then on." Neither
         // of these needs the sync to actually proceed.
         "Once you've checked the fingerprint in person:",
         style = MaterialTheme.typography.labelMedium,
     )
     ContactControls(
-        currentPetname = if (displayName.verified) displayName.label else null,
+        currentNickname = if (displayName.verified) displayName.label else null,
         isListening = isListening,
-        onSetPetname = onSetPetname,
+        onSetNickname = onSetNickname,
         onToggleListen = onToggleListen,
     )
 }

@@ -49,7 +49,7 @@ class SyncContentTest {
     private var declined = false
     private var cancelled = false
     private var done = false
-    private var petnameSet: Pair<AuthorId, String>? = null
+    private var nicknameSet: Pair<AuthorId, String>? = null
     private var listenToggled: AuthorId? = null
 
     private fun show(
@@ -71,7 +71,7 @@ class SyncContentTest {
                 onDecline = { declined = true },
                 onCancel = { cancelled = true },
                 onDone = { done = true },
-                onSetPetname = { author, name -> petnameSet = author to name },
+                onSetNickname = { author, name -> nicknameSet = author to name },
                 onToggleListen = { author -> listenToggled = author },
             )
         }
@@ -143,14 +143,14 @@ class SyncContentTest {
     }
 
     @Test
-    fun `saving a petname on the confirm screen calls through, independent of confirm`() {
+    fun `saving a nickname on the confirm screen calls through, independent of confirm`() {
         show(SyncUiState.Confirming(peer))
 
-        compose.onNodeWithText("Petname").performTextInput("Sam")
-        compose.onNodeWithText("Save petname").performClick()
+        compose.onNodeWithText("Nickname").performTextInput("Sam")
+        compose.onNodeWithText("Save nickname").performClick()
 
-        assertEquals(peer, petnameSet?.first)
-        assertEquals("Sam", petnameSet?.second)
+        assertEquals(peer, nicknameSet?.first)
+        assertEquals("Sam", nicknameSet?.second)
         assertEquals(false, confirmed)
         assertEquals(false, declined)
     }
@@ -165,14 +165,14 @@ class SyncContentTest {
     }
 
     @Test
-    fun `an existing petname shows as a verified name, not just a fingerprint`() {
-        // "Sam" also legitimately appears a second time, pre-filled into the petname field
+    fun `an existing nickname shows as a verified name, not just a fingerprint`() {
+        // "Sam" also legitimately appears a second time, pre-filled into the nickname field
         // itself — so the count, not mere existence, is what proves the name rendered.
-        val petname = DisplayName(label = "Sam", fingerprint = NameResolver.fingerprint(peer), verified = true, hue = 0f)
-        show(SyncUiState.Confirming(peer), names = mapOf(peer to petname))
+        val nickname = DisplayName(label = "Sam", fingerprint = NameResolver.fingerprint(peer), verified = true, hue = 0f)
+        show(SyncUiState.Confirming(peer), names = mapOf(peer to nickname))
 
         assertEquals(2, compose.onAllNodesWithText("Sam").fetchSemanticsNodes().size)
-        compose.onNodeWithText(petname.fingerprint).assertDoesNotExist()
+        compose.onNodeWithText(nickname.fingerprint).assertDoesNotExist()
     }
 
     @Test

@@ -26,7 +26,7 @@ class ListenListViewModel @Inject constructor(
         directory.observeListenScope(),
         directory.observeNames(),
     ) { scope, names ->
-        scope.map { author -> ListenEntry(author, names[author] ?: NameResolver.resolve(author, petname = null, claimed = null)) }
+        scope.map { author -> ListenEntry(author, names[author] ?: NameResolver.resolve(author, nickname = null, username = null)) }
             .sortedBy { it.displayName.text }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

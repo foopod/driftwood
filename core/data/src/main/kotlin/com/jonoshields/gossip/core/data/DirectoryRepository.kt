@@ -3,7 +3,7 @@ package com.jonoshields.gossip.core.data
 import android.database.SQLException
 import com.jonoshields.gossip.core.identity.IdentityStore
 import com.jonoshields.gossip.core.model.AuthorId
-import com.jonoshields.gossip.core.model.Nickname
+import com.jonoshields.gossip.core.model.Username
 import com.jonoshields.gossip.core.model.Profile
 import com.jonoshields.gossip.core.model.ProfileCodec
 import com.jonoshields.gossip.core.model.ProfileVerifyResult
@@ -24,8 +24,8 @@ import kotlinx.coroutines.flow.map
  */
 interface DirectoryRepository {
 
-    /** Sets *your* nickname: signs a fresh claim and records it as your own directory row. */
-    suspend fun setMyNickname(nickname: String): Result<Profile>
+    /** Sets *your* username: signs a fresh claim and records it as your own directory row. */
+    suspend fun setMyUsername(username: String): Result<Profile>
 
     suspend fun myProfile(): Result<Profile?>
 
@@ -39,11 +39,11 @@ interface DirectoryRepository {
     fun observeNames(): Flow<Map<AuthorId, DisplayName>>
 
     /**
-     * Your local name for [author] — a petname, plan.md §3.1's only kind of name shown
+     * Your local name for [author] — a nickname, plan.md §3.1's only kind of name shown
      * without a fingerprint, because it is a claim *you* made after confirming the key
      * rather than one the key made about itself.
      */
-    suspend fun setPetname(author: AuthorId, petname: String): Result<Unit>
+    suspend fun setNickname(author: AuthorId, nickname: String): Result<Unit>
 
     /** Identities you currently listen to. */
     fun observeListenScope(): Flow<Set<AuthorId>>
@@ -68,7 +68,7 @@ class RoomDirectoryRepository internal constructor(
 
     private val directory get() = database.directory()
 
-    override suspend fun setMyNickname(nickname: String): Result<Profile> = runCatching {
+    override suspend fun setMyUsername(username: String): Result<Profile> = runCatching {
         val me = try {
             identity.publicKey()
         } catch (e: IllegalStateException) {
@@ -76,14 +76,14 @@ class RoomDirectoryRepository internal constructor(
         }
         val now = clock.nowMillis()
         val profile = try {
-            ProfileCodec.create(me, nickname, now, identity.signer())
+            ProfileCodec.create(me, username, now, identity.signer())
         } catch (e: IllegalArgumentException) {
             throw DataError.InvalidMessage(e)
         }
         directory.upsert(
             DirectoryEntity(
                 author = me,
-                nickname = profile.nickname,
+                username = profile.username,
                 claimedAt = profile.timestampMillis,
                 firstReceived = now,
                 lastSeenPost = now,
@@ -115,7 +115,7 @@ class RoomDirectoryRepository internal constructor(
             directory.upsert(
                 DirectoryEntity(
                     author = profile.author,
-                    nickname = profile.nickname,
+                    username = profile.username,
                     claimedAt = effective,
                     firstReceived = existing?.firstReceived ?: receivedAtMillis,
                     lastSeenPost = existing?.lastSeenPost ?: receivedAtMillis,
@@ -131,21 +131,21 @@ class RoomDirectoryRepository internal constructor(
             database.contacts().observeAll(),
         ) { claims, contacts ->
             val me = runCatching { identity.publicKey() }.getOrNull()
-            val petnames = contacts.associate { it.author to it.displayName }
-            val claimed = claims.associate { it.author to it.nickname }
+            val nicknames = contacts.associate { it.author to it.nickname }
+            val usernames = claims.associate { it.author to it.username }
 
-            (petnames.keys + claimed.keys).associateWith { author ->
+            (nicknames.keys + usernames.keys).associateWith { author ->
                 // Your own name needs no fingerprint and no colour: you are not trying to
-                // work out whether you are really you. Treating it as a petname is honest
+                // work out whether you are really you. Treating it as a nickname is honest
                 // rather than a special case — you did assign that name to that key.
-                val petname = if (author == me) claimed[author] ?: petnames[author] else petnames[author]
-                NameResolver.resolve(author, petname, claimed[author])
+                val nickname = if (author == me) usernames[author] ?: nicknames[author] else nicknames[author]
+                NameResolver.resolve(author, nickname, usernames[author])
             }
         }
 
-    override suspend fun setPetname(author: AuthorId, petname: String): Result<Unit> = runCatching {
+    override suspend fun setNickname(author: AuthorId, nickname: String): Result<Unit> = runCatching {
         val validated = try {
-            Nickname.validate(petname).getOrThrow()
+            Username.validate(nickname).getOrThrow()
         } catch (e: Throwable) {
             throw DataError.InvalidMessage(e)
         }
@@ -166,7 +166,7 @@ class RoomDirectoryRepository internal constructor(
     override suspend fun prune(): Result<Set<AuthorId>> = runCatching {
         val drop = DirectoryPruner.plan(
             entries = directory.all().map {
-                DirectoryEntry(it.author, it.nickname, it.lastSeenPost)
+                DirectoryEntry(it.author, it.username, it.lastSeenPost)
             },
             listen = database.listen().authors().toSet(),
             contacts = database.contacts().authors().toSet(),

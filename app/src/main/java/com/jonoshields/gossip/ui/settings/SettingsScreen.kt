@@ -38,8 +38,8 @@ fun SettingsScreen(
         state = state,
         onBack = onBack,
         onPrune = viewModel::prune,
-        onNicknameChange = viewModel::updateNickname,
-        onSaveNickname = viewModel::saveNickname,
+        onUsernameChange = viewModel::updateUsername,
+        onSaveUsername = viewModel::saveUsername,
         onSyncWithDebugPeer = viewModel::syncWithDebugPeer,
         modifier = modifier,
     )
@@ -51,8 +51,8 @@ internal fun SettingsContent(
     state: SettingsUiState,
     onBack: () -> Unit,
     onPrune: () -> Unit,
-    onNicknameChange: (String) -> Unit,
-    onSaveNickname: () -> Unit,
+    onUsernameChange: (String) -> Unit,
+    onSaveUsername: () -> Unit,
     onSyncWithDebugPeer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -71,31 +71,31 @@ internal fun SettingsContent(
         ) {
             Section("Your identity") {
                 OutlinedTextField(
-                    value = state.nicknameDraft,
-                    onValueChange = onNicknameChange,
-                    label = { Text("Your name") },
-                    placeholder = { Text("no name set") },
+                    value = state.usernameDraft,
+                    onValueChange = onUsernameChange,
+                    label = { Text("Your username") },
+                    placeholder = { Text("no username set") },
                     singleLine = true,
-                    isError = state.nicknameError != null,
+                    isError = state.usernameError != null,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                state.nicknameError?.let {
+                state.usernameError?.let {
                     Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
-                if (state.nicknameSaved) {
+                if (state.usernameSaved) {
                     Text(
-                        "Saved. People you sync with will see the new name; until then they " +
-                            "still hold the old one.",
+                        "Saved. People you sync with will see the new username; until then " +
+                            "they still hold the old one.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
                 OutlinedButton(
-                    onClick = onSaveNickname,
-                    enabled = state.nicknameDraft.isNotBlank() && state.nicknameDraft != state.nickname,
+                    onClick = onSaveUsername,
+                    enabled = state.usernameDraft.isNotBlank() && state.usernameDraft != state.username,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(if (state.nickname == null) "Set name" else "Change name")
+                    Text(if (state.username == null) "Set username" else "Change username")
                 }
                 Text(
                     state.publicKey ?: "none yet",
@@ -103,8 +103,8 @@ internal fun SettingsContent(
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Text(
-                    "The key is who you are; the name is only a label on it. Anyone can " +
-                        "claim any name, so others always see yours next to a short code " +
+                    "The key is who you are; the username is only a label on it. Anyone can " +
+                        "claim any username, so others always see yours next to a short code " +
                         "derived from this key.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

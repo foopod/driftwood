@@ -65,7 +65,7 @@ class FirstRunViewModel @Inject constructor(
                 // A restored identity has a key but no name: the phrase carries the seed
                 // and nothing else.
                 is RestoreResult.Success ->
-                    _uiState.value = FirstRunUiState.ChooseNickname(restoring = true)
+                    _uiState.value = FirstRunUiState.ChooseUsername(restoring = true)
                 RestoreResult.AlreadyExists ->
                     _uiState.value = current.copy(
                         error = "This device already has an identity. Restoring would replace it."
@@ -100,25 +100,25 @@ class FirstRunViewModel @Inject constructor(
             }
             if (correct) {
                 identity.confirmBackedUp()
-                _uiState.value = FirstRunUiState.ChooseNickname()
+                _uiState.value = FirstRunUiState.ChooseUsername()
             } else {
                 _uiState.value = current.copy(wrong = true)
             }
         }
     }
 
-    fun updateNickname(value: String) {
-        val current = _uiState.value as? FirstRunUiState.ChooseNickname ?: return
-        _uiState.value = current.copy(nickname = value, error = null)
+    fun updateUsername(value: String) {
+        val current = _uiState.value as? FirstRunUiState.ChooseUsername ?: return
+        _uiState.value = current.copy(username = value, error = null)
     }
 
-    fun submitNickname() {
-        val current = _uiState.value as? FirstRunUiState.ChooseNickname ?: return
+    fun submitUsername() {
+        val current = _uiState.value as? FirstRunUiState.ChooseUsername ?: return
         if (!current.canSubmit) return
 
         _uiState.value = current.copy(saving = true)
         viewModelScope.launch {
-            directory.setMyNickname(current.nickname)
+            directory.setMyUsername(current.username)
                 .onSuccess { finish() }
                 .onFailure { failure ->
                     _uiState.value = current.copy(
@@ -130,7 +130,7 @@ class FirstRunViewModel @Inject constructor(
     }
 
     /** A name is optional — the key is the identity, and it already exists by this point. */
-    fun skipNickname() = finish()
+    fun skipUsername() = finish()
 
     /** Back to the phrase, for someone who realises mid-check that they mistyped it. */
     fun showPhraseAgain() {
