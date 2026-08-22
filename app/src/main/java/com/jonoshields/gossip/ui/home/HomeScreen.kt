@@ -188,7 +188,11 @@ private fun ThreadRow(thread: ThreadSummary, nameOf: (AuthorId) -> DisplayName, 
             if (listenedAuthor != null) {
                 // Root plus the reply, not the reply alone: what's worth seeing is *both*
                 // that this conversation exists and that someone you follow answered it.
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Indented so it reads as answering the line above, not as a second root.
+                Row(
+                    Modifier.padding(start = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     AuthorName(nameOf(listenedAuthor))
                     Text(
                         "replied: ${thread.latestListenedText.orEmpty()}",
@@ -198,11 +202,17 @@ private fun ThreadRow(thread: ThreadSummary, nameOf: (AuthorId) -> DisplayName, 
                 }
             }
 
-            Text(
-                if (thread.messageCount == 1) "1 message" else "${thread.messageCount} messages",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            // Only what isn't already visible above: the root (when held) and the quoted
+            // reply (when shown) each account for one message of the total.
+            val shown = (if (rootAuthor != null) 1 else 0) + (if (listenedAuthor != null) 1 else 0)
+            val more = thread.messageCount - shown
+            if (more > 0) {
+                Text(
+                    if (more == 1) "1 more message" else "$more more messages",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

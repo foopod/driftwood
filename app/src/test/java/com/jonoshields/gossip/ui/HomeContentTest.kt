@@ -37,13 +37,14 @@ class HomeContentTest {
         rootAuthor: AuthorId? = author(seed),
         latestListenedAuthor: AuthorId? = null,
         latestListenedText: String? = null,
+        messageCount: Int = 1,
     ) = ThreadSummary(
         rootId = MessageId.of(ByteArray(32) { seed.toByte() }),
         rootAuthor = rootAuthor,
         rootText = rootText,
         latestListenedAuthor = latestListenedAuthor,
         latestListenedText = latestListenedText,
-        messageCount = 1,
+        messageCount = messageCount,
         newestTimestamp = seed.toLong(),
     )
 
@@ -161,5 +162,40 @@ class HomeContentTest {
 
         compose.onNodeWithText("just the root").assertExists()
         compose.onAllNodesWithText("replied:", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun `the count only names messages not already shown as text`() {
+        // Root plus the quoted reply are two of the five held messages already visible above
+        // this line — repeating that count here would just be noise.
+        val root = author(1)
+        val replier = author(2)
+        val thread = summary(
+            seed = 1,
+            rootText = "the root",
+            rootAuthor = root,
+            latestListenedAuthor = replier,
+            latestListenedText = "the reply",
+            messageCount = 5,
+        )
+        show(HomeUiState.Threads(listening = listOf(thread), gossip = emptyList()))
+
+        compose.onNodeWithText("3 more messages").assertExists()
+    }
+
+    @Test
+    fun `a single leftover message is singular`() {
+        val thread = summary(1, "the root", messageCount = 2)
+        show(HomeUiState.Threads(listening = listOf(thread), gossip = emptyList()))
+
+        compose.onNodeWithText("1 more message").assertExists()
+    }
+
+    @Test
+    fun `nothing left over means no count is shown at all`() {
+        val thread = summary(1, "the root", messageCount = 1)
+        show(HomeUiState.Threads(listening = listOf(thread), gossip = emptyList()))
+
+        compose.onAllNodesWithText("more message", substring = true).assertCountEquals(0)
     }
 }
