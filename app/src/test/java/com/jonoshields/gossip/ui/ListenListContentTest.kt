@@ -1,19 +1,14 @@
 package com.jonoshields.gossip.ui
 
-import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performTextInput
 import com.jonoshields.gossip.core.model.AuthorId
 import com.jonoshields.gossip.core.model.Ed25519Signer
 import com.jonoshields.gossip.core.store.NameResolver
 import com.jonoshields.gossip.ui.listen.ListenEntry
 import com.jonoshields.gossip.ui.listen.ListenListContent
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -29,7 +24,6 @@ class ListenListContentTest {
     private val someone = Ed25519Signer(ByteArray(32) { it.toByte() }).publicKey
 
     private var backPressed = false
-    private var listenedTo: AuthorId? = null
     private var openedContact: AuthorId? = null
 
     private fun show(entries: List<ListenEntry>) {
@@ -37,7 +31,6 @@ class ListenListContentTest {
             ListenListContent(
                 entries = entries,
                 onBack = { backPressed = true },
-                onListenTo = { listenedTo = it },
                 onOpenContact = { openedContact = it },
             )
         }
@@ -59,40 +52,6 @@ class ListenListContentTest {
         compose.onNodeWithText("Sam").performClick()
 
         assertEquals(someone, openedContact)
-    }
-
-    @Test
-    fun `listen is disabled until a key is typed`() {
-        show(emptyList())
-
-        compose.onNodeWithText("Listen").assertIsNotEnabled()
-
-        compose.onNodeWithTag("listen-key-field").performTextInput("a")
-
-        compose.onNodeWithText("Listen").assertIsEnabled()
-    }
-
-    @Test
-    fun `a valid key calls onListenTo and clears the field`() {
-        show(emptyList())
-
-        compose.onNodeWithTag("listen-key-field").performTextInput(someone.toHex())
-        compose.onNodeWithText("Listen").performClick()
-
-        assertEquals(someone, listenedTo)
-        // The field reset means Listen is disabled again rather than re-armed for a repeat tap.
-        compose.onNodeWithText("Listen").assertIsNotEnabled()
-    }
-
-    @Test
-    fun `an invalid key shows an error and calls nothing`() {
-        show(emptyList())
-
-        compose.onNodeWithTag("listen-key-field").performTextInput("not a real key")
-        compose.onNodeWithText("Listen").performClick()
-
-        compose.onNodeWithText("That doesn't look like a valid key").assertExists()
-        assertNull(listenedTo)
     }
 
     @Test

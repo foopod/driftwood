@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 
 /** One row on the listening-list screen. */
 data class ListenEntry(val author: AuthorId, val displayName: DisplayName)
@@ -29,8 +28,4 @@ class ListenListViewModel @Inject constructor(
         scope.map { author -> ListenEntry(author, names[author] ?: NameResolver.resolve(author, nickname = null, username = null)) }
             .sortedBy { it.displayName.text }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    fun listenTo(author: AuthorId) {
-        viewModelScope.launch { directory.listenTo(author) }
-    }
 }
