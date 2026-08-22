@@ -1,11 +1,14 @@
 package com.jonoshields.gossip.ui
 
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
 import com.jonoshields.gossip.core.model.Ed25519Signer
 import com.jonoshields.gossip.core.model.MessageFactory
 import com.jonoshields.gossip.core.model.MessageId
@@ -79,62 +82,88 @@ class ThreadContentTest {
         blockedAuthors = blockedAuthors,
     )
 
-    /**
-     * Counts every control offering to reply, matching on a substring so a differently
-     * worded button still counts. Matching exactly would let a second "Reply to the
-     * thread" button slip past unnoticed — which is exactly what happened, and was only
-     * caught by deliberately re-introducing the bug to see whether this test failed.
-     */
-    private fun replyControls(): Int =
-        compose.onAllNodesWithText("Reply", substring = true).fetchSemanticsNodes().size
-
     @Test
-    fun `a thread with only a root offers exactly one way to reply`() {
-        // The bug this pins: a separate "reply to the thread" button did the identical
-        // thing as the root's own Reply, because the assembler treats a null parent and a
-        // parent naming the root the same way. Two buttons, one meaning.
-        val r = root("the only message")
-        show(loaded(r.id, listOf(r)))
-
-        assertEquals(1, replyControls())
-    }
-
-    @Test
-    fun `there is one reply action per message and no more`() {
-        // The general invariant, of which the root-only case is the tightest instance.
+    fun `there is exactly one reply control, regardless of how many messages are in the thread`() {
+        // Pins the move from a per-message button to a single floating action: no matter
+        // how many messages are on screen, "Reply" appears exactly once while no message's
+        // context menu is open.
         val r = root("root")
         val a = reply(r.id, r.id, "first")
         val b = reply(r.id, a.id, "nested")
         show(loaded(r.id, listOf(r, a, b)))
 
-        assertEquals(3, replyControls())
+        assertEquals(1, compose.onAllNodesWithText("Reply", substring = true).fetchSemanticsNodes().size)
     }
 
     @Test
-    fun `replying to the root names the root as parent`() {
+    fun `the floating reply button replies to the root when it is held`() {
         val r = root("the only message")
         show(loaded(r.id, listOf(r)))
 
-        compose.onNodeWithText("Reply").performClick()
+        compose.onNodeWithTag("thread-reply-fab").performClick()
 
         assertEquals(r.id, repliedToRoot)
         assertEquals(r.id, repliedToParent)
     }
 
     @Test
-    fun `a thread with no root still offers one way to reply, with no parent`() {
-        // With no root message there is no card to reply from, so the placeholder carries
-        // the reply action — and the reply names no parent, because there is none to name.
+    fun `the floating reply button replies with no parent when the root is missing`() {
+        // With no root message there is no card to reply from — the floating button covers
+        // it regardless, and the reply names no parent, because there is none to name.
         val r = root("pruned away")
         val surviving = reply(r.id, r.id, "what is left")
         show(loaded(r.id, listOf(surviving)))
 
-        // The placeholder standing in for the absent root, plus the surviving reply.
-        assertEquals(2, replyControls())
+        compose.onNodeWithTag("thread-reply-fab").performClick()
 
-        compose.onAllNodesWithText("Reply", substring = true)[0].performClick()
         assertEquals(r.id, repliedToRoot)
         assertNull("a thread-level reply names no parent", repliedToParent)
+    }
+
+    @Test
+    fun `long-pressing a message reveals a context menu offering reply and profile`() {
+        val r = root("hello")
+        show(loaded(r.id, listOf(r)))
+
+        compose.onNodeWithText("hello").performTouchInput { longClick() }
+
+        compose.onNodeWithTag("message-context-reply").assertExists()
+        compose.onNodeWithTag("message-context-profile").assertExists()
+    }
+
+    @Test
+    fun `choosing reply from a message's context menu replies to that specific message`() {
+        val r = root("root")
+        val a = reply(r.id, r.id, "first")
+        show(loaded(r.id, listOf(r, a)))
+
+        compose.onNodeWithText("first").performTouchInput { longClick() }
+        compose.onNodeWithTag("message-context-reply").performClick()
+
+        assertEquals(r.id, repliedToRoot)
+        assertEquals(a.id, repliedToParent)
+    }
+
+    @Test
+    fun `choosing user profile from another author's message opens their contact actions`() {
+        val r = theirRoot("hello")
+        show(loaded(r.id, listOf(r)), myAuthor = me)
+
+        compose.onNodeWithText("hello").performTouchInput { longClick() }
+        compose.onNodeWithTag("message-context-profile").performClick()
+
+        compose.onNodeWithText("Save nickname").assertExists()
+    }
+
+    @Test
+    fun `choosing user profile on your own message does nothing`() {
+        val r = root("hello")
+        show(loaded(r.id, listOf(r)), myAuthor = me)
+
+        compose.onNodeWithText("hello").performTouchInput { longClick() }
+        compose.onNodeWithTag("message-context-profile").performClick()
+
+        compose.onNodeWithText("Save nickname").assertDoesNotExist()
     }
 
     @Test

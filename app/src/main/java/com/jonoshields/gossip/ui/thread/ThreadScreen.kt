@@ -1,7 +1,10 @@
 package com.jonoshields.gossip.ui.thread
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,7 +14,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -25,9 +31,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -111,6 +117,19 @@ internal fun ThreadContent(
                 },
             )
         },
+        floatingActionButton = {
+            // Always replies to the thread itself — parent is the root when it's held, or
+            // null when it isn't (the assembler treats those identically), the same target
+            // every per-message "Reply" button used to offer from the root's own card.
+            if (state is ThreadUiState.Loaded && selectedAuthor == null) {
+                ExtendedFloatingActionButton(
+                    onClick = { onReply(state.thread.rootId, state.thread.root?.id) },
+                    modifier = Modifier.testTag("thread-reply-fab"),
+                ) {
+                    Text("Reply")
+                }
+            }
+        },
     ) { padding ->
         when (state) {
             ThreadUiState.Loading -> Unit
@@ -179,8 +198,8 @@ private fun ThreadBody(
             val root = thread.root
             if (root == null) {
                 // Calm, not an error: a thread outliving its root is a normal end state.
-                // This carries the only thread-level reply action, because with no root
-                // message there is no card to reply from.
+                // The floating Reply button covers replying to the thread itself here too
+                // (parent null, same as a root's own id would resolve to).
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
@@ -192,16 +211,9 @@ private fun ThreadBody(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            TextButton(onClick = { onReply(thread.rootId, null) }) { Text("Reply") }
-                        }
                     }
                 }
             } else {
-                // Exactly one reply action per message, including the root. A separate
-                // "reply to the thread" button would do the identical thing here — the
-                // assembler treats a null parent and a parent naming the root the same way
-                // — so it would be two buttons with one meaning.
                 MessageCard(
                     message = root,
                     name = nameOf(root.body.author),
@@ -243,6 +255,7 @@ private fun LazyListScope.renderNodes(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageCard(
     message: Message,
@@ -256,34 +269,50 @@ private fun MessageCard(
     // a few seconds stale while this card sits on screen is not worth chasing with a ticker.
     val now = remember { System.currentTimeMillis() }
 
+    // Not rememberSaveable: same reasoning as ThreadContent's selectedAuthor — losing an
+    // open menu on rotation is a fine trade.
+    var showMenu by remember { mutableStateOf(false) }
+
     Row(Modifier.fillMaxWidth().padding(start = (depth.coerceAtMost(5) * 14).dp)) {
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (detached) {
-                    // The quiet marker from plan.md §6 — never styled as a failure.
-                    Text(
-                        "replying to a message not carried here",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+        Box(Modifier.fillMaxWidth()) {
+            Card(
+                Modifier.fillMaxWidth()
+                    // Long-press is the only whole-card gesture; a plain tap does nothing
+                    // here; specific actions live on the author name (tap) and this menu.
+                    .combinedClickable(onClick = {}, onLongClick = { showMenu = true }),
+            ) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (detached) {
+                        // The quiet marker from plan.md §6 — never styled as a failure.
+                        Text(
+                            "replying to a message not carried here",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    AuthorName(name, modifier = Modifier.clickable(onClick = onAuthorClick))
-                    Text(
-                        RelativeTime.describe(message.body.timestampMillis, now),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        AuthorName(name, modifier = Modifier.clickable(onClick = onAuthorClick))
+                        Text(
+                            RelativeTime.describe(message.body.timestampMillis, now),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(message.body.text, style = MaterialTheme.typography.bodyLarge)
                 }
-                Text(message.body.text, style = MaterialTheme.typography.bodyLarge)
-
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    TextButton(onClick = onReply) { Text("Reply", textAlign = TextAlign.End) }
-                }
+            }
+            DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                DropdownMenuItem(
+                    text = { Text("Reply") },
+                    onClick = { showMenu = false; onReply() },
+                    modifier = Modifier.testTag("message-context-reply"),
+                )
+                DropdownMenuItem(
+                    text = { Text("User Profile") },
+                    onClick = { showMenu = false; onAuthorClick() },
+                    modifier = Modifier.testTag("message-context-profile"),
+                )
             }
         }
     }
