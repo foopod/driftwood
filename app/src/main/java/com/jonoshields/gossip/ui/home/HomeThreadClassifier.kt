@@ -19,23 +19,31 @@ object HomeThreadClassifier {
             .partition { (_, inThread) -> inThread.any { it.body.author in listenScope } }
 
         return HomeUiState.Threads(
-            listening = summarise(listening),
-            gossip = summarise(gossip),
+            listening = summarise(listening, listenScope),
+            gossip = summarise(gossip, listenScope),
         )
     }
 
-    private fun summarise(entries: List<Map.Entry<MessageId, List<Message>>>): List<ThreadSummary> =
+    private fun summarise(
+        entries: List<Map.Entry<MessageId, List<Message>>>,
+        listenScope: Set<AuthorId>,
+    ): List<ThreadSummary> =
         entries.map { (rootId, inThread) ->
             val root = inThread.firstOrNull { it.isRoot && it.id == rootId }
+            // Newest reply (never the root) from someone you listen to, if any — absent on
+            // every Gossip-tab thread by construction, since no listened author appears
+            // there at all.
+            val latestListened = inThread
+                .filter { it.id != rootId && it.body.author in listenScope }
+                .maxByOrNull { it.body.timestampMillis }
             ThreadSummary(
                 rootId = rootId,
-                // With the root pruned away the opening line is genuinely unknown, so
-                // fall back to the oldest reply still held rather than inventing one.
-                opening = root?.body?.text
-                    ?: inThread.minByOrNull { it.body.timestampMillis }?.body?.text.orEmpty(),
+                rootAuthor = root?.body?.author,
+                rootText = root?.body?.text,
+                latestListenedAuthor = latestListened?.body?.author,
+                latestListenedText = latestListened?.body?.text,
                 messageCount = inThread.size,
                 newestTimestamp = inThread.maxOf { it.body.timestampMillis },
-                rootHeld = root != null,
             )
         }.sortedByDescending { it.newestTimestamp }
 }

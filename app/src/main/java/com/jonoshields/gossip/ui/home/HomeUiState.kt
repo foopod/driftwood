@@ -1,17 +1,26 @@
 package com.jonoshields.gossip.ui.home
 
+import com.jonoshields.gossip.core.model.AuthorId
 import com.jonoshields.gossip.core.model.MessageId
+import com.jonoshields.gossip.core.store.DisplayName
 
 /**
  * One conversation as it appears in the list. Grouped by thread rather than listed by
  * message so a burst of replies reads as one updated conversation (plan.md §6).
+ *
+ * [rootAuthor]/[rootText] are `null` together, exactly when the root itself isn't held.
+ * [latestListenedAuthor]/[latestListenedText] are set only when someone you listen to has
+ * *replied* — never for the root itself, and never on a Gossip-tab thread, where by
+ * construction no listened author appears at all.
  */
 data class ThreadSummary(
     val rootId: MessageId,
-    val opening: String,
+    val rootAuthor: AuthorId?,
+    val rootText: String?,
+    val latestListenedAuthor: AuthorId?,
+    val latestListenedText: String?,
     val messageCount: Int,
     val newestTimestamp: Long,
-    val rootHeld: Boolean,
 )
 
 sealed interface HomeUiState {
@@ -29,5 +38,6 @@ sealed interface HomeUiState {
     data class Threads(
         val listening: List<ThreadSummary>,
         val gossip: List<ThreadSummary>,
+        val names: Map<AuthorId, DisplayName> = emptyMap(),
     ) : HomeUiState
 }

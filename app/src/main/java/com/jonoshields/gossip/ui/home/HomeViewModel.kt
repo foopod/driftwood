@@ -20,7 +20,12 @@ class HomeViewModel @Inject constructor(
     val uiState: StateFlow<HomeUiState> = combine(
         repository.observeAll(),
         directory.observeListenScope(),
-    ) { messages, listenScope ->
-        if (messages.isEmpty()) HomeUiState.Empty else HomeThreadClassifier.classify(messages, listenScope)
+        directory.observeNames(),
+    ) { messages, listenScope, names ->
+        if (messages.isEmpty()) {
+            HomeUiState.Empty
+        } else {
+            HomeThreadClassifier.classify(messages, listenScope).copy(names = names)
+        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState.Loading)
 }

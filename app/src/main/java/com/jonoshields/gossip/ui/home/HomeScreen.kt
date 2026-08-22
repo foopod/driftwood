@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -31,8 +32,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.jonoshields.gossip.core.model.AuthorId
 import com.jonoshields.gossip.core.model.MessageId
+import com.jonoshields.gossip.core.store.DisplayName
+import com.jonoshields.gossip.core.store.NameResolver
 import com.jonoshields.gossip.theme.GossipTheme
+import com.jonoshields.gossip.ui.common.AuthorName
 
 @Composable
 fun HomeScreen(
@@ -92,16 +97,23 @@ internal fun HomeContent(
                         text = { Text("Gossip (${state.gossip.size})") },
                     )
                 }
+                // Kept out of the classifier, which stays pure and name-agnostic: this is
+                // the one fallback every other name lookup in the app already uses.
+                val nameOf: (AuthorId) -> DisplayName = { author ->
+                    state.names[author] ?: NameResolver.resolve(author, nickname = null, username = null)
+                }
                 if (selectedTab == 0) {
                     ThreadTab(
                         threads = state.listening,
                         emptyMessage = "Nobody you listen to has posted yet.",
+                        nameOf = nameOf,
                         onOpenThread = onOpenThread,
                     )
                 } else {
                     ThreadTab(
                         threads = state.gossip,
                         emptyMessage = "Nothing incidental has turned up yet.",
+                        nameOf = nameOf,
                         onOpenThread = onOpenThread,
                     )
                 }
@@ -114,6 +126,7 @@ internal fun HomeContent(
 private fun ThreadTab(
     threads: List<ThreadSummary>,
     emptyMessage: String,
+    nameOf: (AuthorId) -> DisplayName,
     onOpenThread: (MessageId) -> Unit,
 ) {
     LazyColumn(
@@ -131,7 +144,7 @@ private fun ThreadTab(
             }
         } else {
             items(threads, key = { it.rootId.toHex() }) { thread ->
-                ThreadRow(thread, onClick = { onOpenThread(thread.rootId) })
+                ThreadRow(thread, nameOf, onClick = { onOpenThread(thread.rootId) })
             }
         }
     }
@@ -154,10 +167,11 @@ private fun EmptyState(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun ThreadRow(thread: ThreadSummary, onClick: () -> Unit) {
+private fun ThreadRow(thread: ThreadSummary, nameOf: (AuthorId) -> DisplayName, onClick: () -> Unit) {
     Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (!thread.rootHeld) {
+            val rootAuthor = thread.rootAuthor
+            if (rootAuthor == null) {
                 // The start of this conversation is genuinely gone. Say so plainly rather
                 // than showing a reply as though it were the opening line.
                 Text(
@@ -165,8 +179,25 @@ private fun ThreadRow(thread: ThreadSummary, onClick: () -> Unit) {
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            } else {
+                AuthorName(nameOf(rootAuthor))
+                Text(thread.rootText.orEmpty(), style = MaterialTheme.typography.bodyLarge, maxLines = 3)
             }
-            Text(thread.opening, style = MaterialTheme.typography.bodyLarge, maxLines = 3)
+
+            val listenedAuthor = thread.latestListenedAuthor
+            if (listenedAuthor != null) {
+                // Root plus the reply, not the reply alone: what's worth seeing is *both*
+                // that this conversation exists and that someone you follow answered it.
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AuthorName(nameOf(listenedAuthor))
+                    Text(
+                        "replied: ${thread.latestListenedText.orEmpty()}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2,
+                    )
+                }
+            }
+
             Text(
                 if (thread.messageCount == 1) "1 message" else "${thread.messageCount} messages",
                 style = MaterialTheme.typography.labelMedium,
@@ -185,14 +216,31 @@ private fun EmptyPreview() {
 @Preview(showBackground = true)
 @Composable
 private fun ThreadsPreview() {
+    val author = AuthorId.of(ByteArray(32) { 9 })
     GossipTheme {
         HomeContent(
             HomeUiState.Threads(
                 listening = listOf(
-                    ThreadSummary(MessageId.of(ByteArray(32) { 1 }), "Trying out this gossip thing.", 1, 0, true),
+                    ThreadSummary(
+                        rootId = MessageId.of(ByteArray(32) { 1 }),
+                        rootAuthor = author,
+                        rootText = "Trying out this gossip thing.",
+                        latestListenedAuthor = author,
+                        latestListenedText = "Working nicely so far.",
+                        messageCount = 2,
+                        newestTimestamp = 1,
+                    ),
                 ),
                 gossip = listOf(
-                    ThreadSummary(MessageId.of(ByteArray(32) { 2 }), "…and it kept going from there.", 4, 0, false),
+                    ThreadSummary(
+                        rootId = MessageId.of(ByteArray(32) { 2 }),
+                        rootAuthor = null,
+                        rootText = null,
+                        latestListenedAuthor = null,
+                        latestListenedText = null,
+                        messageCount = 4,
+                        newestTimestamp = 0,
+                    ),
                 ),
             ),
             {}, {}, {}, {},

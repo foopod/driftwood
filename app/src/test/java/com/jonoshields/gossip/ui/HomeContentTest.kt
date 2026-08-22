@@ -1,9 +1,13 @@
 package com.jonoshields.gossip.ui
 
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import com.jonoshields.gossip.core.model.AuthorId
 import com.jonoshields.gossip.core.model.MessageId
+import com.jonoshields.gossip.core.store.NameResolver
 import com.jonoshields.gossip.ui.home.HomeContent
 import com.jonoshields.gossip.ui.home.HomeUiState
 import com.jonoshields.gossip.ui.home.ThreadSummary
@@ -25,8 +29,23 @@ class HomeContentTest {
 
     private var openedThread: MessageId? = null
 
-    private fun summary(seed: Int, opening: String) =
-        ThreadSummary(MessageId.of(ByteArray(32) { seed.toByte() }), opening, 1, seed.toLong(), rootHeld = true)
+    private fun author(seed: Int) = AuthorId.of(ByteArray(32) { seed.toByte() })
+
+    private fun summary(
+        seed: Int,
+        rootText: String?,
+        rootAuthor: AuthorId? = author(seed),
+        latestListenedAuthor: AuthorId? = null,
+        latestListenedText: String? = null,
+    ) = ThreadSummary(
+        rootId = MessageId.of(ByteArray(32) { seed.toByte() }),
+        rootAuthor = rootAuthor,
+        rootText = rootText,
+        latestListenedAuthor = latestListenedAuthor,
+        latestListenedText = latestListenedText,
+        messageCount = 1,
+        newestTimestamp = seed.toLong(),
+    )
 
     private fun show(state: HomeUiState) {
         compose.setContent {
@@ -95,5 +114,52 @@ class HomeContentTest {
         compose.onNodeWithText("tap me").performClick()
 
         assertEquals(thread.rootId, openedThread)
+    }
+
+    @Test
+    fun `a missing root is explained rather than shown blank`() {
+        val thread = summary(1, rootText = null, rootAuthor = null)
+        show(HomeUiState.Threads(listening = listOf(thread), gossip = emptyList()))
+
+        compose.onNodeWithText("the start of this conversation isn't carried here").assertExists()
+    }
+
+    @Test
+    fun `the root's author is shown by its resolved name`() {
+        val author = author(1)
+        val thread = summary(1, "hello", rootAuthor = author)
+        val names = mapOf(author to NameResolver.resolve(author, nickname = "Sam", username = null))
+        show(HomeUiState.Threads(listening = listOf(thread), gossip = emptyList(), names = names))
+
+        compose.onNodeWithText("Sam").assertExists()
+        compose.onNodeWithText("hello").assertExists()
+    }
+
+    @Test
+    fun `a listened reply is shown alongside the root, not instead of it`() {
+        val root = author(1)
+        val replier = author(2)
+        val thread = summary(
+            seed = 1,
+            rootText = "the root",
+            rootAuthor = root,
+            latestListenedAuthor = replier,
+            latestListenedText = "the reply",
+        )
+        val names = mapOf(replier to NameResolver.resolve(replier, nickname = "Dad", username = null))
+        show(HomeUiState.Threads(listening = listOf(thread), gossip = emptyList(), names = names))
+
+        compose.onNodeWithText("the root").assertExists()
+        compose.onNodeWithText("Dad").assertExists()
+        compose.onNodeWithText("replied: the reply").assertExists()
+    }
+
+    @Test
+    fun `with no listened reply, only the root is shown`() {
+        val thread = summary(1, "just the root", latestListenedAuthor = null)
+        show(HomeUiState.Threads(listening = listOf(thread), gossip = emptyList()))
+
+        compose.onNodeWithText("just the root").assertExists()
+        compose.onAllNodesWithText("replied:", substring = true).assertCountEquals(0)
     }
 }
