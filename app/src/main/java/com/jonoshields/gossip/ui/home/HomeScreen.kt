@@ -3,6 +3,8 @@ package com.jonoshields.gossip.ui.home
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -13,11 +15,17 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
@@ -33,11 +41,12 @@ fun HomeScreen(
     onCompose: () -> Unit,
     onSettings: () -> Unit,
     onSync: () -> Unit,
+    onManageListening: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    HomeContent(state, onOpenThread, onCompose, onSettings, onSync, modifier)
+    HomeContent(state, onOpenThread, onCompose, onSettings, onSync, onManageListening, modifier)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -48,8 +57,13 @@ internal fun HomeContent(
     onCompose: () -> Unit,
     onSettings: () -> Unit,
     onSync: () -> Unit,
+    onManageListening: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 0 = Listening, 1 = Gossip (plan.md §6's two tabs). Not tied to HomeUiState, since which
+    // tab you're looking at should survive the thread list itself reloading underneath it.
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
@@ -68,14 +82,66 @@ internal fun HomeContent(
         when (state) {
             HomeUiState.Loading -> Unit
             HomeUiState.Empty -> EmptyState(Modifier.padding(padding))
-            is HomeUiState.Threads -> LazyColumn(
-                modifier = Modifier.padding(padding).fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                items(state.threads, key = { it.rootId.toHex() }) { thread ->
-                    ThreadRow(thread, onClick = { onOpenThread(thread.rootId) })
+            is HomeUiState.Threads -> Column(Modifier.padding(padding).fillMaxSize()) {
+                TabRow(selectedTabIndex = selectedTab) {
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = { Text("Listening (${state.listening.size})") },
+                    )
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = { Text("Gossip (${state.gossip.size})") },
+                    )
                 }
+                if (selectedTab == 0) {
+                    ThreadTab(
+                        threads = state.listening,
+                        emptyMessage = "Nobody you listen to has posted yet.",
+                        onOpenThread = onOpenThread,
+                        header = {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                TextButton(onClick = onManageListening) { Text("Manage listening list") }
+                            }
+                        },
+                    )
+                } else {
+                    ThreadTab(
+                        threads = state.gossip,
+                        emptyMessage = "Nothing incidental has turned up yet.",
+                        onOpenThread = onOpenThread,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThreadTab(
+    threads: List<ThreadSummary>,
+    emptyMessage: String,
+    onOpenThread: (MessageId) -> Unit,
+    header: (@Composable () -> Unit)? = null,
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        header?.let { item { it() } }
+        if (threads.isEmpty()) {
+            item {
+                Text(
+                    emptyMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            items(threads, key = { it.rootId.toHex() }) { thread ->
+                ThreadRow(thread, onClick = { onOpenThread(thread.rootId) })
             }
         }
     }
@@ -123,7 +189,7 @@ private fun ThreadRow(thread: ThreadSummary, onClick: () -> Unit) {
 @Preview(showBackground = true)
 @Composable
 private fun EmptyPreview() {
-    GossipTheme { HomeContent(HomeUiState.Empty, {}, {}, {}, {}) }
+    GossipTheme { HomeContent(HomeUiState.Empty, {}, {}, {}, {}, {}) }
 }
 
 @Preview(showBackground = true)
@@ -132,12 +198,14 @@ private fun ThreadsPreview() {
     GossipTheme {
         HomeContent(
             HomeUiState.Threads(
-                listOf(
+                listening = listOf(
                     ThreadSummary(MessageId.of(ByteArray(32) { 1 }), "Trying out this gossip thing.", 1, 0, true),
+                ),
+                gossip = listOf(
                     ThreadSummary(MessageId.of(ByteArray(32) { 2 }), "…and it kept going from there.", 4, 0, false),
-                )
+                ),
             ),
-            {}, {}, {}, {},
+            {}, {}, {}, {}, {},
         )
     }
 }

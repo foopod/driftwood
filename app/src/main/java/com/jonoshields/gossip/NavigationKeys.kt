@@ -19,3 +19,5 @@ data class Compose(
 @Serializable data object Settings : NavKey
 
 @Serializable data object Sync : NavKey
+
+@Serializable data object ListenList : NavKey
