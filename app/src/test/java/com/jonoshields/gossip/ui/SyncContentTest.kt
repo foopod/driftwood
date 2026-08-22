@@ -4,7 +4,6 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -213,14 +212,31 @@ class SyncContentTest {
     }
 
     @Test
-    fun `an existing nickname shows as a verified name, not just a fingerprint`() {
-        // "Sam" also legitimately appears a second time, pre-filled into the nickname field
-        // itself — so the count, not mere existence, is what proves the name rendered.
+    fun `a known contact sees a plain question, not the fingerprint compare form`() {
+        // Meeting them once in person and assigning a nickname was the whole point of the
+        // compare-and-confirm ceremony (plan.md §3.1) — repeating it on every subsequent
+        // sync would be friction for no new information.
         val nickname = DisplayName(label = "Sam", fingerprint = NameResolver.fingerprint(peer), verified = true, hue = 0f)
         show(SyncUiState.Confirming(peer), names = mapOf(peer to nickname))
 
-        assertEquals(2, compose.onAllNodesWithText("Sam").fetchSemanticsNodes().size)
+        compose.onNodeWithText("Sync with Sam?").assertExists()
         compose.onNodeWithText(nickname.fingerprint).assertDoesNotExist()
+        compose.onNodeWithText("Theirs").assertDoesNotExist()
+        compose.onNodeWithText("Mine").assertDoesNotExist()
+        compose.onNodeWithText("Nickname").assertDoesNotExist()
+        compose.onNodeWithText("Not listening").assertDoesNotExist()
+        compose.onNodeWithText("Only sync with someone you trust", substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun `confirming a known contact still calls onConfirm and relabels to waiting`() {
+        val nickname = DisplayName(label = "Sam", fingerprint = NameResolver.fingerprint(peer), verified = true, hue = 0f)
+        show(SyncUiState.Confirming(peer), names = mapOf(peer to nickname))
+
+        compose.onNodeWithText("Yes, sync").performClick()
+
+        assertEquals(true, confirmed)
+        compose.onNodeWithText("Waiting…").assertIsNotEnabled()
     }
 
     @Test

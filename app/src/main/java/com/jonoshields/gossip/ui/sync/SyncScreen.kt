@@ -225,12 +225,20 @@ private fun ConfirmingContent(
     onSetNickname: (String) -> Unit,
     onToggleListen: () -> Unit,
 ) {
-    val currentNickname = if (displayName.verified) displayName.label else null
-
     // Keyed on the peer so a different confirmation (should one ever follow without leaving
     // this screen) starts from a clean slate rather than inheriting the last one's state.
     var confirmed by rememberSaveable(state.peer) { mutableStateOf(false) }
-    var nicknameDraft by rememberSaveable(state.peer) { mutableStateOf(currentNickname.orEmpty()) }
+
+    if (displayName.verified) {
+        // A known contact: the fingerprint compare and the nickname were the point of
+        // meeting them once in person (plan.md §3.1) — repeating that ceremony on every
+        // sync afterward would be friction for no new information.
+        Text("Sync with ${displayName.text}?", style = MaterialTheme.typography.titleMedium)
+        ConfirmButton(confirmed = confirmed, onClick = { confirmed = true; onConfirm() })
+        return
+    }
+
+    var nicknameDraft by rememberSaveable(state.peer) { mutableStateOf("") }
 
     Text("Is this who you're syncing with?", style = MaterialTheme.typography.titleMedium)
     Text(
@@ -267,7 +275,7 @@ private fun ConfirmingContent(
         style = MaterialTheme.typography.labelMedium,
     )
     ContactControls(
-        currentNickname = currentNickname,
+        currentNickname = null,
         isListening = isListening,
         onSetNickname = onSetNickname,
         onToggleListen = onToggleListen,
@@ -275,17 +283,19 @@ private fun ConfirmingContent(
         onDraftChange = { nicknameDraft = it },
     )
 
-    Button(
+    ConfirmButton(
+        confirmed = confirmed,
         onClick = {
-            if (nicknameDraft.isNotBlank() && nicknameDraft != currentNickname) {
-                onSetNickname(nicknameDraft)
-            }
+            if (nicknameDraft.isNotBlank()) onSetNickname(nicknameDraft)
             confirmed = true
             onConfirm()
         },
-        enabled = !confirmed,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    )
+}
+
+@Composable
+private fun ConfirmButton(confirmed: Boolean, onClick: () -> Unit) {
+    Button(onClick = onClick, enabled = !confirmed, modifier = Modifier.fillMaxWidth()) {
         Text(if (confirmed) "Waiting…" else "Yes, sync")
     }
 }
