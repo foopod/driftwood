@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
@@ -168,29 +169,43 @@ private fun EmptyState(modifier: Modifier = Modifier) {
 
 @Composable
 private fun ThreadRow(thread: ThreadSummary, nameOf: (AuthorId) -> DisplayName, onClick: () -> Unit) {
-    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            val rootAuthor = thread.rootAuthor
-            if (rootAuthor == null) {
-                // The start of this conversation is genuinely gone. Say so plainly rather
-                // than showing a reply as though it were the opening line.
-                Text(
-                    "the start of this conversation isn't carried here",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                AuthorName(nameOf(rootAuthor))
-                Text(thread.rootText.orEmpty(), style = MaterialTheme.typography.bodyLarge, maxLines = 3)
+    // One clickable area around three standalone pieces, rather than one card holding all of
+    // them — the root, the listened reply and the "more" callout each read as their own thing,
+    // but tapping any of them opens the same thread.
+    Column(
+        Modifier.fillMaxWidth().clickable(onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        val rootAuthor = thread.rootAuthor
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (rootAuthor == null) {
+                    // The start of this conversation is genuinely gone. Say so plainly rather
+                    // than showing a reply as though it were the opening line.
+                    Text(
+                        "the start of this conversation isn't carried here",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    AuthorName(nameOf(rootAuthor))
+                    Text(thread.rootText.orEmpty(), style = MaterialTheme.typography.bodyLarge, maxLines = 3)
+                }
             }
+        }
 
-            val listenedAuthor = thread.latestListenedAuthor
-            if (listenedAuthor != null) {
-                // Root plus the reply, not the reply alone: what's worth seeing is *both*
-                // that this conversation exists and that someone you follow answered it.
-                // Indented so it reads as answering the line above, not as a second root.
+        val listenedAuthor = thread.latestListenedAuthor
+        if (listenedAuthor != null) {
+            // Root plus the reply, not the reply alone: what's worth seeing is *both* that
+            // this conversation exists and that someone you follow answered it. Its own
+            // card, indented and muted, so it reads as answering the root above rather
+            // than as a second root.
+            Card(
+                Modifier.fillMaxWidth().padding(start = 24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            ) {
                 Row(
-                    Modifier.padding(start = 16.dp),
+                    Modifier.padding(12.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     AuthorName(nameOf(listenedAuthor))
@@ -201,16 +216,24 @@ private fun ThreadRow(thread: ThreadSummary, nameOf: (AuthorId) -> DisplayName, 
                     )
                 }
             }
+        }
 
-            // Only what isn't already visible above: the root (when held) and the quoted
-            // reply (when shown) each account for one message of the total.
-            val shown = (if (rootAuthor != null) 1 else 0) + (if (listenedAuthor != null) 1 else 0)
-            val more = thread.messageCount - shown
-            if (more > 0) {
+        // Only what isn't already visible above: the root (when held) and the quoted
+        // reply (when shown) each account for one message of the total.
+        val shown = (if (rootAuthor != null) 1 else 0) + (if (listenedAuthor != null) 1 else 0)
+        val more = thread.messageCount - shown
+        if (more > 0) {
+            // Styled as its own call to action — this is what invites opening the thread
+            // to see the rest, not a caption on the cards above it.
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+            ) {
                 Text(
-                    if (more == 1) "1 more message" else "$more more messages",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    (if (more == 1) "1 more message" else "$more more messages") + "  ›",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
             }
         }

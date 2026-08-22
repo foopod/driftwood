@@ -180,7 +180,7 @@ class HomeContentTest {
         )
         show(HomeUiState.Threads(listening = listOf(thread), gossip = emptyList()))
 
-        compose.onNodeWithText("3 more messages").assertExists()
+        compose.onNodeWithText("3 more messages", substring = true).assertExists()
     }
 
     @Test
@@ -188,7 +188,7 @@ class HomeContentTest {
         val thread = summary(1, "the root", messageCount = 2)
         show(HomeUiState.Threads(listening = listOf(thread), gossip = emptyList()))
 
-        compose.onNodeWithText("1 more message").assertExists()
+        compose.onNodeWithText("1 more message", substring = true).assertExists()
     }
 
     @Test
