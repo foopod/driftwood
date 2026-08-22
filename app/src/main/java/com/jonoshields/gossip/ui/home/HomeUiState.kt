@@ -8,17 +8,19 @@ import com.jonoshields.gossip.core.store.DisplayName
  * One conversation as it appears in the list. Grouped by thread rather than listed by
  * message so a burst of replies reads as one updated conversation (plan.md §6).
  *
- * [rootAuthor]/[rootText] are `null` together, exactly when the root itself isn't held.
- * [latestListenedAuthor]/[latestListenedText] are set only when someone you listen to has
- * *replied* — never for the root itself, and never on a Gossip-tab thread, where by
- * construction no listened author appears at all.
+ * [rootAuthor]/[rootText]/[rootTimestamp] are `null` together, exactly when the root itself
+ * isn't held. [latestListenedAuthor]/[latestListenedText]/[latestListenedTimestamp] are set
+ * only when someone you listen to has *replied* — never for the root itself, and never on a
+ * Gossip-tab thread, where by construction no listened author appears at all.
  */
 data class ThreadSummary(
     val rootId: MessageId,
     val rootAuthor: AuthorId?,
     val rootText: String?,
+    val rootTimestamp: Long?,
     val latestListenedAuthor: AuthorId?,
     val latestListenedText: String?,
+    val latestListenedTimestamp: Long?,
     val messageCount: Int,
     val newestTimestamp: Long,
 )

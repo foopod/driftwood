@@ -37,6 +37,7 @@ import com.jonoshields.gossip.core.model.AuthorId
 import com.jonoshields.gossip.core.model.MessageId
 import com.jonoshields.gossip.core.store.DisplayName
 import com.jonoshields.gossip.core.store.NameResolver
+import com.jonoshields.gossip.core.store.RelativeTime
 import com.jonoshields.gossip.theme.GossipTheme
 import com.jonoshields.gossip.ui.common.AuthorName
 
@@ -169,6 +170,10 @@ private fun EmptyState(modifier: Modifier = Modifier) {
 
 @Composable
 private fun ThreadRow(thread: ThreadSummary, nameOf: (AuthorId) -> DisplayName, onClick: () -> Unit) {
+    // Read once per row rather than tied to a recomposition key — a relative time drifting a
+    // few seconds stale while this row sits on screen is not worth chasing with a ticker.
+    val now = remember { System.currentTimeMillis() }
+
     // One clickable area around three standalone pieces, rather than one card holding all of
     // them — the root, the listened reply and the "more" callout each read as their own thing,
     // but tapping any of them opens the same thread.
@@ -188,7 +193,16 @@ private fun ThreadRow(thread: ThreadSummary, nameOf: (AuthorId) -> DisplayName, 
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
-                    AuthorName(nameOf(rootAuthor))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        AuthorName(nameOf(rootAuthor))
+                        thread.rootTimestamp?.let {
+                            Text(
+                                RelativeTime.describe(it, now),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     Text(thread.rootText.orEmpty(), style = MaterialTheme.typography.bodyLarge, maxLines = 3)
                 }
             }
@@ -204,11 +218,17 @@ private fun ThreadRow(thread: ThreadSummary, nameOf: (AuthorId) -> DisplayName, 
                 Modifier.fillMaxWidth().padding(start = 24.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
             ) {
-                Row(
-                    Modifier.padding(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    AuthorName(nameOf(listenedAuthor))
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        AuthorName(nameOf(listenedAuthor))
+                        thread.latestListenedTimestamp?.let {
+                            Text(
+                                RelativeTime.describe(it, now),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     Text(
                         "replied: ${thread.latestListenedText.orEmpty()}",
                         style = MaterialTheme.typography.bodyMedium,
@@ -223,18 +243,18 @@ private fun ThreadRow(thread: ThreadSummary, nameOf: (AuthorId) -> DisplayName, 
         val shown = (if (rootAuthor != null) 1 else 0) + (if (listenedAuthor != null) 1 else 0)
         val more = thread.messageCount - shown
         if (more > 0) {
-            // Styled as its own call to action — this is what invites opening the thread
-            // to see the rest, not a caption on the cards above it. Indented like the
-            // reply card: it's more conversation hanging off the same root.
+            // Its own card, same muted colour as the reply above — it invites opening the
+            // thread to see the rest, but shouldn't shout louder than actual message content.
+            // Indented like the reply card: it's more conversation hanging off the same root.
             Card(
                 Modifier.fillMaxWidth().padding(start = 24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
             ) {
                 Text(
                     (if (more == 1) "1 more message" else "$more more messages") + "  ›",
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -259,8 +279,10 @@ private fun ThreadsPreview() {
                         rootId = MessageId.of(ByteArray(32) { 1 }),
                         rootAuthor = author,
                         rootText = "Trying out this gossip thing.",
+                        rootTimestamp = System.currentTimeMillis() - 3_600_000,
                         latestListenedAuthor = author,
                         latestListenedText = "Working nicely so far.",
+                        latestListenedTimestamp = System.currentTimeMillis() - 300_000,
                         messageCount = 2,
                         newestTimestamp = 1,
                     ),
@@ -270,8 +292,10 @@ private fun ThreadsPreview() {
                         rootId = MessageId.of(ByteArray(32) { 2 }),
                         rootAuthor = null,
                         rootText = null,
+                        rootTimestamp = null,
                         latestListenedAuthor = null,
                         latestListenedText = null,
+                        latestListenedTimestamp = null,
                         messageCount = 4,
                         newestTimestamp = 0,
                     ),

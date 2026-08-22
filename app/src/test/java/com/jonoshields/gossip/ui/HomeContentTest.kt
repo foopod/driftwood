@@ -35,15 +35,19 @@ class HomeContentTest {
         seed: Int,
         rootText: String?,
         rootAuthor: AuthorId? = author(seed),
+        rootTimestamp: Long? = if (rootAuthor != null) 1_000L else null,
         latestListenedAuthor: AuthorId? = null,
         latestListenedText: String? = null,
+        latestListenedTimestamp: Long? = if (latestListenedAuthor != null) 1_000L else null,
         messageCount: Int = 1,
     ) = ThreadSummary(
         rootId = MessageId.of(ByteArray(32) { seed.toByte() }),
         rootAuthor = rootAuthor,
         rootText = rootText,
+        rootTimestamp = rootTimestamp,
         latestListenedAuthor = latestListenedAuthor,
         latestListenedText = latestListenedText,
+        latestListenedTimestamp = latestListenedTimestamp,
         messageCount = messageCount,
         newestTimestamp = seed.toLong(),
     )
@@ -197,5 +201,40 @@ class HomeContentTest {
         show(HomeUiState.Threads(listening = listOf(thread), gossip = emptyList()))
 
         compose.onAllNodesWithText("more message", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun `a message posted moments ago reads as just now`() {
+        val thread = summary(1, "hello", rootTimestamp = System.currentTimeMillis())
+        show(HomeUiState.Threads(listening = listOf(thread), gossip = emptyList()))
+
+        compose.onNodeWithText("just now").assertExists()
+    }
+
+    @Test
+    fun `a long-past root shows a relative time`() {
+        val thread = summary(1, "hello", rootTimestamp = 1_000L)
+        show(HomeUiState.Threads(listening = listOf(thread), gossip = emptyList()))
+
+        compose.onNodeWithText("years ago", substring = true).assertExists()
+    }
+
+    @Test
+    fun `the root and the listened reply each carry their own relative time`() {
+        // Deliberately different timestamps, so each showing up confirms that one is wired
+        // independently of the other rather than both happening to read the same string.
+        val replier = author(2)
+        val thread = summary(
+            seed = 1,
+            rootText = "the root",
+            rootTimestamp = 1_000L,
+            latestListenedAuthor = replier,
+            latestListenedText = "the reply",
+            latestListenedTimestamp = System.currentTimeMillis(),
+        )
+        show(HomeUiState.Threads(listening = listOf(thread), gossip = emptyList()))
+
+        compose.onNodeWithText("years ago", substring = true).assertExists()
+        compose.onNodeWithText("just now").assertExists()
     }
 }

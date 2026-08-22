@@ -40,8 +40,10 @@ object HomeThreadClassifier {
                 rootId = rootId,
                 rootAuthor = root?.body?.author,
                 rootText = root?.body?.text,
+                rootTimestamp = root?.body?.timestampMillis,
                 latestListenedAuthor = latestListened?.body?.author,
                 latestListenedText = latestListened?.body?.text,
+                latestListenedTimestamp = latestListened?.body?.timestampMillis,
                 messageCount = inThread.size,
                 newestTimestamp = inThread.maxOf { it.body.timestampMillis },
             )

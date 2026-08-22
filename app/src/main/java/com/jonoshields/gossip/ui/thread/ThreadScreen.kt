@@ -23,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -35,6 +36,7 @@ import com.jonoshields.gossip.core.model.Message
 import com.jonoshields.gossip.core.model.MessageId
 import com.jonoshields.gossip.core.store.DisplayName
 import com.jonoshields.gossip.core.store.NameResolver
+import com.jonoshields.gossip.core.store.RelativeTime
 import com.jonoshields.gossip.core.store.ThreadNode
 import com.jonoshields.gossip.ui.common.AuthorName
 import com.jonoshields.gossip.ui.common.ContactActionsContent
@@ -250,6 +252,10 @@ private fun MessageCard(
     onReply: () -> Unit,
     onAuthorClick: () -> Unit,
 ) {
+    // Read once per card rather than tied to a recomposition key — a relative time drifting
+    // a few seconds stale while this card sits on screen is not worth chasing with a ticker.
+    val now = remember { System.currentTimeMillis() }
+
     Row(Modifier.fillMaxWidth().padding(start = (depth.coerceAtMost(5) * 14).dp)) {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -262,7 +268,14 @@ private fun MessageCard(
                     )
                 }
 
-                AuthorName(name, modifier = Modifier.clickable(onClick = onAuthorClick))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    AuthorName(name, modifier = Modifier.clickable(onClick = onAuthorClick))
+                    Text(
+                        RelativeTime.describe(message.body.timestampMillis, now),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Text(message.body.text, style = MaterialTheme.typography.bodyLarge)
 
                 Row(

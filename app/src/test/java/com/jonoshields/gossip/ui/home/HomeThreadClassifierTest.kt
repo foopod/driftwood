@@ -100,13 +100,14 @@ class HomeThreadClassifierTest {
     }
 
     @Test
-    fun `a preview carries the root's author and text`() {
+    fun `a preview carries the root's author, text and timestamp`() {
         val root = myRoot("thoughts on the meetup?")
         val result = HomeThreadClassifier.classify(listOf(root), listenScope = setOf(me))
 
         val summary = summaryFor(root.threadRoot, result.listening)
         assertEquals(me, summary.rootAuthor)
         assertEquals("thoughts on the meetup?", summary.rootText)
+        assertEquals(root.body.timestampMillis, summary.rootTimestamp)
     }
 
     @Test
@@ -118,6 +119,7 @@ class HomeThreadClassifierTest {
         val summary = summaryFor(root.threadRoot, result.gossip)
         assertEquals(null, summary.rootAuthor)
         assertEquals(null, summary.rootText)
+        assertEquals(null, summary.rootTimestamp)
     }
 
     @Test
@@ -129,6 +131,7 @@ class HomeThreadClassifierTest {
         val summary = summaryFor(root.threadRoot, result.listening)
         assertEquals(me, summary.latestListenedAuthor)
         assertEquals("yes, and here's more", summary.latestListenedText)
+        assertEquals(reply.body.timestampMillis, summary.latestListenedTimestamp)
     }
 
     @Test
@@ -141,6 +144,7 @@ class HomeThreadClassifierTest {
         val summary = summaryFor(root.threadRoot, result.listening)
         assertEquals(null, summary.latestListenedAuthor)
         assertEquals(null, summary.latestListenedText)
+        assertEquals(null, summary.latestListenedTimestamp)
     }
 
     @Test
