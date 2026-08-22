@@ -36,6 +36,9 @@ fun ContactControls(
     isListening: Boolean,
     onSetNickname: (String) -> Unit,
     onToggleListen: () -> Unit,
+    // False while blocked (plan.md §4: blocked wins, unconditionally) — you can't listen to
+    // and block the same person, so this is disabled rather than hidden, until you unblock.
+    isListenEnabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     // Keyed on currentNickname so a save (or a different identity entirely) resets the draft,
@@ -63,16 +66,23 @@ fun ContactControls(
             Modifier.fillMaxWidth()
                 // The whole row toggles, not just the Switch itself — a bigger, more
                 // forgiving touch target, and a stable way to reach this from a test.
-                .toggleable(value = isListening, role = Role.Switch, onValueChange = { onToggleListen() }),
+                .toggleable(
+                    value = isListening,
+                    enabled = isListenEnabled,
+                    role = Role.Switch,
+                    onValueChange = { onToggleListen() },
+                ),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(if (isListening) "Listening to their posts" else "Not listening")
-            Switch(checked = isListening, onCheckedChange = null)
+            Switch(checked = isListening, onCheckedChange = null, enabled = isListenEnabled)
         }
         Text(
-            // Forward-looking, per plan.md §6: listening never reshuffles what's already held.
-            if (isListening) {
+            if (!isListenEnabled) {
+                "You can't listen to someone you've blocked — unblock them first."
+            } else if (isListening) {
+                // Forward-looking, per plan.md §6: listening never reshuffles what's held.
                 "Turning this off won't remove what you already have — only future syncs stop."
             } else {
                 "You'll receive their messages from your next sync onward."

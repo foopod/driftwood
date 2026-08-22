@@ -121,6 +121,9 @@ internal interface BlocklistDao {
     @Query("SELECT author FROM blocklist")
     suspend fun blockedAuthors(): List<AuthorId>
 
+    @Query("SELECT author FROM blocklist")
+    fun observeBlockedAuthors(): Flow<List<AuthorId>>
+
     @Query("SELECT root FROM blocked_roots")
     suspend fun blockedRoots(): List<MessageId>
 }

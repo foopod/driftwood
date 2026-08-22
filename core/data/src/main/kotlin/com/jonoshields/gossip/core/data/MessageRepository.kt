@@ -56,6 +56,14 @@ interface MessageRepository {
     /** Drops their messages and the threads they started, immediately (plan.md §4). */
     suspend fun block(author: AuthorId): Result<Unit>
 
+    /**
+     * Reverses the block itself. Their messages and threads already deleted at block time
+     * stay gone — this only stops *future* content from them being dropped on ingest.
+     */
+    suspend fun unblock(author: AuthorId): Result<Unit>
+
+    fun observeBlockedAuthors(): Flow<Set<AuthorId>>
+
     /** Runs the prune pass and applies it. Returns what it did. */
     suspend fun prune(): Result<PruningPlan>
 }
@@ -140,6 +148,13 @@ class RoomMessageRepository internal constructor(
         // again" landing three days later is not acceptable behaviour.
         applyPlan(planPrune())
     }.mapLocalErrors()
+
+    override suspend fun unblock(author: AuthorId): Result<Unit> = runCatching {
+        database.blocklist().unblockAuthor(author)
+    }.mapLocalErrors()
+
+    override fun observeBlockedAuthors(): Flow<Set<AuthorId>> =
+        database.blocklist().observeBlockedAuthors().map { it.toSet() }
 
     override suspend fun prune(): Result<PruningPlan> = runCatching {
         planPrune().also { applyPlan(it) }

@@ -47,6 +47,7 @@ class ThreadContentTest {
     private var nicknameSet: Pair<com.jonoshields.gossip.core.model.AuthorId, String>? = null
     private var listenToggled: com.jonoshields.gossip.core.model.AuthorId? = null
     private var blocked: com.jonoshields.gossip.core.model.AuthorId? = null
+    private var unblocked: com.jonoshields.gossip.core.model.AuthorId? = null
 
     private fun show(state: ThreadUiState, myAuthor: com.jonoshields.gossip.core.model.AuthorId? = null) {
         compose.setContent {
@@ -59,6 +60,7 @@ class ThreadContentTest {
                 onSetNickname = { author, name -> nicknameSet = author to name },
                 onToggleListen = { author -> listenToggled = author },
                 onBlock = { author -> blocked = author },
+                onUnblock = { author -> unblocked = author },
             )
         }
     }
@@ -68,7 +70,14 @@ class ThreadContentTest {
         messages: List<com.jonoshields.gossip.core.model.Message>,
         names: Map<com.jonoshields.gossip.core.model.AuthorId, com.jonoshields.gossip.core.store.DisplayName> = emptyMap(),
         listenScope: Set<com.jonoshields.gossip.core.model.AuthorId> = emptySet(),
-    ) = ThreadUiState.Loaded(ThreadAssembler.assemble(rootId, messages), starred = false, names = names, listenScope = listenScope)
+        blockedAuthors: Set<com.jonoshields.gossip.core.model.AuthorId> = emptySet(),
+    ) = ThreadUiState.Loaded(
+        ThreadAssembler.assemble(rootId, messages),
+        starred = false,
+        names = names,
+        listenScope = listenScope,
+        blockedAuthors = blockedAuthors,
+    )
 
     /**
      * Counts every control offering to reply, matching on a substring so a differently
@@ -261,7 +270,8 @@ class ThreadContentTest {
         assertNull(blocked)
         compose.onNodeWithText(
             "Blocks them: removes their messages and the threads they started, " +
-                "immediately and from this device only. They are never told.",
+                "immediately and from this device only, and stops listening to them " +
+                "too. They are never told.",
         ).assertExists()
 
         // Second tap actually does it.
@@ -280,5 +290,37 @@ class ThreadContentTest {
 
         assertNull(blocked)
         compose.onNodeWithText("Save nickname").assertExists()
+    }
+
+    @Test
+    fun `a blocked author cannot be listened to`() {
+        val r = theirRoot("hello")
+        show(loaded(r.id, listOf(r), blockedAuthors = setOf(them)), myAuthor = me)
+        compose.onNodeWithText(NameResolver.fingerprint(them)).performClick()
+
+        compose.onNodeWithText("Not listening").performClick()
+
+        assertNull("listen is disabled while blocked", listenToggled)
+    }
+
+    @Test
+    fun `a blocked author shows unblock instead of block`() {
+        val r = theirRoot("hello")
+        show(loaded(r.id, listOf(r), blockedAuthors = setOf(them)), myAuthor = me)
+        compose.onNodeWithText(NameResolver.fingerprint(them)).performClick()
+
+        compose.onNodeWithText("Unblock").assertExists()
+        compose.onNodeWithText("Block").assertDoesNotExist()
+    }
+
+    @Test
+    fun `tapping unblock calls through for the right author with no confirmation`() {
+        val r = theirRoot("hello")
+        show(loaded(r.id, listOf(r), blockedAuthors = setOf(them)), myAuthor = me)
+        compose.onNodeWithText(NameResolver.fingerprint(them)).performClick()
+
+        compose.onNodeWithText("Unblock").performClick()
+
+        assertEquals(them, unblocked)
     }
 }

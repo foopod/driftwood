@@ -37,7 +37,7 @@ import com.jonoshields.gossip.core.store.DisplayName
 import com.jonoshields.gossip.core.store.NameResolver
 import com.jonoshields.gossip.core.store.ThreadNode
 import com.jonoshields.gossip.ui.common.AuthorName
-import com.jonoshields.gossip.ui.common.ContactControls
+import com.jonoshields.gossip.ui.common.ContactActionsContent
 import com.jonoshields.gossip.core.store.ThreadView
 
 @Composable
@@ -60,6 +60,7 @@ fun ThreadScreen(
         onSetNickname = viewModel::setNickname,
         onToggleListen = viewModel::toggleListen,
         onBlock = viewModel::block,
+        onUnblock = viewModel::unblock,
         modifier = modifier,
     )
 }
@@ -75,6 +76,7 @@ internal fun ThreadContent(
     onSetNickname: (AuthorId, String) -> Unit,
     onToggleListen: (AuthorId) -> Unit,
     onBlock: (AuthorId) -> Unit,
+    onUnblock: (AuthorId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // Not rememberSaveable: AuthorId isn't a saveable type, and losing the open dialog on a
@@ -116,15 +118,17 @@ internal fun ThreadContent(
                     // Swaps in for the message list rather than floating over it as a
                     // dialog — the same plain content-swap every screen here already uses,
                     // and one that doesn't need a separate Android window to test.
-                    ContactActionsBody(
+                    ContactActionsContent(
                         displayName = state.nameOf(author),
                         isListening = author in state.listenScope,
+                        isBlocked = author in state.blockedAuthors,
                         onSetNickname = { name -> onSetNickname(author, name) },
                         onToggleListen = { onToggleListen(author) },
                         onBlock = {
                             onBlock(author)
                             selectedAuthor = null
                         },
+                        onUnblock = { onUnblock(author) },
                         onClose = { selectedAuthor = null },
                         modifier = Modifier.padding(padding),
                     )
@@ -140,55 +144,6 @@ internal fun ThreadContent(
                         modifier = Modifier.padding(padding),
                     )
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ContactActionsBody(
-    displayName: DisplayName,
-    isListening: Boolean,
-    onSetNickname: (String) -> Unit,
-    onToggleListen: () -> Unit,
-    onBlock: () -> Unit,
-    onClose: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var confirmingBlock by remember { mutableStateOf(false) }
-
-    Column(
-        modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        AuthorName(displayName)
-
-        if (confirmingBlock) {
-            // Plain, per plan.md §6: what blocking actually does, stated rather than
-            // implied — this is the moment that decides, not the button that started it.
-            Text(
-                "Blocks them: removes their messages and the threads they started, " +
-                    "immediately and from this device only. They are never told.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = { confirmingBlock = false }) { Text("Cancel") }
-                TextButton(onClick = onBlock) {
-                    Text("Block", color = MaterialTheme.colorScheme.error)
-                }
-            }
-        } else {
-            ContactControls(
-                currentNickname = if (displayName.verified) displayName.label else null,
-                isListening = isListening,
-                onSetNickname = onSetNickname,
-                onToggleListen = onToggleListen,
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = { confirmingBlock = true }) {
-                    Text("Block", color = MaterialTheme.colorScheme.error)
-                }
-                TextButton(onClick = onClose) { Text("Close") }
             }
         }
     }

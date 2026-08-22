@@ -31,6 +31,7 @@ sealed interface ThreadUiState {
         val starred: Boolean,
         val names: Map<AuthorId, DisplayName> = emptyMap(),
         val listenScope: Set<AuthorId> = emptySet(),
+        val blockedAuthors: Set<AuthorId> = emptySet(),
     ) : ThreadUiState {
         /**
          * Falls back to the bare fingerprint for anyone with no name at all, so a message
@@ -64,8 +65,9 @@ class ThreadViewModel @Inject constructor(
                 repository.observeThreadFavourite(id),
                 directory.observeNames(),
                 directory.observeListenScope(),
-            ) { thread, starred, names, listenScope ->
-                ThreadUiState.Loaded(thread, starred, names, listenScope)
+                repository.observeBlockedAuthors(),
+            ) { thread, starred, names, listenScope, blockedAuthors ->
+                ThreadUiState.Loaded(thread, starred, names, listenScope, blockedAuthors)
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ThreadUiState.Loading)
@@ -96,6 +98,15 @@ class ThreadViewModel @Inject constructor(
     }
 
     fun block(author: AuthorId) {
-        viewModelScope.launch { repository.block(author) }
+        // Data must never disagree with the UI's "not both" rule (plan.md §4): blocking
+        // someone you listen to stops the listening too, not just the display.
+        viewModelScope.launch {
+            repository.block(author)
+            directory.stopListening(author)
+        }
+    }
+
+    fun unblock(author: AuthorId) {
+        viewModelScope.launch { repository.unblock(author) }
     }
 }
