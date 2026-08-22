@@ -295,8 +295,14 @@ private fun ConfirmingContent(
 
 @Composable
 private fun ConfirmButton(confirmed: Boolean, onClick: () -> Unit) {
-    Button(onClick = onClick, enabled = !confirmed, modifier = Modifier.fillMaxWidth()) {
-        Text(if (confirmed) "Waiting…" else "Yes, sync")
+    // Tagged rather than found by its own text: the button now reads "Sync", the same as
+    // the screen's own TopAppBar title, so text alone no longer picks it out uniquely.
+    Button(
+        onClick = onClick,
+        enabled = !confirmed,
+        modifier = Modifier.fillMaxWidth().testTag("sync-confirm-button"),
+    ) {
+        Text(if (confirmed) "Waiting…" else "Sync")
     }
 }
 

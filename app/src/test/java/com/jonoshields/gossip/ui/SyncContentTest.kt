@@ -3,6 +3,7 @@ package com.jonoshields.gossip.ui
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -166,7 +167,7 @@ class SyncContentTest {
     fun `confirming calls onConfirm`() {
         show(SyncUiState.Confirming(peer))
 
-        compose.onNodeWithText("Yes, sync").performClick()
+        compose.onNodeWithTag("sync-confirm-button").performClick()
 
         assertEquals(true, confirmed)
     }
@@ -175,10 +176,9 @@ class SyncContentTest {
     fun `confirming relabels the button to waiting and disables it`() {
         show(SyncUiState.Confirming(peer))
 
-        compose.onNodeWithText("Yes, sync").performClick()
+        compose.onNodeWithTag("sync-confirm-button").performClick()
 
-        compose.onNodeWithText("Yes, sync").assertDoesNotExist()
-        compose.onNodeWithText("Waiting…").assertIsNotEnabled()
+        compose.onNodeWithTag("sync-confirm-button").assertTextEquals("Waiting…").assertIsNotEnabled()
     }
 
     @Test
@@ -188,7 +188,7 @@ class SyncContentTest {
         compose.onNodeWithText("Nickname").performTextInput("Sam")
         assertEquals(null, nicknameSet)
 
-        compose.onNodeWithText("Yes, sync").performClick()
+        compose.onNodeWithTag("sync-confirm-button").performClick()
 
         assertEquals(peer, nicknameSet?.first)
         assertEquals("Sam", nicknameSet?.second)
@@ -233,10 +233,10 @@ class SyncContentTest {
         val nickname = DisplayName(label = "Sam", fingerprint = NameResolver.fingerprint(peer), verified = true, hue = 0f)
         show(SyncUiState.Confirming(peer), names = mapOf(peer to nickname))
 
-        compose.onNodeWithText("Yes, sync").performClick()
+        compose.onNodeWithTag("sync-confirm-button").performClick()
 
         assertEquals(true, confirmed)
-        compose.onNodeWithText("Waiting…").assertIsNotEnabled()
+        compose.onNodeWithTag("sync-confirm-button").assertTextEquals("Waiting…").assertIsNotEnabled()
     }
 
     @Test
