@@ -3,6 +3,7 @@ package com.jonoshields.gossip.ui.sync
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jonoshields.gossip.core.data.DirectoryRepository
+import com.jonoshields.gossip.core.identity.IdentityStore
 import com.jonoshields.gossip.core.model.AuthorId
 import com.jonoshields.gossip.core.store.DisplayName
 import com.jonoshields.gossip.sync.DiscoveredPeer
@@ -29,8 +30,12 @@ import kotlinx.coroutines.launch
 class SyncViewModel @Inject constructor(
     private val coordinator: SyncCoordinator,
     private val directory: DirectoryRepository,
+    identity: IdentityStore,
     discovery: NsdPeerDiscovery,
 ) : ViewModel() {
+
+    /** So the confirm screen can show it labelled "Mine", beside the peer's "Theirs". */
+    val myAuthor: AuthorId? = runCatching { identity.publicKey() }.getOrNull()
 
     val uiState: StateFlow<SyncUiState> = coordinator.state
 
@@ -54,8 +59,6 @@ class SyncViewModel @Inject constructor(
     fun connectTo(host: String, port: Int) = coordinator.connectTo(host, port)
 
     fun confirmPeer() = coordinator.confirmPeer()
-
-    fun declinePeer() = coordinator.declinePeer()
 
     fun cancel() = coordinator.cancel()
 

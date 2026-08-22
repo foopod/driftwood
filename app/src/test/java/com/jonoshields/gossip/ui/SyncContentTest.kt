@@ -42,11 +42,11 @@ class SyncContentTest {
     @get:Rule val compose = createComposeRule()
 
     private val peer = Ed25519Signer(ByteArray(32) { it.toByte() }).publicKey
+    private val me = Ed25519Signer(ByteArray(32) { (it + 50).toByte() }).publicKey
 
     private var connectedHost: String? = null
     private var connectedPort: Int? = null
     private var confirmed = false
-    private var declined = false
     private var cancelled = false
     private var done = false
     private var nicknameSet: Pair<AuthorId, String>? = null
@@ -57,6 +57,7 @@ class SyncContentTest {
         discoveredPeers: List<DiscoveredPeer> = emptyList(),
         names: Map<AuthorId, DisplayName> = emptyMap(),
         listenScope: Set<AuthorId> = emptySet(),
+        myAuthor: AuthorId? = me,
     ) {
         compose.setContent {
             SyncContent(
@@ -64,11 +65,11 @@ class SyncContentTest {
                 discoveredPeers = discoveredPeers,
                 names = names,
                 listenScope = listenScope,
+                myAuthor = myAuthor,
                 onBack = {},
                 onStartListening = {},
                 onConnect = { host, port -> connectedHost = host; connectedPort = port },
                 onConfirm = { confirmed = true },
-                onDecline = { declined = true },
                 onCancel = { cancelled = true },
                 onDone = { done = true },
                 onSetNickname = { author, name -> nicknameSet = author to name },
@@ -114,6 +115,14 @@ class SyncContentTest {
     }
 
     @Test
+    fun `back is offered when idle, and there is nothing to cancel`() {
+        show(SyncUiState.Idle)
+
+        compose.onNodeWithText("Back").assertExists()
+        compose.onNodeWithText("Cancel").assertDoesNotExist()
+    }
+
+    @Test
     fun `the confirmation screen shows the peer's fingerprint, not a name`() {
         // Nobody is a saved contact yet in M3a — every peer is a stranger, and a stranger
         // is shown as a fingerprint, never as bare text that could be mistaken for identity.
@@ -123,36 +132,75 @@ class SyncContentTest {
     }
 
     @Test
-    fun `confirming calls onConfirm and nothing else`() {
+    fun `both fingerprints are shown, each labelled whose it is`() {
+        show(SyncUiState.Confirming(peer))
+
+        compose.onNodeWithText("Theirs").assertExists()
+        compose.onNodeWithText("Mine").assertExists()
+        compose.onNodeWithText(NameResolver.fingerprint(peer)).assertExists()
+        compose.onNodeWithText(NameResolver.fingerprint(me)).assertExists()
+    }
+
+    @Test
+    fun `a trust warning is shown before confirming`() {
+        show(SyncUiState.Confirming(peer))
+
+        compose.onNodeWithText("Only sync with someone you trust", substring = true).assertExists()
+    }
+
+    @Test
+    fun `there is no back button while confirming, only cancel`() {
+        show(SyncUiState.Confirming(peer))
+
+        compose.onNodeWithText("Back").assertDoesNotExist()
+        compose.onNodeWithText("Cancel").assertExists()
+    }
+
+    @Test
+    fun `there is no way to decline outright`() {
+        show(SyncUiState.Confirming(peer))
+
+        compose.onNodeWithText("No").assertDoesNotExist()
+    }
+
+    @Test
+    fun `confirming calls onConfirm`() {
         show(SyncUiState.Confirming(peer))
 
         compose.onNodeWithText("Yes, sync").performClick()
 
         assertEquals(true, confirmed)
-        assertEquals(false, declined)
     }
 
     @Test
-    fun `declining calls onDecline and nothing else`() {
+    fun `confirming relabels the button to waiting and disables it`() {
         show(SyncUiState.Confirming(peer))
 
-        compose.onNodeWithText("No").performClick()
+        compose.onNodeWithText("Yes, sync").performClick()
 
-        assertEquals(false, confirmed)
-        assertEquals(true, declined)
+        compose.onNodeWithText("Yes, sync").assertDoesNotExist()
+        compose.onNodeWithText("Waiting…").assertIsNotEnabled()
     }
 
     @Test
-    fun `saving a nickname on the confirm screen calls through, independent of confirm`() {
+    fun `typing a nickname saves it only once sync starts, not before`() {
         show(SyncUiState.Confirming(peer))
 
         compose.onNodeWithText("Nickname").performTextInput("Sam")
-        compose.onNodeWithText("Save nickname").performClick()
+        assertEquals(null, nicknameSet)
+
+        compose.onNodeWithText("Yes, sync").performClick()
 
         assertEquals(peer, nicknameSet?.first)
         assertEquals("Sam", nicknameSet?.second)
-        assertEquals(false, confirmed)
-        assertEquals(false, declined)
+        assertEquals(true, confirmed)
+    }
+
+    @Test
+    fun `there is no save nickname button`() {
+        show(SyncUiState.Confirming(peer))
+
+        compose.onNodeWithText("Save nickname").assertDoesNotExist()
     }
 
     @Test

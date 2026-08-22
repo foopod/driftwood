@@ -39,6 +39,10 @@ fun ContactControls(
     // False while blocked (plan.md §4: blocked wins, unconditionally) — you can't listen to
     // and block the same person, so this is disabled rather than hidden, until you unblock.
     isListenEnabled: Boolean = true,
+    // Hidden on the sync confirm screen, where the draft is saved when sync starts instead
+    // of on its own button — [onDraftChange] is how that caller sees what's been typed.
+    showSaveButton: Boolean = true,
+    onDraftChange: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // Keyed on currentNickname so a save (or a different identity entirely) resets the draft,
@@ -48,18 +52,20 @@ fun ContactControls(
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
             value = draft,
-            onValueChange = { draft = it },
+            onValueChange = { draft = it; onDraftChange(it) },
             label = { Text("Nickname") },
             placeholder = { Text("What you call them") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
-        OutlinedButton(
-            onClick = { onSetNickname(draft) },
-            enabled = draft.isNotBlank() && draft != currentNickname,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Save nickname")
+        if (showSaveButton) {
+            OutlinedButton(
+                onClick = { onSetNickname(draft) },
+                enabled = draft.isNotBlank() && draft != currentNickname,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Save nickname")
+            }
         }
 
         Row(

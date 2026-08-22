@@ -54,11 +54,11 @@ fun SyncScreen(
         discoveredPeers = discoveredPeers,
         names = names,
         listenScope = listenScope,
+        myAuthor = viewModel.myAuthor,
         onBack = onBack,
         onStartListening = viewModel::startListening,
         onConnect = viewModel::connectTo,
         onConfirm = viewModel::confirmPeer,
-        onDecline = viewModel::declinePeer,
         onCancel = viewModel::cancel,
         onDone = viewModel::reset,
         onSetNickname = viewModel::setNickname,
@@ -74,25 +74,34 @@ internal fun SyncContent(
     discoveredPeers: List<DiscoveredPeer> = emptyList(),
     names: Map<AuthorId, DisplayName> = emptyMap(),
     listenScope: Set<AuthorId> = emptySet(),
+    myAuthor: AuthorId? = null,
     onBack: () -> Unit,
     onStartListening: () -> Unit,
     onConnect: (host: String, port: Int) -> Unit,
     onConfirm: () -> Unit,
-    onDecline: () -> Unit,
     onCancel: () -> Unit,
     onDone: () -> Unit,
     onSetNickname: (AuthorId, String) -> Unit,
     onToggleListen: (AuthorId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Mid-session states offer only Cancel — genuinely ending whatever is in flight — rather
+    // than both Back and Cancel side by side, since a plain Back would silently leave a
+    // confirm or a running session going in the background (the coordinator is app-scoped
+    // exactly so leaving the screen doesn't abort it, which is right for Idle/Finished/Failed
+    // but wrong for a session someone is actively still deciding on or waiting for).
+    val midSession = state !is SyncUiState.Idle && state !is SyncUiState.Finished && state !is SyncUiState.Failed
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
                 title = { Text("Sync") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                navigationIcon = {
+                    if (!midSession) TextButton(onClick = onBack) { Text("Back") }
+                },
                 actions = {
-                    if (state !is SyncUiState.Idle && state !is SyncUiState.Finished && state !is SyncUiState.Failed) {
+                    if (midSession) {
                         TextButton(onClick = onCancel) { Text("Cancel") }
                     }
                 },
@@ -110,9 +119,9 @@ internal fun SyncContent(
                 is SyncUiState.Confirming -> ConfirmingContent(
                     state = state,
                     displayName = names[state.peer] ?: NameResolver.resolve(state.peer, nickname = null, username = null),
+                    myDisplayName = myAuthor?.let { names[it] ?: NameResolver.resolve(it, nickname = null, username = null) },
                     isListening = state.peer in listenScope,
                     onConfirm = onConfirm,
-                    onDecline = onDecline,
                     onSetNickname = { name -> onSetNickname(state.peer, name) },
                     onToggleListen = { onToggleListen(state.peer) },
                 )
@@ -210,23 +219,45 @@ private fun ListeningContent(port: Int) {
 private fun ConfirmingContent(
     state: SyncUiState.Confirming,
     displayName: DisplayName,
+    myDisplayName: DisplayName?,
     isListening: Boolean,
     onConfirm: () -> Unit,
-    onDecline: () -> Unit,
     onSetNickname: (String) -> Unit,
     onToggleListen: () -> Unit,
 ) {
+    val currentNickname = if (displayName.verified) displayName.label else null
+
+    // Keyed on the peer so a different confirmation (should one ever follow without leaving
+    // this screen) starts from a clean slate rather than inheriting the last one's state.
+    var confirmed by rememberSaveable(state.peer) { mutableStateOf(false) }
+    var nicknameDraft by rememberSaveable(state.peer) { mutableStateOf(currentNickname.orEmpty()) }
+
     Text("Is this who you're syncing with?", style = MaterialTheme.typography.titleMedium)
     Text(
-        "Compare the fingerprint with what they see on their screen.",
+        "Compare both fingerprints with what they see on their screen.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    AuthorName(displayName)
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = onConfirm, modifier = Modifier.fillMaxWidth()) { Text("Yes, sync") }
-        OutlinedButton(onClick = onDecline, modifier = Modifier.fillMaxWidth()) { Text("No") }
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("Theirs", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        AuthorName(displayName)
     }
+    myDisplayName?.let {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Mine", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            AuthorName(it)
+        }
+    }
+
+    Text(
+        // Messages are self-verifying (plan.md §5), so a stranger can't forge content — but
+        // syncing does hand them your listen scope (plan.md §9), which is worth a plain
+        // warning rather than assuming everyone has already read that footnote.
+        "Only sync with someone you trust — syncing shares your listen list with them, and theirs with you.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error,
+    )
 
     Text(
         // The moment plan.md actually calls out for a nickname: "you confirmed a key in
@@ -236,11 +267,27 @@ private fun ConfirmingContent(
         style = MaterialTheme.typography.labelMedium,
     )
     ContactControls(
-        currentNickname = if (displayName.verified) displayName.label else null,
+        currentNickname = currentNickname,
         isListening = isListening,
         onSetNickname = onSetNickname,
         onToggleListen = onToggleListen,
+        showSaveButton = false,
+        onDraftChange = { nicknameDraft = it },
     )
+
+    Button(
+        onClick = {
+            if (nicknameDraft.isNotBlank() && nicknameDraft != currentNickname) {
+                onSetNickname(nicknameDraft)
+            }
+            confirmed = true
+            onConfirm()
+        },
+        enabled = !confirmed,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(if (confirmed) "Waiting…" else "Yes, sync")
+    }
 }
 
 @Composable

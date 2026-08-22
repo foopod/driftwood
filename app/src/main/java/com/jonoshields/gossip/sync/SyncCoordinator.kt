@@ -88,9 +88,6 @@ class SyncCoordinator @Inject constructor(
     /** A human looked at the confirmation screen and said yes. */
     fun confirmPeer() = pendingConfirmation?.complete(true)
 
-    /** A human looked at the confirmation screen and said no. */
-    fun declinePeer() = pendingConfirmation?.complete(false)
-
     /** Gives up on whatever is happening — listening, connecting, or a running session. */
     fun cancel() {
         job?.cancel()
