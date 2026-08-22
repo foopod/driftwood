@@ -224,9 +224,10 @@ private fun ThreadRow(thread: ThreadSummary, nameOf: (AuthorId) -> DisplayName, 
         val more = thread.messageCount - shown
         if (more > 0) {
             // Styled as its own call to action — this is what invites opening the thread
-            // to see the rest, not a caption on the cards above it.
+            // to see the rest, not a caption on the cards above it. Indented like the
+            // reply card: it's more conversation hanging off the same root.
             Card(
-                Modifier.fillMaxWidth(),
+                Modifier.fillMaxWidth().padding(start = 24.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
             ) {
                 Text(
