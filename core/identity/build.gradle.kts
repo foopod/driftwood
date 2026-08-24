@@ -1,9 +1,9 @@
 plugins {
-    alias(libs.plugins.gossip.android.library)
+    alias(libs.plugins.driftwood.android.library)
 }
 
 android {
-    namespace = "com.jonoshields.gossip.core.identity"
+    namespace = "com.jonoshields.driftwood.core.identity"
 }
 
 dependencies {

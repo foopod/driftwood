@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>undertow — the protocol beneath driftwood</title>
+  <meta name="description" content="undertow is the protocol beneath driftwood: the message format, the sync protocol, storage and pruning, and what is and isn't defended against." />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playwrite+US+Trad&display=swap" />
+  <link rel="stylesheet" href="dist/styles.css" />
+</head>
+<body class="bg-drift-bg text-drift-text antialiased">
+
+  <!-- Nav -->
+  <header class="border-b border-white/5 sticky top-0 bg-drift-bg/90 backdrop-blur z-10">
+    <div class="mx-auto max-w-5xl px-6 py-5 flex items-center justify-between">
+      <a href="index.html" class="flex items-center gap-2.5 font-semibold tracking-tight text-lg">
+        <svg width="24" height="24" viewBox="0 0 270.93333 270.93333" aria-hidden="true">
+          <defs>
+            <linearGradient id="navmark2-a" x1="49.856134" y1="136.80348" x2="220.15707" y2="136.80348" gradientUnits="userSpaceOnUse" gradientTransform="matrix(0.75050438,0,0,0.75050438,29.51507,33.89435)">
+              <stop offset="0" stop-color="#7488ff" />
+              <stop offset="1" stop-color="#70e5b5" />
+            </linearGradient>
+            <linearGradient id="navmark2-b" x1="153.08247" y1="124.63151" x2="211.55997" y2="124.63151" gradientUnits="userSpaceOnUse" gradientTransform="matrix(0.75050438,0,0,0.75050438,29.51507,33.89435)">
+              <stop offset="0" stop-color="#72c1d2" />
+              <stop offset="1" stop-color="#70e5b5" />
+            </linearGradient>
+            <linearGradient id="navmark2-c" x1="199.44083" y1="114.54369" x2="230.54526" y2="114.54369" gradientUnits="userSpaceOnUse" gradientTransform="matrix(0.75050438,0,0,0.75050438,29.51507,33.89435)">
+              <stop offset="0" stop-color="#70debb" />
+              <stop offset="1" stop-color="#70e5b5" />
+            </linearGradient>
+          </defs>
+          <path d="m 116.19627,169.62285 c -3.51384,-26.05213 -34.398627,-19.07174 -38.162397,-25.52391 -3.763739,-6.45216 0.5377,-9.94708 -4.570264,-15.05505 -5.107973,-5.10797 -4.23449,-10.3483 -0.268837,-13.17319 3.565161,-2.53958 11.022441,-3.76375 25.002151,8.87174 13.979707,12.63549 18.281137,12.36665 30.378947,13.97971 12.09784,1.61303 24.09411,23.27759 44.08983,14.24852 6.22817,-2.81233 12.09781,-6.18332 19.08765,-6.721" fill="none" stroke="url(#navmark2-a)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="m 147.3947,148.93808 c 0,0 4.83914,-5.64565 17.20581,-9.67826 12.36666,-4.0326 16.1304,-11.56013 17.74345,-19.08767 1.61303,-7.52753 -0.26887,-9.14057 2.95723,-14.24854" fill="none" stroke="url(#navmark2-b)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="m 181.7634,123.15804 c 0,0 3.80662,-6.21198 17.78634,-6.48081" fill="none" stroke="url(#navmark2-c)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span class="font-playwrite">driftwood</span>
+      </a>
+      <a href="index.html" class="text-sm text-drift-muted hover:text-drift-text transition-colors">← Back</a>
+    </div>
+  </header>
+
+  <div class="mx-auto max-w-5xl px-6 py-14 md:py-20">
+    <h1 class="text-3xl md:text-4xl font-semibold tracking-tight mb-4">undertow</h1>
+    <p class="text-drift-muted leading-relaxed max-w-2xl mb-16">
+      undertow is the protocol underneath driftwood: the shape of a message, how identity
+      works, how two phones reconcile what they hold, and what it does and doesn't defend
+      against. This is an overview, not a byte-exact spec — a few encodings (<code class="font-mono">timestamp</code>,
+      the listen set) aren't fully detailed here yet. Field names and frame types below are
+      drawn directly from the implementation.
+    </p>
+
+    <!-- 1. Identity -->
+    <section id="identity" class="scroll-mt-20 mb-20">
+      <h2 class="text-xl font-semibold tracking-tight mb-2">1. Identity</h2>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mb-6">
+        An identity is an Ed25519 keypair generated on-device. The public key <em class="text-drift-text not-italic">is</em>
+        the identity — there is no handle registry and no global namespace. A name is only
+        ever what someone is called, never what identifies them.
+      </p>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mb-6">
+        Two different kinds of name exist, and the app never lets them look alike:
+      </p>
+      <div class="overflow-x-auto mb-6">
+        <table class="w-full text-sm border-collapse">
+          <thead>
+            <tr class="text-left text-drift-muted border-b border-white/10">
+              <th class="py-2 pr-6 font-medium"></th>
+              <th class="py-2 pr-6 font-medium">Nickname</th>
+              <th class="py-2 font-medium">Claimed username</th>
+            </tr>
+          </thead>
+          <tbody class="align-top">
+            <tr class="border-b border-white/5">
+              <td class="py-2 pr-6 text-drift-muted">Set by</td>
+              <td class="py-2 pr-6">you</td>
+              <td class="py-2">its owner</td>
+            </tr>
+            <tr class="border-b border-white/5">
+              <td class="py-2 pr-6 text-drift-muted">Travels</td>
+              <td class="py-2 pr-6">never</td>
+              <td class="py-2">yes, signed by its owner</td>
+            </tr>
+            <tr class="border-b border-white/5">
+              <td class="py-2 pr-6 text-drift-muted">Trust</td>
+              <td class="py-2 pr-6">trustworthy — you bound that name to that key yourself</td>
+              <td class="py-2">a claim, nothing more</td>
+            </tr>
+            <tr>
+              <td class="py-2 pr-6 text-drift-muted">Lives in</td>
+              <td class="py-2 pr-6"><code class="font-mono text-drift-mint">contacts</code></td>
+              <td class="py-2"><code class="font-mono text-drift-blue">directory</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="text-drift-muted leading-relaxed max-w-2xl">
+        A nickname is plain text — you confirmed that key belongs to that person, in person,
+        so it's the only kind of name that can be trusted. A claimed username sits on a colour
+        derived from the key, with a short fingerprint beside it: "I vouched for this person"
+        and "this person says so" must never look the same on screen.
+      </p>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mt-6">
+        Only the claimed username actually travels the wire, as a signed profile record (the
+        <code class="font-mono text-drift-blue">PROFILE</code> frame — §7 below). Nicknames,
+        the <code class="font-mono">contacts</code>/<code class="font-mono">directory</code>
+        split, and the colour/fingerprint display convention are this client's own local
+        choices, not part of the protocol contract.
+      </p>
+    </section>
+
+    <!-- 2. Message format -->
+    <section id="message" class="scroll-mt-20 mb-20">
+      <h2 class="text-xl font-semibold tracking-tight mb-2">2. Message format</h2>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mb-6">
+        Every message is content-addressed and independently signed. Parent links are context
+        and structure only — never validity or trust; a missing parent costs context, never
+        integrity. There's no recipient field, either — a message can't be addressed to one
+        person; it only ever moves the way the listen/context/gossip tiers below describe,
+        through whoever you sync with next.
+      </p>
+      <div class="overflow-x-auto mb-8">
+        <table class="w-full text-sm border-collapse">
+          <thead>
+            <tr class="text-left text-drift-muted border-b border-white/10">
+              <th class="py-2 pr-6 font-medium font-mono">field</th>
+              <th class="py-2 font-medium">notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 font-mono text-drift-blue">v</td><td class="py-2 text-drift-muted">Format version — <code class="font-mono">1</code> for now. First field, so a decoder can branch before parsing the rest.</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 font-mono text-drift-blue">id</td><td class="py-2 text-drift-muted">Content hash of the message. Not part of its own preimage.</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 font-mono text-drift-blue">author</td><td class="py-2 text-drift-muted">Public key of the author (32 bytes, Ed25519).</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 font-mono text-drift-blue">root</td><td class="py-2 text-drift-muted"><span class="text-drift-text">Empty on a root message</span> — a root is <em>defined</em> as a message with an empty <code class="font-mono">root</code>, and its own <code class="font-mono">id</code> then serves as the thread's root id everywhere else.</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 font-mono text-drift-blue">parent</td><td class="py-2 text-drift-muted">Id of the specific message being replied to. Optional — enrichment only.</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 font-mono text-drift-blue">timestamp</td><td class="py-2 text-drift-muted">Author-claimed time, Unix ms UTC. <span class="text-drift-text">Untrusted.</span></td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 font-mono text-drift-blue">text</td><td class="py-2 text-drift-muted">UTF-8, max 320 characters, NFC-normalized then counted.</td></tr>
+            <tr><td class="py-2 pr-6 font-mono text-drift-blue">sig</td><td class="py-2 text-drift-muted">Ed25519 signature over the canonical preimage. Also not part of its own preimage.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="font-semibold mb-3 text-sm text-drift-muted uppercase tracking-wide">Construction order</h3>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mb-4">
+        <code class="font-mono">root = id</code> can never be made true by hashing — changing
+        <code class="font-mono">root</code> changes <code class="font-mono">id</code> — so
+        "empty means root" keeps every field honest and the preimage a single pass:
+      </p>
+      <div class="flex flex-wrap items-center gap-3 mb-8 text-sm font-mono">
+        <span class="rounded-lg bg-drift-surface border border-white/10 px-3 py-2">assemble fields</span>
+        <span class="text-drift-muted">→</span>
+        <span class="rounded-lg bg-drift-surface border border-white/10 px-3 py-2">id = sha256(preimage)</span>
+        <span class="text-drift-muted">→</span>
+        <span class="rounded-lg bg-drift-surface border border-white/10 px-3 py-2">sig = sign(preimage)</span>
+      </div>
+
+      <h3 class="font-semibold mb-3 text-sm text-drift-muted uppercase tracking-wide">Wire form</h3>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mb-4">
+        Fixed-width prefixes, no length header, trivially separable. A receiver hashes the
+        preimage bytes exactly as received — never decoded and re-serialized, which would
+        silently repair a hostile or buggy encoding.
+      </p>
+      <div class="flex rounded-xl overflow-hidden border border-white/10 text-sm font-mono max-w-2xl">
+        <div class="bg-drift-blue/20 text-drift-blue px-4 py-4 shrink-0 basis-[16%] text-center">
+          <div class="font-semibold">id</div>
+          <div class="text-xs text-drift-muted mt-1">32 bytes</div>
+        </div>
+        <div class="bg-drift-mint/20 text-drift-mint px-4 py-4 shrink-0 basis-[26%] text-center border-l border-white/10">
+          <div class="font-semibold">sig</div>
+          <div class="text-xs text-drift-muted mt-1">64 bytes</div>
+        </div>
+        <div class="bg-drift-surface-high px-4 py-4 grow text-center border-l border-white/10">
+          <div class="font-semibold">canonical preimage</div>
+          <div class="text-xs text-drift-muted mt-1">variable — v, author, root, parent, timestamp, text</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Threads -->
+    <section id="threads" class="scroll-mt-20 mb-20">
+      <h2 class="text-xl font-semibold tracking-tight mb-2">3. Threads</h2>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mb-4">
+        A thread is every message whose <code class="font-mono text-drift-blue">root</code>
+        equals a given id — the root message itself (if held) plus every reply carrying that
+        <code class="font-mono">root</code>. You can reply to a thread using only its root id;
+        you don't need to hold the root message, or anything else in the thread, to do it.
+      </p>
+      <p class="text-drift-muted leading-relaxed max-w-2xl">
+        Root ids outlive root content. A root id is a permanent, cheap identifier — the root
+        <em class="text-drift-text not-italic">message</em> is prunable like anything else, so
+        a long-running thread whose original root nobody still holds is an expected, normal
+        end-state — the same shape a long-running conversation naturally takes once its
+        opening no longer needs to be kept. It renders calmly: the tree is shown wherever a
+        <code class="font-mono text-drift-blue">parent</code> is held, and attached to the root
+        with a quiet marker wherever it isn't.
+      </p>
+    </section>
+
+    <!-- 4. Listen scope & tiers -->
+    <section id="tiers" class="scroll-mt-20 mb-20">
+      <h2 class="text-xl font-semibold tracking-tight mb-2">4. Listen scope &amp; tiers</h2>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mb-6">
+        Every message a device holds falls into exactly one tier, re-evaluated at sync time —
+        not continuously — whenever the device gains or loses a listened author.
+      </p>
+      <div class="grid md:grid-cols-3 gap-4 mb-4">
+        <div class="rounded-xl border border-drift-blue/30 bg-drift-blue/5 p-5">
+          <div class="font-mono text-xs text-drift-blue mb-2">highest priority</div>
+          <h3 class="font-semibold mb-2">Listen</h3>
+          <p class="text-sm text-drift-muted leading-relaxed">The author is on your listen
+            list — a message from someone you actually follow.</p>
+        </div>
+        <div class="rounded-xl border border-white/10 bg-drift-surface p-5">
+          <div class="font-mono text-xs text-drift-muted mb-2">middle priority</div>
+          <h3 class="font-semibold mb-2">Context</h3>
+          <p class="text-sm text-drift-muted leading-relaxed">Not someone you follow, but the
+            message shares a thread with content from someone you do. Kept so the conversation
+            stays whole — context, not a subscription.</p>
+        </div>
+        <div class="rounded-xl border border-drift-mint/30 bg-drift-mint/5 p-5">
+          <div class="font-mono text-xs text-drift-mint mb-2">lowest priority</div>
+          <h3 class="font-semibold mb-2">Gossip</h3>
+          <p class="text-sm text-drift-muted leading-relaxed">Everything else — incidental
+            content carried along for discovery.</p>
+        </div>
+      </div>
+      <p class="text-sm text-drift-muted">Precedence when a message could qualify for more
+        than one: <code class="font-mono text-drift-text">listen &gt; context &gt; gossip</code>.</p>
+    </section>
+
+    <!-- 5. Storage & pruning -->
+    <section id="storage" class="scroll-mt-20 mb-20">
+      <h2 class="text-xl font-semibold tracking-tight mb-2">5. Storage &amp; pruning</h2>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mb-4">
+        A message's <code class="font-mono text-drift-blue">effective_time</code> — the value
+        actually checked against the window — is
+        <code class="font-mono">min(claimed timestamp, first received time)</code>. That
+        defends against forward-dating, but deliberately does not rescue backdated or
+        slow-travelling content: a message that takes 90 days to travel three hops cannot
+        travel a fourth — reach is bounded by authorship time, not arrival time at each hop.
+      </p>
+      <div class="grid sm:grid-cols-2 gap-4 mb-6 max-w-2xl">
+        <div class="rounded-xl bg-drift-surface border border-white/10 p-5">
+          <div class="text-2xl font-semibold text-drift-mint">90 days</div>
+          <p class="text-sm text-drift-muted mt-1">default window — user-configurable</p>
+        </div>
+        <div class="rounded-xl bg-drift-surface border border-white/10 p-5">
+          <div class="text-2xl font-semibold text-drift-blue">50 / 20 / 30</div>
+          <p class="text-sm text-drift-muted mt-1">default storage split — listen / context / gossip</p>
+        </div>
+      </div>
+      <p class="text-drift-muted leading-relaxed max-w-2xl">
+        Within an over-quota partition, each distinct author gets an equal share of that
+        partition's budget, and eviction is oldest-first by <code class="font-mono">effective_time</code>
+        among authors over their share. Favourited messages are exempt — never evicted, never
+        counted against anyone's share. Pruning only runs during a sync (after merging), never
+        merely from adding a listen or a favourite — except blocking, which drops content
+        immediately.
+      </p>
+    </section>
+
+    <!-- 6. Sync protocol -->
+    <section id="sync" class="scroll-mt-20 mb-20">
+      <h2 class="text-xl font-semibold tracking-tight mb-2">6. The sync protocol</h2>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mb-8">
+        Two devices run the exact same state machine — one side is "initiator" purely to decide
+        who speaks first. Every exchange is a single offer, answered once, never a negotiation
+        that converges — no back-and-forth haggling over what to send, just one offer, one
+        answer.
+      </p>
+
+      <!-- Sequence diagram -->
+      <div class="rounded-2xl border border-white/10 bg-drift-surface p-4 md:p-6 mb-6 overflow-x-auto">
+        <svg viewBox="0 0 720 560" class="w-full min-w-[600px]" role="img" aria-label="Sequence diagram of a sync session between device A and device B">
+          <defs>
+            <marker id="arrowBlue" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#7488ff" /></marker>
+            <marker id="arrowMint" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#70e5b5" /></marker>
+          </defs>
+
+          <!-- phase bands -->
+          <rect x="40" y="52" width="640" height="270" rx="12" fill="#7488ff" opacity="0.06" />
+          <rect x="40" y="340" width="640" height="150" rx="12" fill="#70e5b5" opacity="0.06" />
+
+          <!-- lifelines -->
+          <line x1="140" y1="50" x2="140" y2="500" stroke="#A8AFC7" stroke-opacity="0.25" />
+          <line x1="580" y1="50" x2="580" y2="500" stroke="#A8AFC7" stroke-opacity="0.25" />
+          <text x="140" y="35" text-anchor="middle" font-size="15" font-weight="600" fill="#EDEFF7">A</text>
+          <text x="580" y="35" text-anchor="middle" font-size="15" font-weight="600" fill="#EDEFF7">B</text>
+
+          <!-- priority phase label -->
+          <text x="60" y="72" font-size="11" fill="#7488ff" font-family="monospace">PRIORITY PHASE — still worth something if interrupted</text>
+
+          <!-- 1. HELLO A->B -->
+          <line x1="140" y1="90" x2="580" y2="90" stroke="#7488ff" stroke-width="1.5" marker-end="url(#arrowBlue)" />
+          <text x="360" y="84" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">HELLO</text>
+          <!-- 2. HELLO B->A -->
+          <line x1="580" y1="112" x2="140" y2="112" stroke="#70e5b5" stroke-width="1.5" marker-end="url(#arrowMint)" />
+          <text x="360" y="128" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">HELLO</text>
+
+          <!-- 3. SCOPE A->B -->
+          <line x1="140" y1="150" x2="580" y2="150" stroke="#7488ff" stroke-width="1.5" marker-end="url(#arrowBlue)" />
+          <text x="360" y="144" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">SCOPE (listen, cutoff, wants)</text>
+          <!-- 4. SCOPE B->A -->
+          <line x1="580" y1="172" x2="140" y2="172" stroke="#70e5b5" stroke-width="1.5" marker-end="url(#arrowMint)" />
+          <text x="360" y="188" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">SCOPE (listen, cutoff, wants)</text>
+
+          <!-- 5. HASHLIST A->B -->
+          <line x1="140" y1="210" x2="580" y2="210" stroke="#7488ff" stroke-width="1.5" marker-end="url(#arrowBlue)" />
+          <text x="360" y="204" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">HASHLIST (own scope)</text>
+          <!-- 6. HASHLIST B->A -->
+          <line x1="580" y1="232" x2="140" y2="232" stroke="#70e5b5" stroke-width="1.5" marker-end="url(#arrowMint)" />
+          <text x="360" y="248" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">HASHLIST (own scope)</text>
+
+          <!-- 7. MESSAGE/PROFILE A->B -->
+          <line x1="140" y1="270" x2="580" y2="270" stroke="#7488ff" stroke-width="1.5" marker-end="url(#arrowBlue)" />
+          <text x="360" y="264" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">MESSAGE × n, PROFILE × m</text>
+
+          <!-- 8. PHASE_DONE A->B -->
+          <line x1="140" y1="300" x2="580" y2="300" stroke="#7488ff" stroke-width="1.5" marker-end="url(#arrowBlue)" />
+          <text x="360" y="294" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">PHASE_DONE — apply now</text>
+
+          <!-- gossip phase label -->
+          <text x="60" y="360" font-size="11" fill="#70e5b5" font-family="monospace">GOSSIP PHASE — best-effort, skippable</text>
+
+          <!-- 9. GOSSIP_OFFER A->B -->
+          <line x1="140" y1="390" x2="580" y2="390" stroke="#7488ff" stroke-width="1.5" marker-end="url(#arrowBlue)" />
+          <text x="360" y="384" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">GOSSIP_OFFER (newest ids)</text>
+
+          <!-- 10. GOSSIP_REQUEST B->A -->
+          <line x1="580" y1="420" x2="140" y2="420" stroke="#70e5b5" stroke-width="1.5" marker-end="url(#arrowMint)" />
+          <text x="360" y="436" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">GOSSIP_REQUEST (subset)</text>
+
+          <!-- 11. MESSAGE x j A->B -->
+          <line x1="140" y1="458" x2="580" y2="458" stroke="#7488ff" stroke-width="1.5" marker-end="url(#arrowBlue)" />
+          <text x="360" y="452" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">MESSAGE × j</text>
+
+          <!-- 12. SESSION_DONE -->
+          <line x1="140" y1="488" x2="580" y2="488" stroke="#A8AFC7" stroke-width="1.5" marker-end="url(#arrowBlue)" />
+          <text x="360" y="482" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">SESSION_DONE</text>
+        </svg>
+      </div>
+
+      <p class="text-drift-muted leading-relaxed max-w-2xl mb-4">
+        Each phase is applied on completion, not buffered until the session ends. If the
+        connection dies during the gossip phase, the priority phase's results are already
+        persisted — the priority phase is independently valid by design. A sync session is
+        brief and in person, and can end at any moment, so a session that's 90% done is still
+        worth something. If the bus arrives, what you already exchanged is yours.
+      </p>
+      <p class="text-drift-muted leading-relaxed max-w-2xl">
+        Identity travels in <code class="font-mono text-drift-blue">HELLO</code> — both people
+        get a chance to confirm who they're actually connected to (a name, for a contact; a
+        fingerprint, for a stranger) before anything private moves. Declining aborts the
+        session before <code class="font-mono text-drift-blue">SCOPE</code> is ever sent.
+      </p>
+    </section>
+
+    <!-- 7. Wire framing -->
+    <section id="framing" class="scroll-mt-20 mb-20">
+      <h2 class="text-xl font-semibold tracking-tight mb-2">7. Wire framing</h2>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mb-6">
+        Every record on the stream shares one frame shape. The length is checked against both
+        an upper bound (4 MiB) and a lower bound — a naive upper-bound-only check can be
+        fooled: <code class="font-mono">0xFFFFFFFF</code>, read as a signed 32-bit value,
+        arrives as <code class="font-mono">-1</code> — which is numerically less than 4 MiB,
+        so it slips straight past a check that only tests the ceiling, then asks for a
+        negative-size allocation.
+      </p>
+      <div class="flex rounded-xl overflow-hidden border border-white/10 text-sm font-mono max-w-xl mb-8">
+        <div class="bg-drift-blue/20 text-drift-blue px-4 py-4 shrink-0 basis-[15%] text-center">
+          <div class="font-semibold">type</div>
+          <div class="text-xs text-drift-muted mt-1">u8</div>
+        </div>
+        <div class="bg-drift-mint/20 text-drift-mint px-4 py-4 shrink-0 basis-[30%] text-center border-l border-white/10">
+          <div class="font-semibold">length</div>
+          <div class="text-xs text-drift-muted mt-1">u32, big-endian</div>
+        </div>
+        <div class="bg-drift-surface-high px-4 py-4 grow text-center border-l border-white/10">
+          <div class="font-semibold">payload</div>
+          <div class="text-xs text-drift-muted mt-1">length bytes</div>
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm border-collapse">
+          <thead>
+            <tr class="text-left text-drift-muted border-b border-white/10">
+              <th class="py-2 pr-6 font-medium">type</th>
+              <th class="py-2 pr-6 font-medium">value</th>
+              <th class="py-2 font-medium">payload</th>
+            </tr>
+          </thead>
+          <tbody class="font-mono text-xs">
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">HELLO</td><td class="py-2 pr-6 text-drift-muted">0x01</td><td class="py-2 text-drift-muted">protocol version (u8), author id (32 bytes)</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">SCOPE</td><td class="py-2 pr-6 text-drift-muted">0x02</td><td class="py-2 text-drift-muted">listen set, window cutoff, wants</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">HASHLIST</td><td class="py-2 pr-6 text-drift-muted">0x03</td><td class="py-2 text-drift-muted">ids held for own scope</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">MESSAGE</td><td class="py-2 pr-6 text-drift-muted">0x04</td><td class="py-2 text-drift-muted">one message, wire form, opaque</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">PROFILE</td><td class="py-2 pr-6 text-drift-muted">0x05</td><td class="py-2 text-drift-muted">one profile claim, wire form, opaque</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">PHASE_DONE</td><td class="py-2 pr-6 text-drift-muted">0x06</td><td class="py-2 text-drift-muted">—</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">GOSSIP_OFFER</td><td class="py-2 pr-6 text-drift-muted">0x07</td><td class="py-2 text-drift-muted">ids offered</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">GOSSIP_REQUEST</td><td class="py-2 pr-6 text-drift-muted">0x08</td><td class="py-2 text-drift-muted">ids wanted from that offer</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">SESSION_DONE</td><td class="py-2 pr-6 text-drift-muted">0x09</td><td class="py-2 text-drift-muted">—</td></tr>
+            <tr><td class="py-2 pr-6 text-drift-blue">ABORT</td><td class="py-2 pr-6 text-drift-muted">0x0A</td><td class="py-2 text-drift-muted">reason code (u8)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mt-6">
+        <code class="font-mono text-drift-blue">MESSAGE</code> and
+        <code class="font-mono text-drift-blue">PROFILE</code> payloads are carried opaquely —
+        never decoded and re-encoded in transit. Re-serializing would silently repair a hostile
+        encoding, normalizing away the very tampering the hash exists to catch.
+      </p>
+    </section>
+
+    <!-- 8. Trust & security -->
+    <section id="trust" class="scroll-mt-20 mb-20">
+      <h2 class="text-xl font-semibold tracking-tight mb-2">8. Trust &amp; security</h2>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mb-4">
+        Because messages are self-verifying, a peer's identity has no bearing on whether their
+        content is trustworthy — a stranger relaying content can only choose what to offer,
+        never forge it.
+      </p>
+      <div class="overflow-x-auto mb-8">
+        <table class="w-full text-sm border-collapse">
+          <thead>
+            <tr class="text-left text-drift-muted border-b border-white/10">
+              <th class="py-2 pr-6 font-medium">behaviour</th>
+              <th class="py-2 font-medium">response</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-muted">A message with a flipped bit</td><td class="py-2">Rejected — the hash doesn't match the id. Never stored, never relayed.</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-muted">A message signed by the wrong key</td><td class="py-2">Rejected — bad signature.</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-muted">A profile renamed in transit</td><td class="py-2">Rejected — the claim is signed by the key it names, so a relay can withhold a name but never edit one.</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-muted">Too many rejections from one peer</td><td class="py-2">Session aborted. Content already merged stays — each piece was individually valid.</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-muted">A flood of unverifiable garbage</td><td class="py-2">Nothing that fails verification consumes storage.</td></tr>
+            <tr><td class="py-2 pr-6 text-drift-muted">Offering a huge batch of gossip ids</td><td class="py-2">Bounded by the receiver's gossip budget, regardless of what's offered.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mb-4">
+        What none of this defends against: someone standing in front of you claiming to be
+        someone else. Identities are free, so an attacker doesn't break a fingerprint, they
+        grind keys until the displayed part matches — a few minutes on a GPU for an
+        eight-character fingerprint (32 bits), a few dozen attempts for a colour (4–5 bits).
+        The only real answer is a nickname — a name you assigned to a key you confirmed in
+        person.
+      </p>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mb-4">
+        The blocklist is local and private — never declared to a peer, never part of any
+        exchange. Alongside it sits a <strong>blocked-roots</strong> list: the root ids of
+        threads a blocked author started, kept separately so replies into that thread keep
+        getting dropped even after the root itself is gone. Both are enforced on-device only:
+        a blocked author's content — and anything under a blocked root — is excluded from
+        what you deliver to others, and dropped at pruning. Neither list ever travels, because
+        announcing either would tell the blocked person they'd been blocked, and push one
+        person's judgement onto everyone downstream.
+      </p>
+      <p class="text-drift-muted leading-relaxed max-w-2xl">
+        Syncing with someone shows them something about you. Your listen list is declared
+        during <code class="font-mono text-drift-blue">SCOPE</code> so the other side knows
+        what to send — sync with a stranger and they learn who you follow. That's a deliberate
+        trade, not an oversight.
+      </p>
+    </section>
+
+    <!-- 9. Constants -->
+    <section id="constants" class="scroll-mt-20 mb-8">
+      <h2 class="text-xl font-semibold tracking-tight mb-6">9. Reference: constants</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm border-collapse max-w-2xl">
+          <tbody class="font-mono text-xs">
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">PROTOCOL_VERSION</td><td class="py-2 text-drift-muted">1</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">MSG_FORMAT_VERSION</td><td class="py-2 text-drift-muted">1</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">MSG_MAX_CHARS</td><td class="py-2 text-drift-muted">320</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">USERNAME_MAX_CHARS</td><td class="py-2 text-drift-muted">32</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">WINDOW_DEFAULT</td><td class="py-2 text-drift-muted">90 days</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">CONTEXT_SEND_CAP</td><td class="py-2 text-drift-muted">1000 per session</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">GOSSIP_INTAKE_CAP</td><td class="py-2 text-drift-muted">1000 per session</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">VERIFY_FAIL_CUTOFF</td><td class="py-2 text-drift-muted">20 rejections before abort</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">MAX_FRAME_BYTES</td><td class="py-2 text-drift-muted">4 MiB</td></tr>
+            <tr><td class="py-2 pr-6 text-drift-blue">WANT_TTL</td><td class="py-2 text-drift-muted">10 fruitless syncs</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <footer class="border-t border-white/5">
+    <div class="mx-auto max-w-5xl px-6 py-10">
+      <a href="index.html" class="text-sm text-drift-mint hover:text-drift-text transition-colors">← Back to the overview</a>
+    </div>
+  </footer>
+
+</body>
+</html>

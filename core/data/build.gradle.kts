@@ -1,11 +1,11 @@
 plugins {
-    alias(libs.plugins.gossip.android.library)
+    alias(libs.plugins.driftwood.android.library)
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
 }
 
 android {
-    namespace = "com.jonoshields.gossip.core.data"
+    namespace = "com.jonoshields.driftwood.core.data"
 }
 
 room {
@@ -21,6 +21,9 @@ dependencies {
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    // M4.1: Room's native Paging 3 integration (DAO methods returning PagingSource<Int, T>).
+    implementation(libs.androidx.room.paging)
+    api(libs.androidx.paging.runtime)
     ksp(libs.androidx.room.compiler)
 
     testImplementation(libs.junit)
@@ -31,4 +34,5 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.androidx.paging.testing)
 }

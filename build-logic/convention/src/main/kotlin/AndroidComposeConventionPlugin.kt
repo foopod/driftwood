@@ -21,8 +21,8 @@ class AndroidComposeConventionPlugin : Plugin<Project> {
             application != null -> application.buildFeatures.compose = true
             library != null -> library.buildFeatures.compose = true
             else -> error(
-                "gossip.android.compose requires gossip.android.application or " +
-                    "gossip.android.library to be applied first (module: $path)"
+                "driftwood.android.compose requires driftwood.android.application or " +
+                    "driftwood.android.library to be applied first (module: $path)"
             )
         }
     }

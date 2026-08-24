@@ -1,21 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- M3a, plan.md §7: TCP sockets for sync, plus mDNS/NSD discovery on the same Wi-Fi LAN. -->
+    <!-- TCP sync sockets, plus mDNS/NSD peer discovery on the same Wi-Fi LAN. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
+    <!-- Wi-Fi Direct, the "meet anywhere" transport; neverForLocation is safe since minSdk 33 never needs ACCESS_FINE_LOCATION for discovery. -->
+    <uses-permission
+        android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-feature
+        android:name="android.hardware.wifi.direct"
+        android:required="false" />
+
+    <!-- Scanning a peer's "Add contact" QR code. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
     <application
-        android:name=".GossipApplication"
+        android:name=".DriftwoodApplication"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:windowSoftInputMode="adjustResize"
-        android:theme="@style/Theme.Gossip">
+        android:theme="@style/Theme.Driftwood">
         <activity
             android:name=".MainActivity"
             android:exported="true">

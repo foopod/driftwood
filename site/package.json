@@ -1,0 +1,13 @@
+{
+  "name": "driftwood-site",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "build": "tailwindcss -i src/input.css -o dist/styles.css --minify",
+    "watch": "tailwindcss -i src/input.css -o dist/styles.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "tailwindcss": "^4.3.3"
+  }
+}

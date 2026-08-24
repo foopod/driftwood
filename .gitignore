@@ -13,3 +13,10 @@ build/
 .externalNativeBuild
 .cxx
 local.properties
+/screenshots/
+
+# Release signing — the keystore itself lives outside the repo entirely
+# (~/keystores/), but keystore.properties holds its path + passwords.
+keystore.properties
+*.jks
+*.keystore

@@ -56,7 +56,8 @@ unclear, resolve it back to these.
 ### Explicitly out of scope (MVP)
 
 - Background / ambient sync (deferred; design so it can be added).
-- DMs / encrypted messages (architecture accommodates; not built).
+- DMs / encrypted messages — ruled out, not deferred. This is a public-by-default network;
+  a targeted-delivery primitive doesn't fit it and isn't planned.
 - Private / opportunistic listening (MVP listen is **public** — declared to every peer you
   sync with, strangers included; private listening needs a different, interest-hiding sync
   mechanism, deferred).
@@ -270,7 +271,9 @@ one-line change. The values are deliberate starting points, not researched optim
 | `MSG_FORMAT_VERSION` (`v`) | 1 | First field of every message. |
 | `CONTEXT_SEND_CAP` | 1000 | Max context sent per session. Starting point; revisit in M2 against observed sizes. |
 | `GOSSIP_INTAKE_CAP` | 1000 | Max gossip accepted per session. |
-| `VERIFY_FAIL_CUTOFF` | 20 | Rejected (unverifiable) messages from one peer in one session before the session is aborted. |
+| `VERIFY_FAIL_CUTOFF` | 20 | Rejected (unverifiable) messages from one peer in one phase — across every batch in it — before the session is aborted. |
+| `PHASE_BATCH_SIZE` | 10,000 | Messages per batch within a phase; each batch is persisted as soon as it's received, not at phase end. |
+| `MAX_BATCHES_PER_PHASE` | 50 | Batches one direction exchanges in a phase before stopping — self-imposed on send, a hard stop on receive from a peer that never finishes. Not a data-loss guard: everything up to it is already persisted. |
 | `USERNAME_MAX_CHARS` | 32 | Unicode scalar values after NFC, like `MSG_MAX_CHARS`. |
 | `DIRECTORY_TTL` | 180 days | Since `last_seen_post`, before a name ages out. Deliberately longer than `WINDOW_DEFAULT` so a partly-pruned thread still shows who said what. |
 | `MIN_SDK` | 33 (Android 13) | Set by Wi-Fi Direct + `NEARBY_WIFI_DEVICES`/`neverForLocation`; API ≤ 32 would force a location permission. See §7. |
@@ -607,10 +610,21 @@ publishes your interests to them** — noted in §9.
   content you did not choose: context is written by strangers into threads that have no size
   limit, and gossip is unchosen by definition. Those are the two places volume is not bounded
   by your own decisions, so those are the two places that need a bound.
-- A peer exceeding `VERIFY_FAIL_CUTOFF` (20) rejected messages in one session has the
-  session aborted; content already merged from it stays (it was individually valid).
+- A peer exceeding `VERIFY_FAIL_CUTOFF` (20) rejected messages in one **phase** — across every
+  batch in it, not reset per batch — has the session aborted; content already merged from it
+  stays (it was individually valid).
 - The gossip phase is strictly bounded by the local gossip budget regardless of what the
   peer offers.
+- **Delivery within a phase is batched** (`PHASE_BATCH_SIZE`, currently 10,000 messages) and
+  applied batch by batch, not once at phase end. This replaced an earlier single guard,
+  `MAX_MESSAGES_PER_PHASE`, that aborted a phase outright if its receive loop ran long — and
+  because that guard (50,000) was sized below what the default LISTEN tier can legitimately
+  hold (65,536, at the 50% split below), hitting it discarded an entire phase's already-verified
+  content and reproduced identically on retry: a deterministic livelock for a new device's
+  first sync against an established peer. With per-batch persistence, `MAX_BATCHES_PER_PHASE`
+  (50 batches) is no longer a data-loss guard — it is a courteous stopping point on send, and a
+  bound on how long we read from a peer that never finishes a delivery on receive. Either way,
+  everything already batched stays, and a later sync picks up the rest.
 
 ---
 
@@ -812,6 +826,111 @@ Keep it calm and honest about partial data. Text-only keeps the surface small.
   promote an author to listen from *everything else*. Favourite from any surface.
   Guided first-run posts + share-early nudges + encouraging empty states.
 
+**M4.1 — Efficient thread list at scale**
+- Prompted by reviewing how the Home list would hold up as message counts grow: today
+  `HomeViewModel` loads the *entire* `messages` table on every change
+  (`MessageDao.observeAll()`, no `LIMIT`) and rebuilds the thread grouping in Kotlin
+  (`HomeThreadClassifier`) from scratch on every emission. That doesn't scale, and one bug
+  fix and one real feature fell out of looking at it closely:
+- **Fix a sort-integrity bug first, independent of everything else here.** Thread sort
+  currently uses `ThreadSummary.newestTimestamp`, computed from the raw, author-claimed
+  `Message.body.timestampMillis` — the field the docs already call untrusted — rather than
+  `effective_time` (`min(claimed, first_received)`), which is what pruning and the window
+  check both correctly use instead. As it stands, a message claiming a future timestamp
+  sails through the window check (a future claim is never "too old") and then sorts as
+  the newest thing in its thread indefinitely, in everyone's feed, for free. Sort must use
+  `effective_time`, matching every other trust-sensitive read in the app.
+- **Move thread aggregation into SQL, and paginate it.** Replace the full-table
+  `observeAll()` + Kotlin `groupBy` with a Room query that returns one row per thread root
+  with the aggregates already computed — `MAX(effective_time)` for sort, message count,
+  and an unread flag — ordered and paged, backed by Jetpack Paging 3 (`androidx.paging`)
+  rather than a single unbounded `Flow<List<...>>`. Per-message tier (listen/context/
+  gossip) is already computed and stored at ingest time in `RoomSyncStore.apply()` — reuse
+  that as the foundation rather than reclassifying from scratch on read. Tab membership
+  itself is a thread-level "at least one message in this thread qualifies" rule
+  (`HomeThreadClassifier`'s existing "or from you" logic), not a flat per-message filter,
+  so it'll need an `EXISTS`-style query against the stored tier column rather than a plain
+  `WHERE`, but that's still one query per page instead of the whole table every time.
+- **New filter/sort bar under both tabs.** Two controls, left and right: a sort toggle
+  (**newest first** / **oldest first**), and an **unread only** switch. Same controls,
+  independent state, on both *My Circle* and *Other*.
+- **Drop the "(N unread)" count from the tab labels.** Replaced by the unread-only toggle
+  above — a permanently-visible number is exactly the kind of standing obligation/badge-
+  anxiety this app's whole framing (moving present, not an archive; no engagement metrics)
+  is otherwise careful to avoid. Tabs go back to their bare names always; unread stays
+  visible as the existing per-row dot, with the toggle as the way to actually work through
+  it when there's a backlog.
+
+**M4.2 — Long-form posts (continuation chains)**
+- Prompted by wanting room for essay/blog-length posts without touching the wire protocol.
+  The tempting fix — raise `MSG_MAX_CHARS` well past 320 — was rejected: storage fairness
+  (§4) is entirely message-*count*-based (`NOMINAL_MSG_SIZE` turns the byte budget into a
+  per-author message quota, and `Pruner` divides that quota evenly per author), which only
+  holds together because every message is currently bounded to roughly the same few hundred
+  bytes. A handful of authors writing nothing but 8-10k-character posts would each occupy one
+  fair-share slot while consuming 10-30x the bytes of everyone else — quietly breaking the
+  "no author can crowd out another" guarantee `Pruner` exists to provide. Splitting a long
+  post into several ordinary messages instead keeps `MSG_MAX_CHARS` untouched and makes an
+  essay cost the author roughly what it should: one fair-share slot per chunk, same as
+  anyone else's messages.
+- **No wire-format change.** A continuation is an ordinary reply — same `parent`/`root` as
+  any other message — recognised by a plain-text convention rather than a new signed field:
+  text starting with the exact three-character prefix `"-> "` (hyphen, greater-than, one
+  space) declares itself a continuation of its `parent`. Chosen over a typed
+  `continuesPrevious` boolean specifically so a client that has never heard of this feature
+  still renders something sensible — the raw text, arrow and all, reads as "continues from
+  the message above" to a human even with zero special handling. (`^^` was the other option
+  on the table; rejected because it reads as an emoticon to most people, not "continued".)
+- **A prefix alone is not sufficient — the client must also verify the *structural* claim**
+  before stitching: the message's `author` must equal its `parent`'s `author`, `parent` must
+  be held, and its claimed `timestamp` must be **exactly equal** to its parent's — not merely
+  close. A stranger's reply that happens to start with `"-> "` (quoting a diff, describing a
+  refactor, whatever) is not a continuation of someone else's post no matter what its text
+  says, and neither is a genuine self-reply added later — the prefix is a hint for rendering;
+  author, parent, and exact-timestamp match are what actually gate it. This is deliberately a
+  UX/norms decision, not a security one: nothing stops an author from re-using a stale
+  timestamp on their own new content if they really want to, same as nothing stops any other
+  timestamp claim in this system. What it *does* do is make the client itself refuse to
+  present "I added a new part to my old post" as a single, simultaneously-published piece —
+  the one thing this feature must not appear to offer, since the network has no edit and no
+  reason to start looking like it does. Getting the gate's negative case wrong (a genuine
+  chunk not stitched because its parent was pruned/not-yet-synced) is not a failure worth
+  guarding against — same "gaps render calmly" posture as every other partial-thread state in
+  `ThreadAssembler`.
+- **Composing:** a "write long-form" entry point that accepts up to a generous client-side
+  soft cap (a UI affordance only, not a protocol constant — 20,000 characters was the number
+  floated, easily changed later for free). Splits on paragraph boundaries where possible,
+  falling back to word boundaries, never mid-word, into chunks each within `MSG_MAX_CHARS`.
+  **One timestamp, captured once** before signing starts, stamped on every chunk — not
+  re-read per chunk, which would reintroduce drift at millisecond scale. Built and signed
+  **strictly in order** — chunk *n+1*'s `parent` is chunk *n*'s id, which doesn't exist until
+  chunk *n* is finalized — and held locally as one completed chain before any of it is
+  offered to a sync session, the same as any other locally-authored content. This is also why
+  the exact-timestamp gate is safe to rely on: nothing partial is ever released, so a
+  legitimately-published chain always satisfies it, and there is no "resume this draft later"
+  path that could accidentally produce mismatched timestamps.
+- **Rendering:** a client-side walk layered on the existing `ThreadAssembler` tree, not a
+  protocol-level concept — starting from any node, follow single-child edges where the child
+  is `"-> "`-prefixed, same-author, and timestamp-matched, concatenating text (prefix
+  stripped) into one flowing view; stop at the first node that fails any of those. A reply to
+  one chunk specifically (commenting on one paragraph) is unaffected: it's just another child
+  of that node, shown the same way a reply to any message is shown today, and does not
+  interrupt the chain itself — chunk *n+1* still finds chunk *n* as its parent regardless of
+  what else replied to chunk *n*. Every successfully stitched view carries a permanent,
+  unconditional disclosure (e.g. "Published as one piece, by the author's own clock — not
+  independently verifiable") rather than one scaled to how confident the gate feels; the gate
+  narrows *accidental or casual* misuse, it does not and cannot prove simultaneity, and the
+  UI should never imply otherwise.
+- *Done when:* a long-form compose round-trips through split → sign → sync → stitched render
+  as the original text; a chunk chain interleaved with a third party's reply to a middle
+  chunk still stitches correctly and shows that reply in the right place; a `"-> "`-prefixed
+  reply from a *different* author than its parent never stitches; a `"-> "`-prefixed,
+  same-author reply whose claimed timestamp differs from its parent's by even one millisecond
+  never stitches, and instead renders as an ordinary reply; a chain missing a chunk (not yet
+  synced, or pruned) renders its held fragments without erroring, matching `ThreadAssembler`'s
+  existing missing-parent behaviour; and a plain client with no knowledge of this feature
+  displays the raw chunks as ordinary, readable replies.
+
 **M5 — Hardening & field test**
 - Verification-rejection edge cases, malformed-peer handling, per-session/per-phase intake
   caps, storage-eviction correctness under churn, key-loss/recovery flow, dropped-mid-
@@ -820,6 +939,18 @@ Keep it calm and honest about partial data. Text-only keeps the surface small.
 - **Watch two things specifically** (both accepted-with-eyes-open in the design): whether
   sybil authors distort fair-share in the gossip partition (§4), and whether a single large
   thread starves a session via unbounded context (§5).
+- **Extract `undertow` as a standalone library**, once the above hardening has actually
+  exercised it. `core:model`, `core:crypto`, `core:store`, and `core:sync` are already plain
+  JVM modules (`gossip.jvm.library`, zero Android imports) — this is a packaging and
+  API-review exercise more than a rewrite. Publish them under their own Maven coordinates
+  (name: `undertow`, matching the protocol's public name on the site) with a version and a
+  public API aimed at a third-party implementer, not just this app. Scope it to the wire
+  protocol, message/data model, and reconciliation logic; leave concrete transports (LAN TCP,
+  Wi-Fi Direct) as app-side reference implementations behind the existing `Transport`
+  interface, so a consumer brings their own transport rather than inheriting Android-specific
+  networking. `core:identity` (Android Keystore) and `core:data` (Room) stay app-side. Goal:
+  another developer can depend on `undertow` and write an interoperable client without
+  touching this app's code at all.
 
 ---
 
@@ -907,8 +1038,34 @@ Keep it calm and honest about partial data. Text-only keeps the surface small.
 - Background / ambient trusted-peer sync (foreground service; battery-exemption onboarding).
 - Private / opportunistic listening (interest-hiding sync), with per-identity hiding —
   and discovery through others' public listens.
-- Encrypted DMs (opaque messages carried by listeners who relay you).
-- Tag-based listen and complete-graph propagation of tagged roots.
+- Tag-based listen and complete-graph propagation of tagged roots. (Gossip nodes, below,
+  would be a natural place to eventually host tag indexing/query, given they're already
+  the one role expected to hold more than a phone would bother to.)
+- **Gossip nodes** — optional, always-on relay peers, not a mandatory server and not
+  required for the app to work at all. Anyone can run one; it just syncs with whoever
+  connects, same protocol and identity model as any other device, but reachable far more
+  reliably than a phone that's only near people occasionally. Existing purely to ease the
+  cold-start / low-density problem (§9) without centralizing anything — closer to a
+  Scuttlebutt pub than a server. Doesn't change discovery itself (still proximity-based,
+  same `Transport` interface). A gossip node has no personal listen list of its own — it
+  isn't a person with real interests — so its value comes from maximizing gossip-tier
+  capacity rather than following anyone specifically; needs a much larger storage budget
+  than a typical phone to be useful as a bridge.
+- **Locally deletable posts (your own only)** — a modified client could let you remove
+  your own past messages from your own device, with a permanent-ish local tombstone (a
+  long TTL — e.g. comfortably longer than `WINDOW_DEFAULT`, so it outlives the message's
+  normal circulation lifetime even for a favourited copy someone else kept — rather than
+  truly unbounded) so it doesn't quietly reappear on a future sync with someone who still
+  has it. Doesn't and can't remove copies already held elsewhere — same honesty the
+  Block feature already states plainly. Root-deleted threads render exactly the way a
+  pruned root already does (§3) — no new UI state needed.
+- **Locally hiding other people's posts** — deliberately *not* the same as the item
+  above. A pure display-layer filter (never affects storage, never affects what you
+  relay to others) for curating your own view — explicitly not a way to selectively keep
+  relaying most of someone's content while suppressing specific posts of theirs. That
+  distinction is the whole point: full block is the only lever for refusing to carry
+  someone, and it's all-or-nothing on purpose, so nobody ends up quietly editing what
+  passes through them on another person's behalf.
 - Additional transports: Nearby Connections, Bluetooth / BLE, Wi-Fi Aware, and the
   LoRa / mesh path — all behind the existing `Transport` interface.
 - Efficient set reconciliation (bucketed digests / range-based) if scale demands it.

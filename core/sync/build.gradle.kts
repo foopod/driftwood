@@ -1,5 +1,5 @@
 plugins {
-    alias(libs.plugins.gossip.jvm.library)
+    alias(libs.plugins.driftwood.jvm.library)
 }
 
 dependencies {

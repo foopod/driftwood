@@ -2,7 +2,7 @@ plugins {
     `kotlin-dsl`
 }
 
-group = "com.jonoshields.gossip.buildlogic"
+group = "com.jonoshields.driftwood.buildlogic"
 
 java {
     toolchain { languageVersion = JavaLanguageVersion.of(21) }
@@ -17,19 +17,19 @@ dependencies {
 gradlePlugin {
     plugins {
         register("androidApplication") {
-            id = "gossip.android.application"
+            id = "driftwood.android.application"
             implementationClass = "AndroidApplicationConventionPlugin"
         }
         register("androidLibrary") {
-            id = "gossip.android.library"
+            id = "driftwood.android.library"
             implementationClass = "AndroidLibraryConventionPlugin"
         }
         register("androidCompose") {
-            id = "gossip.android.compose"
+            id = "driftwood.android.compose"
             implementationClass = "AndroidComposeConventionPlugin"
         }
         register("jvmLibrary") {
-            id = "gossip.jvm.library"
+            id = "driftwood.jvm.library"
             implementationClass = "JvmLibraryConventionPlugin"
         }
     }

@@ -121,6 +121,12 @@ Every record on the stream:
 | `GOSSIP_REQUEST` | `0x08` | both | ids wanted from that offer |
 | `SESSION_DONE` | `0x09` | both | — |
 | `ABORT` | `0x0A` | both | reason code (u8) |
+| `BATCH_DONE` | `0x0B` | both | — |
+
+`BATCH_DONE` ends one batch within a phase, with more of that direction's delivery still to
+come; `PHASE_DONE` is what a sender emits for its *last* batch instead. A delivery is a run of
+zero or more `BATCH_DONE`s followed by exactly one `PHASE_DONE` — the receiver applies
+(persists) after each one, not only after the final marker (§4).
 
 Only **gossip** offers before sending. Context does not — see §5.2.
 
@@ -189,23 +195,34 @@ converges.
         │───────────────────────────────────▶│
         │◀───────────────────────────────────│  HASHLIST(ids in B's own scope)
         │                                    │
-        │  MESSAGE × n  +  PROFILE × m       │   ── wants, in-scope, then context
-        │───────────────────────────────────▶│      newest first within each
-        │  PHASE_DONE                        │   ── priority phase complete: APPLY NOW
-        │───────────────────────────────────▶│
-        │                                    │      (B mirrors all of the above)
+        │  MESSAGE × k  +  PROFILE × m       │   ── one batch: wants, in-scope, then context
+        │───────────────────────────────────▶│      newest first within each, ≤ PHASE_BATCH_SIZE
+        │◀───────────────────────────────────│  BATCH_DONE / PHASE_DONE   (B's own batch)
+        │  BATCH_DONE / PHASE_DONE           │   ── APPLY THIS BATCH NOW, then swap turns
+        │───────────────────────────────────▶│      repeats until both sides send PHASE_DONE
+        │                                    │
         │  GOSSIP_OFFER(newest ids)          │
         │───────────────────────────────────▶│
         │◀───────────────────────────────────│  GOSSIP_REQUEST(subset)
-        │  MESSAGE × j                       │
+        │  MESSAGE × j (one or more batches) │
         │───────────────────────────────────▶│
         │  SESSION_DONE                      │
         │───────────────────────────────────▶│
 ```
 
-**Each phase is applied on completion, not at session end.** A connection that dies during the
-gossip phase must leave the priority phase's results persisted — the priority phase is
-independently valid by design, and discarding it would make a partial sync worse than useless.
+**A phase is a sequence of batches, not one unbroken stream.** Each direction sends its
+delivery in batches of at most `PHASE_BATCH_SIZE` messages, terminating each with `BATCH_DONE`
+except the last, which gets `PHASE_DONE` instead. The priority phase's two directions
+*alternate* batches — a batch from A, a batch from B, and so on — so one side's huge backlog
+cannot block the other's delivery from starting at all; the gossip phase's two directions are
+each a self-contained, non-alternating run of batches (§6.7).
+
+**Each batch is applied on completion, not at phase or session end.** A connection that dies
+mid-phase must leave every batch already received persisted — a sync that is ninety percent
+done should be worth ninety percent. This is stricter than before: it used to be *phases* that
+were the unit of durability, with one large receive-loop guard (`MAX_MESSAGES_PER_PHASE`) that
+discarded an entire phase's verified content if a peer's delivery ran long. Batching removes
+that failure mode — see §7 and §8.
 
 **Identity travels in `HELLO` (M3a).** plan.md §5 step 1 requires both users to confirm who
 they are connected to before anything moves — a name for a known contact, a fingerprint for a
@@ -489,6 +506,13 @@ because a hostile sender simply ignores this.
 *Why newest-first:* in a medium that forgets, the recent is what people are still talking
 about. Older content is more likely to have aged out on the far side anyway.
 
+*Uncapped does not mean unbatched.* "All 1500 in-scope" still goes out as
+⌈1500 / `PHASE_BATCH_SIZE`⌉ batches, each applied as it lands, alternating turns with whatever
+Bob is sending back — see §4. A truly enormous in-scope delivery (past `MAX_BATCHES_PER_PHASE`
+batches) trims itself the same courteous way context does, except by batch count rather than a
+fixed message total: everything up to the last completed batch is already Bob's, and the rest
+is exactly as "nothing lost, only deferred" as the context case above.
+
 ### 6.8 The bus arrives
 
 *Alice and Bob are mid-sync when Bob has to leave. The connection dies during the gossip
@@ -511,9 +535,10 @@ nothing, which is the wrong shape for a protocol whose whole premise is brief en
 | A message with a flipped bit | Rejected: the hash does not match the id. Counted. Never stored, never relayed. |
 | A message signed by the wrong key | Rejected: bad signature. Counted. |
 | A profile renamed in transit | Rejected: the claim is signed by the key it names, so a relay can withhold a name but never edit one. |
-| More than `VERIFY_FAIL_CUTOFF` (20) rejections | Session aborted. Content already merged stays — each piece was individually valid. |
+| More than `VERIFY_FAIL_CUTOFF` (20) rejections | Session aborted. Content already merged stays — each piece was individually valid. Counted for the whole **phase**, across every batch in it — a peer cannot buy free rejections by spreading garbage across more, smaller batches. |
 | A frame claiming more than `MAX_FRAME_BYTES` | Abort *before* allocating. |
 | `MESSAGE` arriving during the `SCOPE` phase | Abort — no record is harmless out of phase. |
+| A peer that never sends `BATCH_DONE`/`PHASE_DONE` | Once we have read `MAX_BATCHES_PER_PHASE` batches from it without either, we stop reading and end the session — every batch already received is already persisted, so nothing is lost by stopping. |
 | Offering 10 000 gossip ids | Bounded by the *receiver's* gossip budget, regardless of what is offered. |
 | A flood of unverifiable garbage | Nothing that fails verification consumes storage. An unauthenticated `author` cannot be attributed to anyone's fair share, so it can never take up space. |
 
@@ -536,8 +561,10 @@ for the handful of identities they actually care about.
 | `MSG_FORMAT_VERSION` | 1 | first field of every message |
 | `CONTEXT_SEND_CAP` | 1000 | context sent per session |
 | `GOSSIP_INTAKE_CAP` | 1000 | gossip accepted per session; wants and in-scope are uncapped |
-| `VERIFY_FAIL_CUTOFF` | 20 | rejections from one peer before abort |
+| `VERIFY_FAIL_CUTOFF` | 20 | rejections from one peer before abort; phase-scoped, not per batch |
 | `MAX_FRAME_BYTES` | 4 MiB | checked, both bounds, before allocation |
+| `PHASE_BATCH_SIZE` | 10 000 | messages per batch within a phase; each batch applied on receipt |
+| `MAX_BATCHES_PER_PHASE` | 50 | batches one direction exchanges in a phase before stopping — a self-imposed courtesy on send, a hard stop on receive from an uncooperative peer; not a data-loss risk either way, since every batch up to it is already persisted |
 | `WANT_TTL` | 10 | fruitless syncs before a want is dropped |
 | `WINDOW_DEFAULT` | 90 days | user-configurable |
 | `USERNAME_MAX_CHARS` | 32 | after NFC |

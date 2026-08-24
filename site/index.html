@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>driftwood — a slower kind of social network</title>
+  <meta name="description" content="driftwood is a decentralized, text-only social app with no servers and no accounts. Your identity is a key, and content travels only when two phones sync in person — like word of mouth." />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playwrite+US+Trad&display=swap" />
+  <link rel="stylesheet" href="dist/styles.css" />
+</head>
+<body class="bg-drift-bg text-drift-text antialiased">
+
+  <!-- Nav -->
+  <header class="border-b border-white/5">
+    <div class="mx-auto max-w-5xl px-6 py-5 flex items-center justify-between">
+      <a href="index.html" class="flex items-center gap-2.5 font-semibold tracking-tight text-lg">
+        <svg width="24" height="24" viewBox="0 0 270.93333 270.93333" aria-hidden="true">
+          <defs>
+            <linearGradient id="navmark-a" x1="49.856134" y1="136.80348" x2="220.15707" y2="136.80348" gradientUnits="userSpaceOnUse" gradientTransform="matrix(0.75050438,0,0,0.75050438,29.51507,33.89435)">
+              <stop offset="0" stop-color="#7488ff" />
+              <stop offset="1" stop-color="#70e5b5" />
+            </linearGradient>
+            <linearGradient id="navmark-b" x1="153.08247" y1="124.63151" x2="211.55997" y2="124.63151" gradientUnits="userSpaceOnUse" gradientTransform="matrix(0.75050438,0,0,0.75050438,29.51507,33.89435)">
+              <stop offset="0" stop-color="#72c1d2" />
+              <stop offset="1" stop-color="#70e5b5" />
+            </linearGradient>
+            <linearGradient id="navmark-c" x1="199.44083" y1="114.54369" x2="230.54526" y2="114.54369" gradientUnits="userSpaceOnUse" gradientTransform="matrix(0.75050438,0,0,0.75050438,29.51507,33.89435)">
+              <stop offset="0" stop-color="#70debb" />
+              <stop offset="1" stop-color="#70e5b5" />
+            </linearGradient>
+          </defs>
+          <path d="m 116.19627,169.62285 c -3.51384,-26.05213 -34.398627,-19.07174 -38.162397,-25.52391 -3.763739,-6.45216 0.5377,-9.94708 -4.570264,-15.05505 -5.107973,-5.10797 -4.23449,-10.3483 -0.268837,-13.17319 3.565161,-2.53958 11.022441,-3.76375 25.002151,8.87174 13.979707,12.63549 18.281137,12.36665 30.378947,13.97971 12.09784,1.61303 24.09411,23.27759 44.08983,14.24852 6.22817,-2.81233 12.09781,-6.18332 19.08765,-6.721" fill="none" stroke="url(#navmark-a)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="m 147.3947,148.93808 c 0,0 4.83914,-5.64565 17.20581,-9.67826 12.36666,-4.0326 16.1304,-11.56013 17.74345,-19.08767 1.61303,-7.52753 -0.26887,-9.14057 2.95723,-14.24854" fill="none" stroke="url(#navmark-b)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="m 181.7634,123.15804 c 0,0 3.80662,-6.21198 17.78634,-6.48081" fill="none" stroke="url(#navmark-c)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span class="font-playwrite">driftwood</span>
+      </a>
+      <a href="undertow.html" class="text-sm text-drift-muted hover:text-drift-text transition-colors">the protocol →</a>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="mx-auto max-w-5xl px-6 pt-16 pb-20 md:pt-24 md:pb-28">
+    <div class="grid md:grid-cols-2 gap-12 items-center">
+      <div>
+        <h1 class="text-4xl md:text-5xl font-semibold tracking-tight leading-[1.1]">
+          A social network that travels like <span class="text-drift-mint">word of mouth</span>.
+        </h1>
+        <p class="mt-6 text-lg text-drift-muted leading-relaxed">
+          No servers, no accounts. Your identity is a keypair; what you write is a short,
+          signed message; the network is just people, syncing when they choose to meet.
+        </p>
+      </div>
+      <div class="flex justify-center">
+        <!-- Propagation diagram: a message hopping device to device over separate meetings -->
+        <svg viewBox="0 0 600 320" class="w-full max-w-md" role="img" aria-label="A message travelling from one device to the next over a series of separate meetings">
+          <defs>
+            <linearGradient id="driftgrad" x1="60" y1="240" x2="560" y2="140" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#7488ff" />
+              <stop offset="1" stop-color="#70e5b5" />
+            </linearGradient>
+          </defs>
+          <path d="M60,240 C110,190 130,150 180,150 C230,150 220,210 270,220 C320,230 330,170 380,150 C430,130 440,90 490,80 C520,73 545,95 560,110"
+                fill="none" stroke="url(#driftgrad)" stroke-width="4" stroke-linecap="round" stroke-dasharray="1 14" />
+          <circle cx="60" cy="240" r="10" fill="#7488ff" />
+          <circle cx="180" cy="150" r="7" fill="#8b9bff" />
+          <circle cx="270" cy="220" r="7" fill="#9dc9d0" />
+          <circle cx="380" cy="150" r="7" fill="#86e0b0" />
+          <circle cx="560" cy="110" r="10" fill="#70e5b5" />
+          <text x="60" y="268" text-anchor="middle" class="fill-drift-muted" font-size="13">you</text>
+          <text x="180" y="130" text-anchor="middle" class="fill-drift-muted" font-size="12">day 1</text>
+          <text x="270" y="248" text-anchor="middle" class="fill-drift-muted" font-size="12">day 3</text>
+          <text x="380" y="130" text-anchor="middle" class="fill-drift-muted" font-size="12">day 6</text>
+          <text x="560" y="138" text-anchor="middle" class="fill-drift-muted" font-size="13">someone new</text>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- What it is -->
+  <section class="border-t border-white/5">
+    <div class="mx-auto max-w-5xl px-6 py-16 md:py-20">
+      <h2 class="text-2xl font-semibold tracking-tight mb-10">What it actually is</h2>
+      <div class="grid md:grid-cols-3 gap-8">
+        <div>
+          <div class="text-drift-blue text-sm font-mono mb-2">01</div>
+          <h3 class="font-semibold mb-2">Your identity is a key</h3>
+          <p class="text-drift-muted leading-relaxed">Generated on your phone the first time you open it. No account, no password, no email —
+            just a keypair that lives on your device.</p>
+        </div>
+        <div>
+          <div class="text-drift-blue text-sm font-mono mb-2">02</div>
+          <h3 class="font-semibold mb-2">There is no server</h3>
+          <p class="text-drift-muted leading-relaxed">Nothing runs in the background. Content only moves when two phones are near each other
+            and their owners choose to sync — a deliberate moment, not a constant connection.</p>
+        </div>
+        <div>
+          <div class="text-drift-blue text-sm font-mono mb-2">03</div>
+          <h3 class="font-semibold mb-2">Threads can outlive their start</h3>
+          <p class="text-drift-muted leading-relaxed">Content ages out over time, so a conversation can still be going long after the
+            message that started it is gone. Landing in the middle with no way back to
+            how it began is normal here, not a bug.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Slower, on purpose -->
+  <section class="border-t border-white/5 bg-drift-surface/40">
+    <div class="mx-auto max-w-5xl px-6 py-16 md:py-20">
+      <h2 class="text-2xl font-semibold tracking-tight mb-4">Slower, on purpose</h2>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mb-12">
+        Most social software is built to hold everything, forever, and deliver it instantly.
+        driftwood is built the opposite way, because that's closer to how gossip actually
+        behaves between people.
+      </p>
+      <div class="grid md:grid-cols-3 gap-6">
+        <blockquote class="rounded-2xl bg-drift-surface border border-white/5 p-6">
+          <p class="text-lg leading-snug">
+            "The network carries a <span class="text-drift-mint">moving present</span>,
+            not an archive."
+          </p>
+          <footer class="mt-4 text-sm text-drift-muted">Content ages out of your phone once
+            it's old enough — nothing is kept forever by default.</footer>
+        </blockquote>
+        <blockquote class="rounded-2xl bg-drift-surface border border-white/5 p-6">
+          <p class="text-lg leading-snug">
+            "Gossip travels because <span class="text-drift-blue">people meet</span>."
+          </p>
+          <footer class="mt-4 text-sm text-drift-muted">Nothing syncs in the background. A
+            session is short, in person, and worth something the moment it stops.</footer>
+        </blockquote>
+        <blockquote class="rounded-2xl bg-drift-surface border border-white/5 p-6">
+          <p class="text-lg leading-snug">
+            "You hear about people through the
+            <span class="text-drift-mint">people you know</span>."
+          </p>
+          <footer class="mt-4 text-sm text-drift-muted">You don't subscribe to the world —
+            you follow a handful of people, and their conversations bring you everyone else.</footer>
+        </blockquote>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it spreads -->
+  <section class="border-t border-white/5">
+    <div class="mx-auto max-w-5xl px-6 py-16 md:py-20">
+      <h2 class="text-2xl font-semibold tracking-tight mb-4">How it spreads</h2>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mb-10">
+        Your phone carries three kinds of things, in this order of priority:
+      </p>
+      <div class="grid md:grid-cols-3 gap-6">
+        <div class="rounded-2xl border border-drift-blue/30 bg-drift-blue/5 p-6">
+          <h3 class="font-semibold text-drift-blue mb-2">What your people said</h3>
+          <p class="text-drift-muted text-sm leading-relaxed">Messages from the handful of
+            people you actually follow. This is what you always get first, and what your
+            phone tries hardest to keep.</p>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-drift-surface p-6">
+          <h3 class="font-semibold mb-2">What was said back to them</h3>
+          <p class="text-drift-muted text-sm leading-relaxed">Strangers' replies into your
+            people's conversations. Kept so the thread stays whole — context, not a new
+            subscription.</p>
+        </div>
+        <div class="rounded-2xl border border-drift-mint/30 bg-drift-mint/5 p-6">
+          <h3 class="font-semibold text-drift-mint mb-2">Whatever else drifted by</h3>
+          <p class="text-drift-muted text-sm leading-relaxed">A little incidental content
+            picked up along the way — how you discover people you don't follow yet.</p>
+        </div>
+      </div>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mt-10">
+        Every phone you sync with hands on a version of all three — which is the whole
+        mechanism, in both directions. Your own posts leave the same way: to whoever you
+        sync with, and from them, onward to whoever <em class="text-drift-text not-italic">they</em>
+        sync with next.
+      </p>
+      <p class="max-w-2xl mt-6 rounded-xl border border-drift-mint/30 bg-drift-mint/5 p-5 text-drift-text leading-relaxed">
+        Which makes this a <strong>public</strong> network, not a private one — there's no
+        direct messaging or private groups. Only post what you're happy to see travel.
+      </p>
+    </div>
+  </section>
+
+  <footer class="border-t border-white/5">
+    <div class="mx-auto max-w-5xl px-6 py-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <p class="text-sm text-drift-muted">driftwood — a decentralized, text-only social app.</p>
+      <a href="undertow.html" class="text-sm text-drift-mint hover:text-drift-text transition-colors">Read the full undertow spec →</a>
+    </div>
+  </footer>
+
+</body>
+</html>

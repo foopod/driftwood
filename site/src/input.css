@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+/* Same hex values as app/src/main/java/com/jonoshields/gossip/theme/Color.kt, so the site and
+   the app read as one product. */
+@theme {
+  --font-playwrite: "Playwrite US Trad", cursive;
+  --color-drift-bg: #090b16;
+  --color-drift-surface: #0d0f1f;
+  --color-drift-surface-high: #141831;
+  --color-drift-surface-bright: #1e2448;
+  --color-drift-blue: #7488ff;
+  --color-drift-mint: #70e5b5;
+  --color-drift-on-accent: #0a0e1a;
+  --color-drift-text: #edeff7;
+  --color-drift-muted: #a8afc7;
+}
+
+body {
+  background-color: var(--color-drift-bg);
+  color: var(--color-drift-text);
+}
