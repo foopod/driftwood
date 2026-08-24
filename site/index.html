@@ -183,7 +183,53 @@
             picked up along the way — how you discover people you don't follow yet.</p>
         </div>
       </div>
-      <p class="text-drift-muted leading-relaxed max-w-2xl mt-10">
+
+      <div class="mt-14">
+        <svg viewBox="0 0 720 210" class="w-full max-w-2xl mx-auto" role="img"
+             aria-label="A stranger's message reaches you four days later, carried by someone you know, without you ever syncing with the stranger yourself">
+          <defs>
+            <linearGradient id="carrygrad" x1="225" y1="150" x2="495" y2="150" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#70e5b5" />
+              <stop offset="1" stop-color="#7488ff" />
+            </linearGradient>
+          </defs>
+
+          <!-- who's present at each sync -->
+          <path d="M90,50 L225,150" stroke="#70e5b5" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.45" />
+          <path d="M360,50 L225,150" stroke="#9dc9d0" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.45" />
+          <path d="M360,50 L495,150" stroke="#9dc9d0" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.45" />
+          <path d="M630,50 L495,150" stroke="#7488ff" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.45" />
+
+          <!-- the message, riding along between the two syncs -->
+          <path d="M225,150 L495,150" stroke="url(#carrygrad)" stroke-width="3" fill="none" stroke-linecap="round" stroke-dasharray="1 10" />
+          <circle cx="360" cy="150" r="5" fill="#9dc9d0" />
+
+          <!-- sync points -->
+          <circle cx="225" cy="150" r="14" fill="none" stroke="#9dc9d0" stroke-width="2" opacity="0.5" />
+          <circle cx="225" cy="150" r="5" fill="#9dc9d0" />
+          <circle cx="495" cy="150" r="14" fill="none" stroke="#9dc9d0" stroke-width="2" opacity="0.5" />
+          <circle cx="495" cy="150" r="5" fill="#9dc9d0" />
+
+          <!-- people -->
+          <circle cx="90" cy="50" r="14" fill="#70e5b5" />
+          <circle cx="360" cy="50" r="14" fill="#9dc9d0" />
+          <circle cx="630" cy="50" r="14" fill="#7488ff" />
+
+          <text x="90" y="88" text-anchor="middle" class="fill-drift-text" font-size="13" font-weight="600">a stranger</text>
+          <text x="360" y="88" text-anchor="middle" class="fill-drift-text" font-size="13" font-weight="600">someone you know</text>
+          <text x="630" y="88" text-anchor="middle" class="fill-drift-text" font-size="13" font-weight="600">you</text>
+
+          <text x="225" y="178" text-anchor="middle" class="fill-drift-muted" font-size="12">day 1 — they sync</text>
+          <text x="360" y="178" text-anchor="middle" class="fill-drift-muted" font-size="12">carries it</text>
+          <text x="495" y="178" text-anchor="middle" class="fill-drift-muted" font-size="12">day 4 — you sync</text>
+        </svg>
+        <p class="text-center text-drift-muted text-sm mt-5 max-w-md mx-auto leading-relaxed">
+          You never sync with the stranger. Their message rides along on a phone you do
+          sync with — which is the only way anything new ever reaches you.
+        </p>
+      </div>
+
+      <p class="text-drift-muted leading-relaxed max-w-2xl mt-14">
         Every phone you sync with hands on a version of all three — which is the whole
         mechanism, in both directions. Your own posts leave the same way: to whoever you
         sync with, and from them, onward to whoever <em class="text-drift-text not-italic">they</em>
