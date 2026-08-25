@@ -18,11 +18,13 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Runs sync sessions over [TcpTransport] or [WifiDirectTransport], whichever connects first. */
 @Singleton
@@ -45,6 +47,7 @@ class SyncCoordinator @Inject constructor(
     private var advertisement: AutoCloseable? = null
     private var wifiDirectAdvertisement: AutoCloseable? = null
     private var job: Job? = null
+    private var listenAttempt: Job? = null
     private var pendingConfirmation: CompletableDeferred<Boolean>? = null
 
     /** Whether the current/last session ran over Wi-Fi Direct, so teardown knows what to clean up. */
@@ -68,10 +71,15 @@ class SyncCoordinator @Inject constructor(
         }
         _state.value = SyncUiState.Listening(opened.port)
 
-        // Losing is enforced by closing the underlying socket/group, not coroutine cancellation.
+        // The loser's coroutine is cancelled once the winner is known (see below) — that's what
+        // actually unregisters its Wi-Fi Direct broadcast receiver; closing the socket/group is not enough.
         val winner = CompletableDeferred<ListenOutcome>()
 
-        scope.launch {
+        val attempt = Job(scope.coroutineContext[Job])
+        listenAttempt = attempt
+        val attemptScope = CoroutineScope(scope.coroutineContext + attempt)
+
+        attemptScope.launch {
             try {
                 winner.complete(ListenOutcome.Lan(opened.accept()))
             } catch (e: IOException) {
@@ -81,7 +89,7 @@ class SyncCoordinator @Inject constructor(
             }
         }
         if (wifiDirectEnabled) {
-            scope.launch {
+            attemptScope.launch {
                 try {
                     val (connection, role) = wifiDirectTransport.awaitIncomingConnection()
                     syncLog.event("Wi-Fi Direct: incoming connection formed (role=$role)")
@@ -99,11 +107,17 @@ class SyncCoordinator @Inject constructor(
             } catch (e: IOException) {
                 syncLog.event("listen: both transports failed — ${e.message}")
                 stopAdvertising()
+                listenAttempt?.cancel()
+                listenAttempt = null
                 wifiDirectTransport.cancel()
                 _state.value = SyncUiState.Idle
                 return@launch
             }
             stopAdvertising()
+            // Cancel whichever racer lost — this is what actually unregisters its Wi-Fi Direct
+            // broadcast receiver, not just the socket/group cleanup below.
+            listenAttempt?.cancel()
+            listenAttempt = null
             // LAN naturally wins when both are viable — Wi-Fi Direct group formation is slower.
             if (outcome !is ListenOutcome.WifiDirect) wifiDirectTransport.cancel()
             usedWifiDirect = outcome is ListenOutcome.WifiDirect
@@ -148,11 +162,15 @@ class SyncCoordinator @Inject constructor(
         syncLog.event("cancelled by user (state=${_state.value})")
         job?.cancel()
         job = null
+        listenAttempt?.cancel()
+        listenAttempt = null
         // Closing unblocks a listener parked in accept(); a running Session reports PEER_CLOSED.
         listener?.close()
         listener = null
         stopAdvertising()
-        wifiDirectTransport.cancel()
+        // Not awaited here — cancel() must return immediately so the UI can go back to Idle;
+        // group teardown still finishes in the background instead of being truly fire-and-forget.
+        scope.launch { wifiDirectTransport.cancel() }
         pendingConfirmation?.cancel()
         pendingConfirmation = null
         _state.value = SyncUiState.Idle
@@ -191,7 +209,10 @@ class SyncCoordinator @Inject constructor(
             listener?.close()
             listener = null
             // Only after the session finishes with the connection — removing it earlier would pull the socket out from under the session.
-            if (usedWifiDirect) wifiDirectTransport.cancel()
+            // NonCancellable: this finally block often runs because this very coroutine was cancelled
+            // (user hit cancel mid-session) — without it, the suspend call below would throw immediately
+            // and skip cleanup, leaking the Wi-Fi Direct group/listener we're trying to release.
+            if (usedWifiDirect) withContext(NonCancellable) { wifiDirectTransport.cancel() }
         }
     }
 

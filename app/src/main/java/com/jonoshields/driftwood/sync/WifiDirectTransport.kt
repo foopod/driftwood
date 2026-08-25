@@ -81,14 +81,33 @@ class WifiDirectTransport @Inject constructor(
     }
 
     /** Tears down whatever's in flight (connect/await/listening socket); safe to call when idle. */
-    fun cancel() {
+    suspend fun cancel() {
         activeListener?.close()
         activeListener = null
         activeChannel?.let { channel ->
             runCatching { manager.cancelConnect(channel, noopActionListener()) }
-            runCatching { manager.removeGroup(channel, noopActionListener()) }
+            // Awaited, like awaitStaleGroupRemoved — the next attempt's removeStaleGroup()/connect()
+            // shouldn't race the OS still tearing down this group.
+            runCatching { awaitRemoveGroup(channel) }
         }
         activeChannel = null
+    }
+
+    private suspend fun awaitRemoveGroup(channel: WifiP2pManager.Channel) {
+        suspendCancellableCoroutine<Unit> { cont ->
+            manager.removeGroup(
+                channel,
+                object : WifiP2pManager.ActionListener {
+                    override fun onSuccess() {
+                        if (cont.isActive) cont.resume(Unit)
+                    }
+
+                    override fun onFailure(reason: Int) {
+                        if (cont.isActive) cont.resume(Unit)
+                    }
+                },
+            )
+        }
     }
 
     /** Doesn't clean up [activeChannel]/[activeListener] itself — only [cancel] does, on the caller's schedule. */
