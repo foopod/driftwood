@@ -21,7 +21,9 @@ object SyncLogReport {
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
 
         val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
+            // message/rfc822, not text/plain — the Android convention for "email only" sharing;
+            // non-mail apps (Bluetooth, Drive, Messages) don't register as handlers for it.
+            type = "message/rfc822"
             putExtra(Intent.EXTRA_EMAIL, arrayOf(LOG_RECIPIENT))
             putExtra(Intent.EXTRA_SUBJECT, "Driftwood sync log")
             putExtra(Intent.EXTRA_STREAM, uri)
