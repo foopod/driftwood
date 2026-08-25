@@ -23,6 +23,7 @@ internal const val WIFI_DIRECT_SERVICE_TYPE = "_gossip._tcp"
 @Singleton
 class WifiDirectPeerDiscovery @Inject constructor(
     private val wifiDirectChannel: WifiDirectChannel,
+    private val syncLog: SyncLog,
 ) {
     private val manager get() = wifiDirectChannel.manager
 
@@ -33,6 +34,7 @@ class WifiDirectPeerDiscovery @Inject constructor(
 
         val instanceName = "driftwood (${Build.MODEL})".take(63)
         Log.d("WifiDirectDiscovery", "advertise() instanceName=$instanceName serviceType=$WIFI_DIRECT_SERVICE_TYPE")
+        syncLog.event("Wi-Fi Direct: advertising as $instanceName")
         val serviceInfo = WifiP2pDnsSdServiceInfo.newInstance(instanceName, WIFI_DIRECT_SERVICE_TYPE, emptyMap())
         manager.addLocalService(channel, serviceInfo, noopActionListener())
 

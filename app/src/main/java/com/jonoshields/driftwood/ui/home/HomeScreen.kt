@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -20,22 +21,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
@@ -155,38 +156,18 @@ internal fun HomeContent(
                 title = {},
                 actions = {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AnimatedVisibility(
-                        visible = !searchExpanded,
-                        enter = fadeIn(tween(SEARCH_ANIMATION_MILLIS)),
-                        exit = fadeOut(tween(SEARCH_ANIMATION_MILLIS)),
-                    ) {
-                        AssistChip(
-                            onClick = { searchExpanded = true },
-                            label = { Text("Search") },
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                            modifier = Modifier.semantics { contentDescription = "Expand search" },
-                        )
-                    }
-                    // Checkmark + primary colour fill — the unthemed default was low-contrast.
-                    FilterChip(
-                        selected = unreadOnly,
-                        onClick = {
-                            val new = !unreadOnly
-                            unreadOnly = new
-                            onUnreadOnlyChanged(new)
-                        },
-                        label = { Text("Unread only") },
-                        leadingIcon = if (unreadOnly) {
-                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                        } else {
-                            null
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                            selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary,
+                    // The one thing worth a permanent, always-visible slot; everything else is one tap further away.
+                    Button(
+                        onClick = onSync,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
                         ),
-                    )
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text("Sync")
+                    }
                     // Boxed together so DropdownMenu anchors to the button, not the whole Row.
                     Box {
                         var menuOpen by remember { mutableStateOf(false) }
@@ -195,12 +176,27 @@ internal fun HomeContent(
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
-                                text = { Text("Quick add") },
-                                onClick = { menuOpen = false; onAddContact() },
+                                text = { Text("Search") },
+                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                                onClick = { menuOpen = false; searchExpanded = true },
                             )
                             DropdownMenuItem(
-                                text = { Text("Sync") },
-                                onClick = { menuOpen = false; onSync() },
+                                text = { Text("Unread only") },
+                                leadingIcon = if (unreadOnly) {
+                                    { Icon(Icons.Default.Check, contentDescription = null) }
+                                } else {
+                                    null
+                                },
+                                // Stays open so flipping it shows the checkmark land before dismissing.
+                                onClick = {
+                                    val new = !unreadOnly
+                                    unreadOnly = new
+                                    onUnreadOnlyChanged(new)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Quick add") },
+                                onClick = { menuOpen = false; onAddContact() },
                             )
                             DropdownMenuItem(
                                 text = { Text("Settings") },
@@ -213,11 +209,13 @@ internal fun HomeContent(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
+            ExtendedFloatingActionButton(
                 onClick = onCompose,
                 containerColor = MaterialTheme.colorScheme.secondary,
                 contentColor = MaterialTheme.colorScheme.onSecondary,
-            ) { Icon(Icons.Default.Add, contentDescription = "Compose") }
+                icon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                text = { Text("Compose") },
+            )
         },
     ) { padding ->
         when (state) {

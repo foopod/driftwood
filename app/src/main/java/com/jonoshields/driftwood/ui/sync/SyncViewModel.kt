@@ -10,6 +10,7 @@ import com.jonoshields.driftwood.sync.NearbyPeer
 import com.jonoshields.driftwood.sync.NsdPeerDiscovery
 import com.jonoshields.driftwood.sync.PeerRef
 import com.jonoshields.driftwood.sync.SyncCoordinator
+import com.jonoshields.driftwood.sync.SyncLog
 import com.jonoshields.driftwood.sync.SyncUiState
 import com.jonoshields.driftwood.sync.WifiDirectPeerDiscovery
 import com.jonoshields.driftwood.sync.mergeNearbyPeers
@@ -27,6 +28,7 @@ import kotlinx.coroutines.launch
 class SyncViewModel @Inject constructor(
     private val coordinator: SyncCoordinator,
     private val directory: DirectoryRepository,
+    private val syncLog: SyncLog,
     identity: IdentityStore,
     discovery: NsdPeerDiscovery,
     wifiDirectDiscovery: WifiDirectPeerDiscovery,
@@ -67,6 +69,9 @@ class SyncViewModel @Inject constructor(
         }
         coordinator.confirmPeer()
     }
+
+    /** Snapshot of what happened during the current/most recent attempt, for the "send log" action. */
+    fun logSnapshot(): String = syncLog.snapshot()
 
     fun cancel() = coordinator.cancel()
 

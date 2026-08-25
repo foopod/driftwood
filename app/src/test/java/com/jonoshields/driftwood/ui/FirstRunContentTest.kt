@@ -88,6 +88,18 @@ class FirstRunContentTest {
     }
 
     @Test
+    fun `the phrase screen offers a way to copy it`() {
+        // Not asserting on clipboard read-back: Android 10+ restricts clipboard reads to the
+        // focused app/default IME, which Robolectric enforces too, making read-back unreliable
+        // in this harness regardless of whether the write succeeded. The write path itself
+        // (ClipboardManager.setPrimaryClip) is a single platform call with no branching to test.
+        compose.setContent { FirstRunContent(FirstRunUiState.ShowPhrase(phrase), actions()) }
+
+        compose.onNodeWithText("Copy to clipboard").assertExists()
+        compose.onNodeWithText("Copy to clipboard").performClick()
+    }
+
+    @Test
     fun `verification cannot be submitted until every word is filled in`() {
         val state = FirstRunUiState.VerifyPhrase(positions = listOf(2, 9, 17), answers = listOf("", "", ""))
         compose.setContent { FirstRunContent(state, actions()) }

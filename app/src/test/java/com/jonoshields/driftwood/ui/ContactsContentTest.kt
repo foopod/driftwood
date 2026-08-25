@@ -1,8 +1,6 @@
 package com.jonoshields.driftwood.ui
 
-import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.jonoshields.driftwood.core.model.AuthorId
@@ -87,7 +85,7 @@ class ContactsContentTest {
     }
 
     @Test
-    fun `a listened person is marked, a confirmed-only person is not`() {
+    fun `listened and non-listened contacts appear under separate section headers`() {
         val listened = author(1)
         val confirmedOnly = author(2)
         show(
@@ -97,7 +95,17 @@ class ContactsContentTest {
             ),
         )
 
-        compose.onAllNodesWithText("Listening").assertCountEquals(1)
+        compose.onNodeWithText("Listening").assertExists()
+        compose.onNodeWithText("Everyone else").assertExists()
+    }
+
+    @Test
+    fun `only-listened contacts show just the Listening section`() {
+        val a = author(1)
+        show(listOf(ConfirmedEntry(a, NameResolver.resolve(a, nickname = "Ears", username = null), isListening = true)))
+
+        compose.onNodeWithText("Listening").assertExists()
+        compose.onNodeWithText("Everyone else").assertDoesNotExist()
     }
 
     @Test

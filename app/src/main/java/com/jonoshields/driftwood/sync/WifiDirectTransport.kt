@@ -30,6 +30,7 @@ private const val GROUP_FORMATION_TIMEOUT_MILLIS = 65_000L
 class WifiDirectTransport @Inject constructor(
     @ApplicationContext private val context: Context,
     private val wifiDirectChannel: WifiDirectChannel,
+    private val syncLog: SyncLog,
 ) {
     private val manager get() = wifiDirectChannel.manager
 
@@ -40,6 +41,7 @@ class WifiDirectTransport @Inject constructor(
     suspend fun connect(deviceAddress: String): Pair<Connection, Role> {
         val channel = wifiDirectChannel.channel()
         awaitStaleGroupRemoved(channel)
+        syncLog.event("Wi-Fi Direct: manager.connect() to $deviceAddress")
         return awaitGroupConnection(channel) {
             val config = WifiP2pConfig().apply { this.deviceAddress = deviceAddress }
             manager.connect(channel, config, noopActionListener())
@@ -101,15 +103,21 @@ class WifiDirectTransport @Inject constructor(
             val info = try {
                 withTimeout(GROUP_FORMATION_TIMEOUT_MILLIS) { awaitConnectionInfo(channel, onReady) }
             } catch (e: TimeoutCancellationException) {
+                syncLog.event("Wi-Fi Direct: group formation timed out after ${GROUP_FORMATION_TIMEOUT_MILLIS}ms")
                 throw IOException("timed out waiting for the Wi-Fi Direct connection", e)
             }
+            syncLog.event("Wi-Fi Direct: group formed, isGroupOwner=${info.isGroupOwner}")
             if (info.isGroupOwner) {
                 val listener = WifiDirectSocketEstablisher.GroupOwnerListener()
                 activeListener = listener
                 listener.accept() to Role.RESPONDER
             } else {
                 val address = info.groupOwnerAddress
-                    ?: throw IOException("group formed but no group-owner address was resolved")
+                    ?: run {
+                        syncLog.event("Wi-Fi Direct: group formed but no group-owner address was resolved")
+                        throw IOException("group formed but no group-owner address was resolved")
+                    }
+                syncLog.event("Wi-Fi Direct: connecting socket to group owner $address")
                 WifiDirectSocketEstablisher.connectToGroupOwner(address) to Role.INITIATOR
             }
         } finally {
@@ -147,6 +155,7 @@ class WifiDirectTransport @Inject constructor(
                     WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION -> {
                         val state = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1)
                         if (state == WifiP2pManager.WIFI_P2P_STATE_DISABLED && cont.isActive) {
+                            syncLog.event("Wi-Fi Direct: turned off mid-connection")
                             finish { cont.resumeWithException(IOException("Wi-Fi Direct was turned off")) }
                         }
                     }

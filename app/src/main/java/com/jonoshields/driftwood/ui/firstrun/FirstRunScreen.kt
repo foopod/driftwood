@@ -1,5 +1,10 @@
 package com.jonoshields.driftwood.ui.firstrun
 
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
+import android.content.Context
+import android.os.PersistableBundle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
@@ -125,7 +131,7 @@ private fun ShowPhrase(state: FirstRunUiState.ShowPhrase, actions: FirstRunActio
     Text(
         "These 24 words are the only way back to this identity if you lose this phone. " +
             "Nothing else can recover it — not us, not another device. Write them down " +
-            "on paper and keep them somewhere safe.",
+            "on paper, or copy them into a password manager, and keep them somewhere safe.",
         style = MaterialTheme.typography.bodyMedium,
     )
     Text(
@@ -152,9 +158,25 @@ private fun ShowPhrase(state: FirstRunUiState.ShowPhrase, actions: FirstRunActio
         }
     }
 
+    val context = LocalContext.current
+    OutlinedButton(
+        onClick = { copyRecoveryPhrase(context, state.words) },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text("Copy to clipboard")
+    }
+
     Button(onClick = actions.onBeginVerification, modifier = Modifier.fillMaxWidth()) {
         Text("I've written it down")
     }
+}
+
+/** Marked sensitive (Android 13+, matching minSdk) so the system clipboard preview never shows these words in plain text. */
+private fun copyRecoveryPhrase(context: Context, words: List<String>) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val clip = ClipData.newPlainText("Recovery phrase", words.joinToString(" "))
+    clip.description.extras = PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true) }
+    clipboard.setPrimaryClip(clip)
 }
 
 @Composable

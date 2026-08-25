@@ -30,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -44,11 +45,15 @@ import com.jonoshields.driftwood.core.store.DisplayName
 import com.jonoshields.driftwood.core.store.NameResolver
 import com.jonoshields.driftwood.sync.LocalAddress
 import com.jonoshields.driftwood.sync.NearbyPeer
+import com.jonoshields.driftwood.sync.SyncLogReport
 import com.jonoshields.driftwood.sync.SyncSummaryText
 import com.jonoshields.driftwood.sync.SyncUiState
 import com.jonoshields.driftwood.ui.common.AuthorName
 import com.jonoshields.driftwood.ui.common.ContactControls
 import com.jonoshields.driftwood.ui.common.OrDivider
+
+/** How long a connection attempt runs before offering to send a diagnostic log instead of just waiting. */
+private const val SLOW_CONNECTION_TIMEOUT_MILLIS = 10_000L
 
 @Composable
 fun SyncScreen(
@@ -93,6 +98,7 @@ fun SyncScreen(
         onFinished = { viewModel.reset(); onBack() },
         onSetNickname = viewModel::setNickname,
         onToggleListen = viewModel::toggleListen,
+        onSendLog = { SyncLogReport.send(context, viewModel.logSnapshot()) },
         modifier = modifier,
     )
 }
@@ -117,10 +123,22 @@ internal fun SyncContent(
     onFinished: () -> Unit,
     onSetNickname: (AuthorId, String) -> Unit,
     onToggleListen: (AuthorId) -> Unit,
+    onSendLog: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // Mid-session states offer only Cancel — a plain Back would silently leave a session running.
     val midSession = state !is SyncUiState.Idle && state !is SyncUiState.Finished && state !is SyncUiState.Failed
+
+    // A connection stuck this long is worth a diagnostic, not just more waiting.
+    var stuck by remember { mutableStateOf(false) }
+    LaunchedEffect(state) {
+        stuck = false
+        if (state is SyncUiState.Listening || state is SyncUiState.Connecting || state is SyncUiState.Running) {
+            delay(SLOW_CONNECTION_TIMEOUT_MILLIS)
+            stuck = true
+        }
+    }
+    val showSendLog = state is SyncUiState.Failed || stuck
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -167,6 +185,10 @@ internal fun SyncContent(
                 SyncUiState.Running -> StatusContent("Syncing…")
                 is SyncUiState.Finished -> FinishedContent(state, onFinished)
                 is SyncUiState.Failed -> FailedContent(state, onDone)
+            }
+
+            if (showSendLog) {
+                SendLogButton(onSendLog)
             }
         }
     }
@@ -377,6 +399,13 @@ private fun FailedContent(state: SyncUiState.Failed, onDone: () -> Unit) {
     Text("Couldn't sync", style = MaterialTheme.typography.titleMedium)
     Text(state.message, style = MaterialTheme.typography.bodyLarge)
     Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("OK") }
+}
+
+@Composable
+private fun SendLogButton(onSendLog: () -> Unit) {
+    TextButton(onClick = onSendLog, modifier = Modifier.fillMaxWidth()) {
+        Text("Send log")
+    }
 }
 
 @Composable

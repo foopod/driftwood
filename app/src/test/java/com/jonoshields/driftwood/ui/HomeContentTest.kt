@@ -286,28 +286,36 @@ class HomeContentTest {
         compose.onNodeWithText("Them").assertExists()
     }
 
-    // ---- search box (collapsed by default; expand it before interacting with the field) ----
+    // ---- search box (collapsed by default; opened from the overflow menu) ----
 
     private fun expandSearch() {
-        compose.onNodeWithContentDescription("Expand search").performClick()
+        compose.onNodeWithContentDescription("More options").performClick()
+        compose.onNodeWithText("Search").performClick()
     }
 
     @Test
-    fun `the search field is collapsed by default, behind a labeled button`() {
+    fun `the search field is collapsed by default`() {
         show(listening = listOf(summary(1, "hello")))
 
-        compose.onNodeWithContentDescription("Expand search").assertExists()
         compose.onNodeWithContentDescription("Cancel search").assertDoesNotExist()
     }
 
     @Test
-    fun `the search button expands into a full-width field, and hides itself`() {
+    fun `the overflow menu offers a way to expand search`() {
+        show()
+
+        compose.onNodeWithContentDescription("More options").performClick()
+
+        compose.onNodeWithText("Search").assertExists()
+    }
+
+    @Test
+    fun `the search menu item expands into a full-width field`() {
         show()
 
         expandSearch()
 
         compose.onNodeWithText("Search").assertExists()
-        compose.onNodeWithContentDescription("Expand search").assertDoesNotExist()
         compose.onNodeWithContentDescription("Cancel search").assertExists()
     }
 
@@ -323,7 +331,6 @@ class HomeContentTest {
         assertTrue(textCleared)
         assertTrue(authorCleared)
         compose.onNodeWithContentDescription("Cancel search").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Expand search").assertExists()
     }
 
     @Test
@@ -400,6 +407,7 @@ class HomeContentTest {
         var reported: Boolean? = null
         show(onUnreadOnlyChanged = { reported = it })
 
+        compose.onNodeWithContentDescription("More options").performClick()
         compose.onNodeWithText("Unread only").performClick()
 
         assertEquals(true, reported)
@@ -410,6 +418,7 @@ class HomeContentTest {
         show(listening = listOf(summary(1, "hello")), gossip = listOf(summary(2, "world")))
 
         compose.onNodeWithText("Other").performClick()
+        compose.onNodeWithContentDescription("More options").performClick()
 
         // Exactly one "Unread only" control exists at all, regardless of which tab is showing
         // — proving it lives above the tabs rather than being duplicated per tab.

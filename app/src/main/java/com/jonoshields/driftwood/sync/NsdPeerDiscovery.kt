@@ -22,6 +22,7 @@ private const val SERVICE_TYPE = "_gossip._tcp."
 @Singleton
 class NsdPeerDiscovery @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val syncLog: SyncLog,
 ) {
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
     private val executor = ContextCompat.getMainExecutor(context)
@@ -34,8 +35,10 @@ class NsdPeerDiscovery @Inject constructor(
             setPort(port)
         }
         val listener = object : NsdManager.RegistrationListener {
-            override fun onServiceRegistered(serviceInfo: NsdServiceInfo) = Unit
-            override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) = Unit
+            override fun onServiceRegistered(serviceInfo: NsdServiceInfo) =
+                syncLog.event("LAN: NSD service registered as ${serviceInfo.serviceName}")
+            override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) =
+                syncLog.event("LAN: NSD registration failed (errorCode=$errorCode)")
             override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) = Unit
             override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) = Unit
         }
@@ -55,7 +58,8 @@ class NsdPeerDiscovery @Inject constructor(
 
         val resolveListener = { requestedName: String ->
             object : NsdManager.ResolveListener {
-                override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) = Unit
+                override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) =
+                    syncLog.event("LAN: NSD resolve failed for ${serviceInfo.serviceName} (errorCode=$errorCode)")
                 override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                     val host = serviceInfo.host?.hostAddress ?: return
                     peers[requestedName] = DiscoveredPeer(requestedName, host, serviceInfo.port)
@@ -67,6 +71,7 @@ class NsdPeerDiscovery @Inject constructor(
         val discoveryListener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String) = Unit
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+                syncLog.event("LAN: NSD discovery failed to start (errorCode=$errorCode)")
                 close()
             }
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) = Unit

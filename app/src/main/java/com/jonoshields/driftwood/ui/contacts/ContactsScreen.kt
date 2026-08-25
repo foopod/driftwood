@@ -85,27 +85,48 @@ internal fun ContactsContent(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
+                // Already sorted listened-first (sortConfirmedEntries) — partition keeps that order per group.
+                val (listening, everyoneElse) = entries.partition { it.isListening }
                 LazyColumn(
                     // Extra bottom clearance so the add-contact FAB never sits over the last entry.
                     contentPadding = PaddingValues(bottom = 96.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(entries, key = { it.author.toHex() }) { entry ->
-                        // Same destination as tapping a name in a thread: nickname, listen, or block.
-                        Row(
-                            Modifier.fillMaxWidth().clickable { onOpenContact(entry.author) },
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            // Weighted so the hash chip doesn't squeeze "Listening" into a sliver.
-                            AuthorNameExpanded(entry.displayName, entry.author.toHex(), modifier = Modifier.weight(1f))
-                            if (entry.isListening) {
-                                Text("Listening", style = MaterialTheme.typography.labelMedium)
-                            }
+                    if (listening.isNotEmpty()) {
+                        item(key = "header-listening") { SectionHeader("Listening") }
+                        items(listening, key = { it.author.toHex() }) { entry ->
+                            ContactRow(entry, onOpenContact)
+                        }
+                    }
+                    if (everyoneElse.isNotEmpty()) {
+                        item(key = "header-everyone-else") { SectionHeader("Everyone else") }
+                        items(everyoneElse, key = { it.author.toHex() }) { entry ->
+                            ContactRow(entry, onOpenContact)
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SectionHeader(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun ContactRow(entry: ConfirmedEntry, onOpenContact: (AuthorId) -> Unit) {
+    // Same destination as tapping a name in a thread: nickname, listen, or block.
+    Row(
+        Modifier.fillMaxWidth().clickable { onOpenContact(entry.author) },
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AuthorNameExpanded(entry.displayName, entry.author.toHex())
     }
 }

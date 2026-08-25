@@ -13,6 +13,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +33,7 @@ class SyncCoordinator @Inject constructor(
     private val discovery: NsdPeerDiscovery,
     private val wifiDirectDiscovery: WifiDirectPeerDiscovery,
     private val wifiDirectTransport: WifiDirectTransport,
+    private val syncLog: SyncLog,
     @ApplicationContext private val context: Context,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -51,11 +53,19 @@ class SyncCoordinator @Inject constructor(
     /** Advertises over NSD and, if usable, Wi-Fi Direct too; whichever connects first wins. No-op unless [SyncUiState.Idle]. */
     fun startListening() {
         if (_state.value !is SyncUiState.Idle) return
+        syncLog.start()
         val opened = TcpTransport.Listener()
         listener = opened
         advertisement = discovery.advertise(opened.port)
+        syncLog.event("LAN: advertising on port ${opened.port}")
         val wifiDirectEnabled = WifiDirectAvailability.isSupported(context)
-        wifiDirectAdvertisement = if (wifiDirectEnabled) wifiDirectDiscovery.advertise() else null
+        wifiDirectAdvertisement = if (wifiDirectEnabled) {
+            syncLog.event("Wi-Fi Direct: advertising")
+            wifiDirectDiscovery.advertise()
+        } else {
+            syncLog.event("Wi-Fi Direct: unavailable on this device, LAN only")
+            null
+        }
         _state.value = SyncUiState.Listening(opened.port)
 
         // Losing is enforced by closing the underlying socket/group, not coroutine cancellation.
@@ -66,6 +76,7 @@ class SyncCoordinator @Inject constructor(
                 winner.complete(ListenOutcome.Lan(opened.accept()))
             } catch (e: IOException) {
                 // Almost always our own teardown — Wi-Fi Direct won, or the user cancelled.
+                syncLog.event("LAN: accept() ended — ${e.message}")
                 winner.completeExceptionally(e)
             }
         }
@@ -73,9 +84,11 @@ class SyncCoordinator @Inject constructor(
             scope.launch {
                 try {
                     val (connection, role) = wifiDirectTransport.awaitIncomingConnection()
+                    syncLog.event("Wi-Fi Direct: incoming connection formed (role=$role)")
                     winner.complete(ListenOutcome.WifiDirect(connection, role))
                 } catch (e: IOException) {
                     // A soft failure here must not end the listen — the LAN half may still be live.
+                    syncLog.event("Wi-Fi Direct: incoming connection failed — ${e.message}")
                 }
             }
         }
@@ -84,6 +97,7 @@ class SyncCoordinator @Inject constructor(
             val outcome = try {
                 winner.await()
             } catch (e: IOException) {
+                syncLog.event("listen: both transports failed — ${e.message}")
                 stopAdvertising()
                 wifiDirectTransport.cancel()
                 _state.value = SyncUiState.Idle
@@ -97,6 +111,7 @@ class SyncCoordinator @Inject constructor(
                 is ListenOutcome.Lan -> outcome.connection to Role.RESPONDER
                 is ListenOutcome.WifiDirect -> outcome.connection to outcome.role
             }
+            syncLog.event("listen: connected over ${if (usedWifiDirect) "Wi-Fi Direct" else "LAN"} as $role")
             runSession(role, connection)
         }
     }
@@ -104,19 +119,23 @@ class SyncCoordinator @Inject constructor(
     /** Connects out to [ref]; [label] is shown on the connecting screen. No-op unless [SyncUiState.Idle]. */
     fun connectTo(ref: PeerRef, label: String) {
         if (_state.value !is SyncUiState.Idle) return
+        syncLog.start()
         job = scope.launch {
             _state.value = SyncUiState.Connecting(label)
             usedWifiDirect = ref is PeerRef.WifiDirect
+            syncLog.event("connectTo: ${if (usedWifiDirect) "Wi-Fi Direct" else "LAN"} target $label")
             val (connection, role) = try {
                 when (ref) {
                     is PeerRef.Lan -> TcpTransport.connect(ref.host, ref.port) to Role.INITIATOR
                     is PeerRef.WifiDirect -> wifiDirectTransport.connect(ref.deviceAddress)
                 }
             } catch (e: IOException) {
+                syncLog.event("connectTo: failed — ${e.message}")
                 if (ref is PeerRef.WifiDirect) wifiDirectTransport.cancel()
                 _state.value = SyncUiState.Failed("Couldn't reach $label")
                 return@launch
             }
+            syncLog.event("connectTo: connected as $role")
             runSession(role, connection)
         }
     }
@@ -126,6 +145,7 @@ class SyncCoordinator @Inject constructor(
 
     /** Gives up on whatever is happening — listening, connecting, or a running session. */
     fun cancel() {
+        syncLog.event("cancelled by user (state=${_state.value})")
         job?.cancel()
         job = null
         // Closing unblocks a listener parked in accept(); a running Session reports PEER_CLOSED.
@@ -152,11 +172,20 @@ class SyncCoordinator @Inject constructor(
 
     private suspend fun runSession(role: Role, connection: Connection) {
         _state.value = SyncUiState.Running
+        syncLog.event("session: starting as $role")
         try {
             val result = Session(syncStore, clock).run(role, connection, identity.publicKey()) { peer ->
                 confirm(peer)
             }
+            syncLog.event("session: $result")
             _state.value = SyncUiState.Finished(result)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // An IOException mid-session (peer walked away, radio dropped) would otherwise be an
+            // unhandled exception on this coroutine — surface it as a normal failed sync instead.
+            syncLog.event("session: crashed — ${e.message}")
+            _state.value = SyncUiState.Failed("Sync failed: ${e.message ?: e::class.simpleName}")
         } finally {
             connection.close()
             listener?.close()
@@ -167,6 +196,7 @@ class SyncCoordinator @Inject constructor(
     }
 
     private suspend fun confirm(peer: AuthorId): Boolean {
+        syncLog.event("session: waiting on confirmation for $peer")
         val deferred = CompletableDeferred<Boolean>()
         pendingConfirmation = deferred
         _state.value = SyncUiState.Confirming(peer)
