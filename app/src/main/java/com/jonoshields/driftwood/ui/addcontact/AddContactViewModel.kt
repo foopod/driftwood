@@ -25,7 +25,7 @@ sealed interface AddContactUiState {
     data class Confirming(
         val scanned: AuthorId,
         val displayName: DisplayName,
-        val isListening: Boolean,
+        val isFollowing: Boolean,
     ) : AddContactUiState
 
     data class Added(val displayName: DisplayName) : AddContactUiState
@@ -53,15 +53,15 @@ class AddContactViewModel @Inject constructor(
     val uiState: StateFlow<AddContactUiState> = combine(
         mode,
         directory.observeNames(),
-        directory.observeListenScope(),
-    ) { currentMode, names, listenScope ->
+        directory.observeFollowList(),
+    ) { currentMode, names, followList ->
         fun nameOf(author: AuthorId) = names[author] ?: NameResolver.resolve(author, nickname = null, username = null)
         when (currentMode) {
             is Mode.Ready -> AddContactUiState.Ready(myQrPayload, currentMode.scanning)
             is Mode.Confirming -> AddContactUiState.Confirming(
                 scanned = currentMode.author,
                 displayName = nameOf(currentMode.author),
-                isListening = currentMode.author in listenScope,
+                isFollowing = currentMode.author in followList,
             )
             is Mode.Added -> AddContactUiState.Added(nameOf(currentMode.author))
         }
@@ -92,16 +92,16 @@ class AddContactViewModel @Inject constructor(
         viewModelScope.launch { directory.setNickname(author, nickname) }
     }
 
-    fun toggleListen() {
+    fun toggleFollow() {
         val state = uiState.value as? AddContactUiState.Confirming ?: return
         viewModelScope.launch {
-            if (state.isListening) directory.stopListening(state.scanned) else directory.listenTo(state.scanned)
+            if (state.isFollowing) directory.unfollow(state.scanned) else directory.follow(state.scanned)
         }
     }
 
     fun confirm() {
         val author = (mode.value as? Mode.Confirming)?.author ?: return
-        viewModelScope.launch { directory.confirm(author) }
+        viewModelScope.launch { directory.verify(author) }
         mode.value = Mode.Added(author)
     }
 

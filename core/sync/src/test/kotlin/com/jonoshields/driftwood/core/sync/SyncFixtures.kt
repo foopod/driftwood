@@ -22,7 +22,7 @@ internal fun held(
 internal fun noBlocks() = Blocklist(emptySet(), emptySet())
 
 internal fun scope(
-    listen: Set<AuthorId> = emptySet(),
+    follow: Set<AuthorId> = emptySet(),
     windowCutoff: Long = 0,
     wants: Set<MessageId> = emptySet(),
-) = ScopeDeclaration(listen, windowCutoff, wants)
+) = ScopeDeclaration(follow, windowCutoff, wants)

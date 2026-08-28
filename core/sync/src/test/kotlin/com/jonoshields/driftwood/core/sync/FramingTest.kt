@@ -38,7 +38,7 @@ class FramingTest {
     @Test
     fun `a scope declaration round trips with everything in it`() {
         val declaration = ScopeDeclaration(
-            listen = setOf(author(1), author(2)),
+            follow = setOf(author(1), author(2)),
             windowCutoff = 1_700_000_000_000,
             wants = setOf(msgId(7), msgId(8), msgId(9)),
         )
@@ -61,7 +61,7 @@ class FramingTest {
 
     @Test
     fun `a large hash-list fits in one frame`() {
-        // The number that sized MAX_FRAME_BYTES: a full listen partition is 65,536 ids.
+        // The number that sized MAX_FRAME_BYTES: a full follow partition is 65,536 ids.
         val ids = (1..65_536).mapTo(mutableSetOf()) { msgId(it) }
         val encoded = FrameCodec.encode(Record.HashList(ids))
         assertTrue("${encoded.size} bytes", encoded.size <= MAX_FRAME_BYTES + FrameCodec.HEADER_BYTES)
@@ -133,9 +133,9 @@ class FramingTest {
     @Test
     fun `a scope with impossible lengths is refused`() {
         assertMalformed(byteArrayOf(0x02) + intBytes(4) + ByteArray(4), "far too short to be a scope")
-        // listen length claims more than the frame holds
+        // follow length claims more than the frame holds
         val payload = intBytes(9999) + ByteArray(12)
-        assertMalformed(byteArrayOf(0x02) + intBytes(payload.size) + payload, "listen length overruns")
+        assertMalformed(byteArrayOf(0x02) + intBytes(payload.size) + payload, "follow length overruns")
     }
 
     @Test

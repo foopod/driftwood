@@ -15,9 +15,9 @@ const val GOSSIP_INTAKE_CAP: Int = 1000
 /** Fruitless syncs before a want is given up on — wants are opportunistic, never chased. */
 const val WANT_TTL: Int = 10
 
-/** What a peer tells us up front; [listen] is public in MVP since declaring it is how a peer knows what to send. */
+/** What a peer tells us up front; [follow] is public in MVP since declaring it is how a peer knows what to send. */
 data class ScopeDeclaration(
-    val listen: Set<AuthorId>,
+    val follow: Set<AuthorId>,
     /** Lower bound on `effective_time`: the peer will refuse anything older. */
     val windowCutoff: Long,
     val wants: Set<MessageId>,
@@ -38,10 +38,10 @@ data class Delivery(
 /** Decides what one device owes another — pure, so it can be checked by set equality instead of reading frames. */
 object Reconciler {
 
-    /** What we already hold within our own listen set — scoped to our own scope, since a peer never re-sends outside it. */
+    /** What we already hold within our own follow set — scoped to our own scope, since a peer never re-sends outside it. */
     fun hashList(held: List<HeldMessage>, mine: ScopeDeclaration): Set<MessageId> =
         held.asSequence()
-            .filter { it.author in mine.listen }
+            .filter { it.author in mine.follow }
             .mapTo(mutableSetOf()) { it.id }
 
     /** What we owe [peer], given their declaration and [peerHolds] (their hash-list); [blocklist] is ours alone. */
@@ -67,7 +67,7 @@ object Reconciler {
 
         // Filtered to their cutoff, not ours — anything older is bandwidth spent on something they'll drop.
         val inScope = sendable
-            .filter { it.author in peer.listen }
+            .filter { it.author in peer.follow }
             .filter { it.effectiveTime >= peer.windowCutoff }
             .filter { it.id !in peerHolds && it.id !in alreadyPlanned }
             .sortedNewestFirst()
@@ -76,7 +76,7 @@ object Reconciler {
 
         // Context: threads with a message from someone the peer listens to, computed from our own holdings.
         val contextThreads = sendable.asSequence()
-            .filter { it.author in peer.listen }
+            .filter { it.author in peer.follow }
             .mapTo(mutableSetOf()) { it.threadRoot }
 
         val context = sendable

@@ -41,12 +41,12 @@ class ConvergenceTest {
     private val g1 = alice.root("unrelated chatter", NOW - 1_000)
 
     private fun aliceStore() = InMemorySyncStore()
-        .listenTo(carol.key, dave.key)
+        .follow(carol.key, dave.key)
         .seed(c1).seed(c3).seed(d2).seed(ar).seed(g1)
         .seedProfile(carol.profile(NOW - 6_000))
 
     private fun bobStore() = InMemorySyncStore()
-        .listenTo(carol.key)
+        .follow(carol.key)
         .seed(c2).seed(c3).seed(d1).seed(cr)
         // Bob holds Carol's reply but not the Dave post it hangs off, so he is missing a
         // parent and asks for it by id — the only way to get content whose author he does
@@ -144,17 +144,17 @@ class ConvergenceTest {
     fun `caps still hold after the merge`() = runTest {
         // Convergence must not be allowed to overrun storage. Both sides run tiny partitions
         // here, so the incoming content genuinely exceeds what either is willing to keep.
-        val budgets = PartitionBudgets(listen = 4, context = 2, gossip = 2)
-        val a = InMemorySyncStore(budgets = budgets).listenTo(carol.key)
-        val b = InMemorySyncStore(budgets = budgets).listenTo(carol.key)
+        val budgets = PartitionBudgets(follow = 4, context = 2, gossip = 2)
+        val a = InMemorySyncStore(budgets = budgets).follow(carol.key)
+        val b = InMemorySyncStore(budgets = budgets).follow(carol.key)
         (1..20).forEach { n -> a.seed(carol.root("carol $n", NOW - 10_000 - n)) }
         (1..20).forEach { n -> b.seed(dave.root("dave $n", NOW - 10_000 - n)) }
 
         sync(a, b)
 
         // One author per partition, so the whole partition budget goes to them.
-        assertTrue("Alice kept ${a.ids.size}", a.ids.size <= budgets.listen + budgets.gossip)
-        assertTrue("Bob kept ${b.ids.size}", b.ids.size <= budgets.listen + budgets.gossip)
+        assertTrue("Alice kept ${a.ids.size}", a.ids.size <= budgets.follow + budgets.gossip)
+        assertTrue("Bob kept ${b.ids.size}", b.ids.size <= budgets.follow + budgets.gossip)
     }
 
     @Test

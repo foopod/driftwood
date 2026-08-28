@@ -45,13 +45,13 @@ class SyncContentTest {
     private var done = false
     private var finished = false
     private var nicknameSet: Pair<AuthorId, String>? = null
-    private var listenToggled: AuthorId? = null
+    private var followToggled: AuthorId? = null
 
     private fun show(
         state: SyncUiState,
         discoveredPeers: List<NearbyPeer> = emptyList(),
         names: Map<AuthorId, DisplayName> = emptyMap(),
-        listenScope: Set<AuthorId> = emptySet(),
+        followList: Set<AuthorId> = emptySet(),
         myAuthor: AuthorId? = me,
         wifiDirectPermissionDenied: Boolean = false,
     ) {
@@ -60,7 +60,7 @@ class SyncContentTest {
                 state = state,
                 discoveredPeers = discoveredPeers,
                 names = names,
-                listenScope = listenScope,
+                followList = followList,
                 myAuthor = myAuthor,
                 wifiDirectPermissionDenied = wifiDirectPermissionDenied,
                 onBack = {},
@@ -76,7 +76,7 @@ class SyncContentTest {
                 onDone = { done = true },
                 onFinished = { finished = true },
                 onSetNickname = { author, name -> nicknameSet = author to name },
-                onToggleListen = { author -> listenToggled = author },
+                onToggleFollow = { author -> followToggled = author },
             )
         }
     }
@@ -148,7 +148,7 @@ class SyncContentTest {
                 onDone = {},
                 onFinished = {},
                 onSetNickname = { _, _ -> },
-                onToggleListen = {},
+                onToggleFollow = {},
             )
         }
 
@@ -235,8 +235,20 @@ class SyncContentTest {
     }
 
     @Test
-    fun `confirming calls onConfirm`() {
+    fun `an unverified peer requires the hashes-match checkbox before Sync is enabled`() {
         show(SyncUiState.Confirming(peer))
+
+        compose.onNodeWithTag("sync-confirm-button").assertIsNotEnabled()
+
+        compose.onNodeWithTag("sync-hashes-match-checkbox").performClick()
+
+        compose.onNodeWithTag("sync-confirm-button").assertIsEnabled()
+    }
+
+    @Test
+    fun `confirming calls onConfirm once the checkbox is checked`() {
+        show(SyncUiState.Confirming(peer))
+        compose.onNodeWithTag("sync-hashes-match-checkbox").performClick()
 
         compose.onNodeWithTag("sync-confirm-button").performClick()
 
@@ -246,6 +258,7 @@ class SyncContentTest {
     @Test
     fun `confirming relabels the button to waiting and disables it`() {
         show(SyncUiState.Confirming(peer))
+        compose.onNodeWithTag("sync-hashes-match-checkbox").performClick()
 
         compose.onNodeWithTag("sync-confirm-button").performClick()
 
@@ -255,6 +268,7 @@ class SyncContentTest {
     @Test
     fun `typing a nickname saves it only once sync starts, not before`() {
         show(SyncUiState.Confirming(peer))
+        compose.onNodeWithTag("sync-hashes-match-checkbox").performClick()
 
         compose.onNodeWithText("Optional nickname").performTextInput("Sam")
         assertEquals(null, nicknameSet)
@@ -274,17 +288,17 @@ class SyncContentTest {
     }
 
     @Test
-    fun `toggling listen on the confirm screen calls through for the peer`() {
+    fun `toggling follow on the confirm screen calls through for the peer`() {
         show(SyncUiState.Confirming(peer))
 
-        compose.onNodeWithText("Not listening").performClick()
+        compose.onNodeWithText("Not following").performClick()
 
-        assertEquals(peer, listenToggled)
+        assertEquals(peer, followToggled)
     }
 
     @Test
-    fun `a known contact skips re-verifying their fingerprint, but still shows mine and the listen toggle`() {
-        // A known contact skips re-comparing fingerprints, but still shows mine and the listen toggle.
+    fun `a known contact skips re-verifying their fingerprint, but still shows mine and the follow toggle`() {
+        // A known contact skips re-comparing fingerprints, but still shows mine and the follow toggle.
         val nickname = DisplayName(label = "Sam", fingerprint = NameResolver.fingerprint(peer), verified = true, hue = 0f)
         show(SyncUiState.Confirming(peer), names = mapOf(peer to nickname))
 
@@ -296,7 +310,7 @@ class SyncContentTest {
         compose.onNodeWithText("Mine").assertExists()
         compose.onNodeWithText(NameResolver.fingerprint(me)).assertExists()
         compose.onNodeWithText("Optional nickname").assertExists()
-        compose.onNodeWithText("Not listening").assertExists()
+        compose.onNodeWithText("Not following").assertExists()
     }
 
     @Test
@@ -323,6 +337,15 @@ class SyncContentTest {
 
         assertEquals(true, confirmed)
         compose.onNodeWithTag("sync-confirm-button").assertTextEquals("Waiting…").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `an already-verified peer has no checkbox and Sync is enabled immediately`() {
+        val nickname = DisplayName(label = "Sam", fingerprint = NameResolver.fingerprint(peer), verified = true, hue = 0f)
+        show(SyncUiState.Confirming(peer), names = mapOf(peer to nickname))
+
+        compose.onNodeWithTag("sync-hashes-match-checkbox").assertDoesNotExist()
+        compose.onNodeWithTag("sync-confirm-button").assertIsEnabled()
     }
 
     @Test

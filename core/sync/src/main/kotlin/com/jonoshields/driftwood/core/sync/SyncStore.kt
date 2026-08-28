@@ -30,7 +30,7 @@ interface SyncStore {
 
     // ---- what we declare to a peer -----------------------------------------------------
 
-    suspend fun listenScope(): Set<AuthorId>
+    suspend fun followList(): Set<AuthorId>
 
     /** Lower bound on `effective_time` we will accept, derived from the configured window. */
     suspend fun windowCutoff(nowMillis: Long): Long

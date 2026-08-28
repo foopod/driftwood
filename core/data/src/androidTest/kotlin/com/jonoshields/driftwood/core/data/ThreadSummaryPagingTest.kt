@@ -36,8 +36,8 @@ class ThreadSummaryPagingTest {
     }
 
     private val me = Person(1)
-    private val alice = Person(2) // listened
-    private val bob = Person(3) // listened
+    private val alice = Person(2) // followed
+    private val bob = Person(3) // followed
     private val carol = Person(4) // stranger
     private val now = 1_700_000_000_000L
 
@@ -57,33 +57,33 @@ class ThreadSummaryPagingTest {
     @After
     fun tearDown() = database.close()
 
-    private suspend fun listenTo(vararg authors: AuthorId) {
-        authors.forEach { database.listen().add(ListenEntity(it, now)) }
+    private suspend fun follow(vararg authors: AuthorId) {
+        authors.forEach { database.follow().add(FollowEntity(it, now)) }
     }
 
-    /** Applies as sync would — tier is computed from the current listen list at apply time. */
+    /** Applies as sync would — tier is computed from the current follow list at apply time. */
     private suspend fun given(vararg messages: Message) {
         syncStore.apply(PhaseOutcome(messages.toList(), emptyList(), emptyMap()), now)
     }
 
     private suspend fun refresh(
-        wantListening: Boolean = true,
+        wantFollowing: Boolean = true,
         unreadOnly: Boolean = false,
         authorFilter: AuthorId? = null,
         textQuery: String? = null,
     ): List<ThreadSummaryRow> {
         val source: PagingSource<Int, ThreadSummaryRow> =
-            database.messages().pagedThreads(me.key, wantListening, unreadOnly, authorFilter, textQuery)
+            database.messages().pagedThreads(me.key, wantFollowing, unreadOnly, authorFilter, textQuery)
         val page = TestPager(config, source).refresh() as PagingSource.LoadResult.Page
         return page.data
     }
 
     private suspend fun otherTab(unreadOnly: Boolean = false): List<ThreadSummaryRow> =
-        refresh(wantListening = false, unreadOnly = unreadOnly)
+        refresh(wantFollowing = false, unreadOnly = unreadOnly)
 
     @Test
     fun aRootFromSomeoneListenedToLandsInMyCircle() = runTest {
-        listenTo(alice.key)
+        follow(alice.key)
         val root = alice.root("hello", now - 1_000)
         given(root)
 
@@ -117,21 +117,35 @@ class ThreadSummaryPagingTest {
     fun aStrangerReplyInAListenedThreadNeverBecomesTheHighlightedReply() = runTest {
         // Context, not a listened reply: the thread qualifies for My Circle because Alice's
         // root is in it, but Carol replying doesn't make Carol "in scope".
-        listenTo(alice.key)
+        follow(alice.key)
         val root = alice.root("what do you think?", now - 3_000)
         val strangerReply = carol.reply(root.id, root.id, "I have thoughts", now - 2_000)
         given(root, strangerReply)
 
         val row = refresh().single()
 
-        assertEquals(null, row.latestListenedAuthor)
+        assertEquals(null, row.latestKnownReplyAuthor)
+    }
+
+    @Test
+    fun aVerifiedButUnfollowedAuthorsReplyIsKnownToo() = runTest {
+        // Not followed — but verified, which is now enough to count as "known" for naming/preview.
+        val root = alice.root("root", now - 3_000)
+        val verifiedReply = carol.reply(root.id, root.id, "verified reply", now - 1_000)
+        given(root, verifiedReply)
+        database.contacts().upsert(ContactEntity(carol.key, nickname = null, confirmedAt = now, verified = true))
+
+        val row = otherTab().single()
+
+        assertEquals(carol.key, row.latestKnownReplyAuthor)
+        assertEquals(1, row.knownReplyCount)
     }
 
     @Test
     fun theLatestListenedReplyIsPickedOverAnEarlierOne() = runTest {
         // The greatest-n-per-group case this query exists to get right: two in-scope replies
         // in the same thread, only the newest should surface.
-        listenTo(alice.key, bob.key)
+        follow(alice.key, bob.key)
         val root = alice.root("root", now - 5_000)
         val earlier = bob.reply(root.id, root.id, "earlier reply", now - 4_000)
         val later = bob.reply(root.id, root.id, "later reply", now - 1_000)
@@ -139,13 +153,74 @@ class ThreadSummaryPagingTest {
 
         val row = refresh().single()
 
-        assertEquals("later reply", row.latestListenedText)
-        assertEquals(3, row.messageCount)
+        assertEquals("later reply", row.latestKnownReplyText)
+        assertEquals(2, row.replyCount)
+    }
+
+    @Test
+    fun theSecondKnownReplyCarriesItsOwnTextAndTimestampFromADifferentAuthor() = runTest {
+        follow(alice.key, bob.key)
+        val root = alice.root("root", now - 5_000)
+        val fromBob = bob.reply(root.id, root.id, "bob's take", now - 3_000)
+        val fromAlice = alice.reply(root.id, root.id, "alice's take", now - 1_000)
+        given(root, fromBob, fromAlice)
+
+        val row = refresh().single()
+
+        assertEquals(alice.key, row.latestKnownReplyAuthor)
+        assertEquals("alice's take", row.latestKnownReplyText)
+        assertEquals(bob.key, row.secondKnownReplyAuthor)
+        assertEquals("bob's take", row.secondKnownReplyText)
+    }
+
+    @Test
+    fun replyAndKnownCountsReflectTheThread() = runTest {
+        follow(alice.key)
+        val root = alice.root("root", now - 5_000)
+        val known = alice.reply(root.id, root.id, "known reply", now - 4_000)
+        val stranger = carol.reply(root.id, root.id, "stranger reply", now - 3_000)
+        given(root, known, stranger)
+        database.messages().setRead(known.id, true)
+
+        val row = refresh().single()
+
+        assertEquals(2, row.replyCount)
+        assertEquals(1, row.unreadReplyCount) // only the stranger reply is unread
+        assertEquals(1, row.knownReplyCount)
+        assertEquals(0, row.knownUnreadReplyCount) // the one known reply was marked read
+    }
+
+    @Test
+    fun rootUnreadIsIndependentOfReplyReadState() = runTest {
+        val root = me.root("root", now - 2_000)
+        val reply = alice.reply(root.id, root.id, "reply", now - 1_000)
+        given(root, reply)
+        database.messages().setRead(root.id, true)
+        // Root is read, but the reply is still unread (RoomSyncStore leaves incoming unread).
+
+        val row = refresh().single()
+
+        assertFalse(row.rootUnread)
+        assertEquals(1, row.unreadReplyCount)
+    }
+
+    @Test
+    fun missingRootReportsRootUnreadFalse() = runTest {
+        // A reply whose root was never synced in — root_author/text/timestamp all null.
+        follow(alice.key)
+        val root = alice.root("never held", now - 2_000)
+        val reply = alice.reply(root.id, root.id, "orphaned reply", now - 1_000)
+        given(reply) // root itself never given
+
+        val row = refresh().single()
+
+        assertEquals(null, row.rootAuthor)
+        assertFalse(row.rootUnread)
     }
 
     @Test
     fun sortIsNewestFirst() = runTest {
-        listenTo(alice.key)
+        follow(alice.key)
         val newer = alice.root("newer", now - 1_000)
         val older = alice.root("older", now - 2_000)
         given(newer, older)
@@ -173,7 +248,7 @@ class ThreadSummaryPagingTest {
 
     @Test
     fun authorFilterNarrowsToThreadsContainingThatAuthor() = runTest {
-        listenTo(alice.key, bob.key)
+        follow(alice.key, bob.key)
         val aliceRoot = alice.root("alice's post", now - 2_000)
         val bobRoot = bob.root("bob's post", now - 1_000)
         given(aliceRoot, bobRoot)
@@ -186,7 +261,7 @@ class ThreadSummaryPagingTest {
     @Test
     fun authorFilterMatchesAReplyAuthorToo() = runTest {
         // Not just root authors — the filter narrows to any thread the person appears in.
-        listenTo(alice.key, bob.key)
+        follow(alice.key, bob.key)
         val root = alice.root("root", now - 2_000)
         val bobsReply = bob.reply(root.id, root.id, "bob chimes in", now - 1_000)
         given(root, bobsReply)
@@ -198,7 +273,7 @@ class ThreadSummaryPagingTest {
 
     @Test
     fun authorFilterExcludesThreadsThatPersonNeverAppearsIn() = runTest {
-        listenTo(alice.key, bob.key)
+        follow(alice.key, bob.key)
         given(alice.root("alice's post", now - 1_000))
 
         assertTrue(refresh(authorFilter = bob.key).isEmpty())
@@ -206,7 +281,7 @@ class ThreadSummaryPagingTest {
 
     @Test
     fun textQueryMatchesRootText() = runTest {
-        listenTo(alice.key)
+        follow(alice.key)
         val match = alice.root("a post about kayaking", now - 2_000)
         val noMatch = alice.root("a post about knitting", now - 1_000)
         given(match, noMatch)
@@ -218,7 +293,7 @@ class ThreadSummaryPagingTest {
 
     @Test
     fun textQueryMatchesReplyTextToo() = runTest {
-        listenTo(alice.key, bob.key)
+        follow(alice.key, bob.key)
         val root = alice.root("root", now - 2_000)
         val reply = bob.reply(root.id, root.id, "mentions kayaking here", now - 1_000)
         given(root, reply)
@@ -230,7 +305,7 @@ class ThreadSummaryPagingTest {
 
     @Test
     fun aRootMatchRanksAboveAReplyOnlyMatch() = runTest {
-        listenTo(alice.key, bob.key)
+        follow(alice.key, bob.key)
         val replyOnlyMatchRoot = alice.root("root one", now - 1_000)
         bob.reply(replyOnlyMatchRoot.id, replyOnlyMatchRoot.id, "kayak mentioned only here", now - 500)
             .let { given(replyOnlyMatchRoot, it) }
@@ -245,22 +320,22 @@ class ThreadSummaryPagingTest {
 
     @Test
     fun textQueryWithNoMatchesReturnsNothing() = runTest {
-        listenTo(alice.key)
+        follow(alice.key)
         given(alice.root("a post about knitting", now - 1_000))
 
         assertTrue(refresh(textQuery = "kayak").isEmpty())
     }
 
     @Test
-    fun favouriteAndUnreadFlagsReflectTheirTables() = runTest {
-        val root = me.root("star me", now - 1_000)
+    fun pinAndUnreadFlagsReflectTheirTables() = runTest {
+        val root = me.root("pin me", now - 1_000)
         given(root)
-        database.favourites().star(FavouriteRootEntity(root.id, now))
+        database.pins().pin(PinnedRootEntity(root.id, now))
 
         val row = refresh().single()
 
-        assertTrue(row.isFavourite)
-        assertTrue("RoomSyncStore.apply leaves incoming messages unread", row.hasUnread)
+        assertTrue(row.isPinned)
+        assertTrue("RoomSyncStore.apply leaves incoming messages unread", row.rootUnread)
     }
 
     @Test
@@ -269,6 +344,6 @@ class ThreadSummaryPagingTest {
         given(root)
         database.messages().markThreadRead(root.id)
 
-        assertFalse(refresh().single().hasUnread)
+        assertFalse(refresh().single().rootUnread)
     }
 }

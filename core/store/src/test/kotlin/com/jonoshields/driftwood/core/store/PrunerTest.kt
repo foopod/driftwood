@@ -16,13 +16,13 @@ class PrunerTest {
 
     private fun plan(
         held: List<HeldMessage>,
-        listen: Set<AuthorId> = setOf(listened),
+        follow: Set<AuthorId> = setOf(listened),
         blocklist: Blocklist = noBlocks(),
-        favourites: Favourites = Favourites.NONE,
+        pinnedRoots: PinnedRoots = PinnedRoots.NONE,
         budgets: PartitionBudgets = UNLIMITED,
         windowMillis: Long = window,
         nowMillis: Long = now,
-    ) = Pruner.plan(held, listen, blocklist, favourites, budgets, windowMillis, nowMillis)
+    ) = Pruner.plan(held, follow, blocklist, pinnedRoots, budgets, windowMillis, nowMillis)
 
     private fun survivorsOf(held: List<HeldMessage>, plan: PruningPlan) =
         held.filterNot { it.id in plan.evict }
@@ -31,16 +31,16 @@ class PrunerTest {
 
     @Test
     fun `blocking beats starring`() {
-        // "Never show me this person again" cannot be overridden by having starred a thread
+        // "Never show me this person again" cannot be overridden by having pinned a thread
         // they happen to be in.
-        val starredThread = msgId(700)
-        val theirs = held(stranger, now, starredThread)
-        val mine = held(listened, now, starredThread)
+        val pinnedThread = msgId(700)
+        val theirs = held(stranger, now, pinnedThread)
+        val mine = held(listened, now, pinnedThread)
 
         val result = plan(
             listOf(theirs, mine),
             blocklist = Blocklist(setOf(stranger), emptySet()),
-            favourites = starred(starredThread),
+            pinnedRoots = pinned(pinnedThread),
         )
 
         assertEquals(setOf(theirs.id), result.evict)
@@ -84,12 +84,12 @@ class PrunerTest {
     }
 
     @Test
-    fun `a starred thread survives ageing out of the window`() {
-        // Starred threads are exempt from the caps, and the window is part of how the caps
+    fun `a pinned thread survives ageing out of the window`() {
+        // Pinned threads are exempt from the caps, and the window is part of how the caps
         // are kept — so a thread you have deliberately kept does not quietly expire.
         val thread = msgId(800)
         val old = held(listened, now - window - 1, thread)
-        assertTrue(plan(listOf(old), favourites = starred(thread)).evict.isEmpty())
+        assertTrue(plan(listOf(old), pinnedRoots = pinned(thread)).evict.isEmpty())
     }
 
     // ---- fair share ------------------------------------------------------------------
@@ -97,7 +97,7 @@ class PrunerTest {
     @Test
     fun `an author over its share loses its oldest messages first`() {
         val messages = messagesBy(listened, count = 10, startingAt = now - 20)
-        val result = plan(messages, budgets = budgets(listen = 4, context = 0, gossip = 0))
+        val result = plan(messages, budgets = budgets(follow = 4, context = 0, gossip = 0))
 
         val survivors = survivorsOf(messages, result)
         assertEquals(4, survivors.size)
@@ -110,7 +110,7 @@ class PrunerTest {
     fun `the budget is split equally between authors`() {
         val a = messagesBy(author(1), 50, startingAt = now - 60)
         val b = messagesBy(author(2), 50, startingAt = now - 60)
-        val result = plan(a + b, listen = setOf(author(1), author(2)), budgets = budgets(20, 0, 0))
+        val result = plan(a + b, follow = setOf(author(1), author(2)), budgets = budgets(20, 0, 0))
 
         val survivors = survivorsOf(a + b, result)
         assertEquals(20, survivors.size)
@@ -125,7 +125,7 @@ class PrunerTest {
         val prolific = messagesBy(author(2), 100, startingAt = now - 90)
         val result = plan(
             quiet + prolific,
-            listen = setOf(author(1), author(2)),
+            follow = setOf(author(1), author(2)),
             budgets = budgets(50, 0, 0),
         )
 
@@ -142,7 +142,7 @@ class PrunerTest {
         val middling = messagesBy(author(2), 40, startingAt = now - 50)
         val result = plan(
             quiet + middling,
-            listen = setOf(author(1), author(2)),
+            follow = setOf(author(1), author(2)),
             budgets = budgets(100, 0, 0),
         )
 
@@ -152,46 +152,46 @@ class PrunerTest {
     }
 
     @Test
-    fun `a starred thread consumes nobody's share`() {
-        val starredThread = msgId(900)
-        val kept = messagesBy(listened, 10, threadRoot = starredThread, startingAt = now - 20)
+    fun `a pinned thread consumes nobody's share`() {
+        val pinnedThread = msgId(900)
+        val kept = messagesBy(listened, 10, threadRoot = pinnedThread, startingAt = now - 20)
         val ordinary = messagesBy(listened, 10, threadRoot = msgId(901), startingAt = now - 10)
 
         val result = plan(
             kept + ordinary,
-            favourites = starred(starredThread),
-            budgets = budgets(listen = 4, context = 0, gossip = 0),
+            pinnedRoots = pinned(pinnedThread),
+            budgets = budgets(follow = 4, context = 0, gossip = 0),
         )
 
         val survivors = survivorsOf(kept + ordinary, result)
-        assertEquals("10 starred plus the 4 the budget allows", 14, survivors.size)
+        assertEquals("10 pinned plus the 4 the budget allows", 14, survivors.size)
         assertTrue(kept.none { it.id in result.evict })
     }
 
     @Test
     fun `starring a thread protects everyone in it, not just the person you follow`() {
-        // This is the point of moving the star to the thread: you keep the conversation,
+        // This is the point of moving the pin to the thread: you keep the conversation,
         // which means keeping the strangers' half of it too.
-        val starredThread = msgId(910)
-        val mine = messagesBy(listened, 5, threadRoot = starredThread, startingAt = now - 50)
-        val theirs = messagesBy(stranger, 5, threadRoot = starredThread, startingAt = now - 50)
+        val pinnedThread = msgId(910)
+        val mine = messagesBy(listened, 5, threadRoot = pinnedThread, startingAt = now - 50)
+        val theirs = messagesBy(stranger, 5, threadRoot = pinnedThread, startingAt = now - 50)
 
         val result = plan(
             mine + theirs,
-            favourites = starred(starredThread),
-            budgets = budgets(listen = 0, context = 0, gossip = 0),
+            pinnedRoots = pinned(pinnedThread),
+            budgets = budgets(follow = 0, context = 0, gossip = 0),
         )
 
-        assertTrue("a zero budget must not touch a starred thread", result.evict.isEmpty())
+        assertTrue("a zero budget must not touch a pinned thread", result.evict.isEmpty())
     }
 
     @Test
     fun `starring works on a thread whose root is not held`() {
-        // The star is keyed on the root id, which always exists, not the root message, which may be pruned.
+        // The pin is keyed on the root id, which always exists, not the root message, which may be pruned.
         val absentRoot = msgId(920)
         val replies = messagesBy(stranger, 4, threadRoot = absentRoot, startingAt = now - window - 10)
 
-        val result = plan(replies, favourites = starred(absentRoot), budgets = budgets(0, 0, 0))
+        val result = plan(replies, pinnedRoots = pinned(absentRoot), budgets = budgets(0, 0, 0))
 
         assertTrue(result.evict.isEmpty())
     }
@@ -201,7 +201,7 @@ class PrunerTest {
         val thread = msgId(930)
         val messages = messagesBy(listened, 6, threadRoot = thread, startingAt = now - 20)
 
-        assertTrue(plan(messages, favourites = starred(thread), budgets = budgets(2, 0, 0)).evict.isEmpty())
+        assertTrue(plan(messages, pinnedRoots = pinned(thread), budgets = budgets(2, 0, 0)).evict.isEmpty())
         assertEquals(4, plan(messages, budgets = budgets(2, 0, 0)).evict.size)
     }
 
@@ -212,7 +212,7 @@ class PrunerTest {
         val context = messagesBy(stranger, 10, threadRoot = threadA, startingAt = now - 20)
         val gossip = messagesBy(author(9), 10, threadRoot = msgId(200), startingAt = now - 20)
 
-        val result = plan(mine + context + gossip, budgets = budgets(listen = 3, context = 2, gossip = 1))
+        val result = plan(mine + context + gossip, budgets = budgets(follow = 3, context = 2, gossip = 1))
         val survivors = survivorsOf(mine + context + gossip, result)
 
         assertEquals(3, survivors.count { it.author == listened })
@@ -227,16 +227,16 @@ class PrunerTest {
         // Naive integer division gives every author a share of zero, which would wipe the
         // partition. The remainder has to be handed out.
         val messages = (1..20).flatMap { messagesBy(author(it), 1, startingAt = now - 5) }
-        val result = plan(messages, listen = (1..20).map { author(it) }.toSet(), budgets = budgets(10, 0, 0))
+        val result = plan(messages, follow = (1..20).map { author(it) }.toSet(), budgets = budgets(10, 0, 0))
         assertEquals(10, survivorsOf(messages, result).size)
     }
 
     @Test
     fun `the remainder goes to authors in a deterministic order`() {
         val messages = (1..3).flatMap { messagesBy(author(it), 5, startingAt = now - 10) }
-        val listen = (1..3).map { author(it) }.toSet()
-        val first = plan(messages, listen = listen, budgets = budgets(7, 0, 0))
-        val again = plan(messages.shuffled(Random(3)), listen = listen, budgets = budgets(7, 0, 0))
+        val follow = (1..3).map { author(it) }.toSet()
+        val first = plan(messages, follow = follow, budgets = budgets(7, 0, 0))
+        val again = plan(messages.shuffled(Random(3)), follow = follow, budgets = budgets(7, 0, 0))
         assertEquals(first.evict, again.evict)
 
         val survivors = survivorsOf(messages, first)
@@ -248,12 +248,12 @@ class PrunerTest {
     }
 
     @Test
-    fun `a zero budget empties a partition apart from starred threads`() {
-        val starredThread = msgId(940)
+    fun `a zero budget empties a partition apart from pinned threads`() {
+        val pinnedThread = msgId(940)
         val messages = messagesBy(listened, 5, threadRoot = msgId(941), startingAt = now - 5)
-        val kept = messagesBy(listened, 1, threadRoot = starredThread, startingAt = now - 5)
+        val kept = messagesBy(listened, 1, threadRoot = pinnedThread, startingAt = now - 5)
 
-        val result = plan(messages + kept, favourites = starred(starredThread), budgets = budgets(0, 0, 0))
+        val result = plan(messages + kept, pinnedRoots = pinned(pinnedThread), budgets = budgets(0, 0, 0))
 
         assertEquals(messages.map { it.id }.toSet(), result.evict)
     }
@@ -284,29 +284,29 @@ class PrunerTest {
                     threadRoot = threads.random(random),
                 )
             }
-            val listen = authors.filter { random.nextBoolean() }.toSet()
+            val follow = authors.filter { random.nextBoolean() }.toSet()
             val blocked = Blocklist(
                 authors = authors.filter { random.nextInt(8) == 0 }.toSet(),
                 roots = threads.filter { random.nextInt(8) == 0 }.toSet(),
             )
-            val favourites = Favourites(threads.filter { random.nextInt(5) == 0 }.toSet())
+            val pinnedRoots = PinnedRoots(threads.filter { random.nextInt(5) == 0 }.toSet())
             val caps = budgets(random.nextInt(0, 20), random.nextInt(0, 20), random.nextInt(0, 20))
 
             val result = plan(
                 messages,
-                listen = listen,
+                follow = follow,
                 blocklist = blocked,
-                favourites = favourites,
+                pinnedRoots = pinnedRoots,
                 budgets = caps,
             )
             val survivors = survivorsOf(messages, result)
 
             fun fail(why: String): Nothing = throw AssertionError("iteration $iteration: $why")
 
-            // Anything in a starred thread is only ever evicted for being blocked.
-            messages.filter { it.threadRoot in favourites && it.id in result.evict }.forEach { m ->
+            // Anything in a pinned thread is only ever evicted for being blocked.
+            messages.filter { it.threadRoot in pinnedRoots && it.id in result.evict }.forEach { m ->
                 if (result.reasons[m.id] != EvictionReason.BLOCKED) {
-                    fail("starred ${m.id} evicted for ${result.reasons[m.id]}")
+                    fail("pinned ${m.id} evicted for ${result.reasons[m.id]}")
                 }
             }
             // Nothing blocked survives, ever.
@@ -314,19 +314,19 @@ class PrunerTest {
                 if (m.author in blocked.authors) fail("blocked author survived")
                 if (m.threadRoot in blocked.roots) fail("blocked root survived")
             }
-            // Every survivor outside a starred thread is in window.
-            survivors.filterNot { it.threadRoot in favourites }.forEach { m ->
+            // Every survivor outside a pinned thread is in window.
+            survivors.filterNot { it.threadRoot in pinnedRoots }.forEach { m ->
                 if (m.effectiveTime < now - window) fail("stale message survived")
             }
-            // No partition exceeds its cap, counting only unstarred threads.
+            // No partition exceeds its cap, counting only unpinned threads.
             val tiers = result.tiers
             Tier.entries.forEach { tier ->
                 val cap = when (tier) {
-                    Tier.LISTEN -> caps.listen
+                    Tier.FOLLOW -> caps.follow
                     Tier.CONTEXT -> caps.context
                     Tier.GOSSIP -> caps.gossip
                 }
-                val kept = survivors.count { it.threadRoot !in favourites && tiers[it.id] == tier }
+                val kept = survivors.count { it.threadRoot !in pinnedRoots && tiers[it.id] == tier }
                 if (kept > cap) fail("$tier kept $kept over cap $cap")
             }
             // Evicting is never gratuitous: an id is evicted at most once, with a reason.

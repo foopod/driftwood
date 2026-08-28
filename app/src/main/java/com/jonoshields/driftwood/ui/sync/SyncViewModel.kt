@@ -47,11 +47,11 @@ class SyncViewModel @Inject constructor(
             ::mergeNearbyPeers,
         ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** For the confirmation step's nickname/listen controls, independent of Confirm/Decline. */
+    /** For the confirmation step's nickname/follow controls, independent of Confirm/Decline. */
     val names: StateFlow<Map<AuthorId, DisplayName>> = directory.observeNames()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
-    val listenScope: StateFlow<Set<AuthorId>> = directory.observeListenScope()
+    val followList: StateFlow<Set<AuthorId>> = directory.observeFollowList()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     fun startListening() = coordinator.startListening()
@@ -62,10 +62,10 @@ class SyncViewModel @Inject constructor(
     /** A tap on an entry in the merged nearby list — either transport. */
     fun connectTo(peer: NearbyPeer) = coordinator.connectTo(peer.ref, peer.name)
 
-    /** Tapping "Sync" on the fingerprint screen *is* the confirming act. */
+    /** Tapping "Sync" is the verifying act once the hashes-match checkbox has been ticked (or the peer was already verified). */
     fun confirmPeer() {
         (uiState.value as? SyncUiState.Confirming)?.peer?.let { peer ->
-            viewModelScope.launch { directory.confirm(peer) }
+            viewModelScope.launch { directory.verify(peer) }
         }
         coordinator.confirmPeer()
     }
@@ -81,9 +81,9 @@ class SyncViewModel @Inject constructor(
         viewModelScope.launch { directory.setNickname(author, nickname) }
     }
 
-    fun toggleListen(author: AuthorId) {
+    fun toggleFollow(author: AuthorId) {
         viewModelScope.launch {
-            if (author in listenScope.value) directory.stopListening(author) else directory.listenTo(author)
+            if (author in followList.value) directory.unfollow(author) else directory.follow(author)
         }
     }
 }

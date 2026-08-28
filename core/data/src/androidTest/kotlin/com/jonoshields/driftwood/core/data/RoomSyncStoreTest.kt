@@ -194,13 +194,13 @@ class RoomSyncStoreTest {
 
     @Test
     fun anIngestedMessageIsClassifiedIntoATier() = runTest {
-        database.listen().add(ListenEntity(alice.key, now))
+        database.follow().add(FollowEntity(alice.key, now))
         val theirs = alice.root("followed", now - 1_000)
         val stranger = bob.root("unfollowed", now - 1_000)
         given(theirs, stranger)
 
         assertEquals(
-            com.jonoshields.driftwood.core.store.Tier.LISTEN,
+            com.jonoshields.driftwood.core.store.Tier.FOLLOW,
             database.messages().find(theirs.id)!!.tier,
         )
         assertEquals(

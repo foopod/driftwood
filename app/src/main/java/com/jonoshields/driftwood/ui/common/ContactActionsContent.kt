@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -19,15 +21,15 @@ import androidx.compose.ui.unit.dp
 import com.jonoshields.driftwood.core.model.AuthorId
 import com.jonoshields.driftwood.core.store.DisplayName
 
-/** What you can privately do about one identity: change their nickname, listen or not, block or not. */
+/** What you can privately do about one identity: change their nickname, follow or not, block or not. */
 @Composable
 fun ContactActionsContent(
     author: AuthorId,
     displayName: DisplayName,
-    isListening: Boolean,
+    isFollowing: Boolean,
     isBlocked: Boolean,
     onSetNickname: (String) -> Unit,
-    onToggleListen: () -> Unit,
+    onToggleFollow: () -> Unit,
     onBlock: () -> Unit,
     onUnblock: () -> Unit,
     modifier: Modifier = Modifier,
@@ -35,10 +37,11 @@ fun ContactActionsContent(
     var confirmingBlock by remember { mutableStateOf(false) }
 
     Column(
-        modifier.fillMaxSize().padding(16.dp),
+        // Scrollable so the nickname field/save button stay reachable behind the keyboard.
+        modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        AuthorNameExpanded(displayName, author.toHex())
+        ContactIdentityHeader(displayName, author.toHex())
 
         if (confirmingBlock) {
             Text(
@@ -55,11 +58,11 @@ fun ContactActionsContent(
             }
         } else {
             ContactControls(
-                currentNickname = if (displayName.verified) displayName.label else null,
-                isListening = isListening,
-                isListenEnabled = !isBlocked,
+                currentNickname = displayName.nickname,
+                isFollowing = isFollowing,
+                isFollowEnabled = !isBlocked,
                 onSetNickname = onSetNickname,
-                onToggleListen = onToggleListen,
+                onToggleFollow = onToggleFollow,
             )
             if (isBlocked) {
                 TextButton(onClick = onUnblock) { Text("Unblock") }

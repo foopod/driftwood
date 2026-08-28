@@ -109,7 +109,7 @@ internal fun SettingsContent(
                 )
                 Text(
                     "The key is who you are; the username is only a label on it. Anyone can " +
-                        "claim any username, so others always see yours next to a short code " +
+                        "claim any username, so others always see yours next to a fingerprint " +
                         "derived from this key.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -118,9 +118,9 @@ internal fun SettingsContent(
 
             Section("Contacts") {
                 Text(
-                    "Everyone you've confirmed — by syncing, by QR, or by naming them — " +
-                        "plus everyone you listen to. Add new people via Quick add on the " +
-                        "main screen.",
+                    "Everyone with a claimed username, verified and followed people shown " +
+                        "first. Verify someone by syncing or by QR via Quick verify on the " +
+                        "main screen — naming someone is cosmetic only and never verifies them.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -145,7 +145,7 @@ internal fun SettingsContent(
                 Row("Held messages", state.messageCount.toString())
                 Row("Window", "${state.windowDays} days")
                 Row("Budget", "${state.budgetMegabytes} MB")
-                Row("Listen / context / gossip", state.budgetSplit)
+                Row("Follow / Context / Gossip", state.budgetSplit)
             }
 
             Section("Maintenance") {

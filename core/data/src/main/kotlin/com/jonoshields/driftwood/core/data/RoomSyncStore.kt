@@ -9,7 +9,7 @@ import com.jonoshields.driftwood.core.model.MessageId
 import com.jonoshields.driftwood.core.model.ProfileCodec
 import com.jonoshields.driftwood.core.store.Blocklist
 import com.jonoshields.driftwood.core.store.Clock
-import com.jonoshields.driftwood.core.store.Favourites
+import com.jonoshields.driftwood.core.store.PinnedRoots
 import com.jonoshields.driftwood.core.store.HeldMessage
 import com.jonoshields.driftwood.core.store.Pruner
 import com.jonoshields.driftwood.core.store.StorageConfig
@@ -30,7 +30,7 @@ internal class RoomSyncStore(
 
     // ---- what we declare to a peer ---------------------------------------------------
 
-    override suspend fun listenScope(): Set<AuthorId> = database.listen().authors().toSet()
+    override suspend fun followList(): Set<AuthorId> = database.follow().authors().toSet()
 
     override suspend fun windowCutoff(nowMillis: Long): Long = nowMillis - config.windowMillis
 
@@ -91,12 +91,12 @@ internal class RoomSyncStore(
 
         // One transaction per batch, so a half-applied batch never leaves the want-list stale.
         database.withTransaction {
-            val listen = database.listen().authors().toSet()
+            val follow = database.follow().authors().toSet()
 
             outcome.accepted.forEach { message ->
                 // effective_time clamps a forward-dated message to when it actually reached us.
                 val held = message.toHeldMessage(receivedAtMillis)
-                val tier = TierClassifier.classify(listOf(held), listen).getValue(message.id)
+                val tier = TierClassifier.classify(listOf(held), follow).getValue(message.id)
                 // Arrived via sync just now, so it's unread regardless of who wrote it.
                 messages.insert(message.toEntity(receivedAtMillis, tier, read = false))
                 database.directory().touch(message.body.author, held.effectiveTime)
@@ -132,9 +132,9 @@ internal class RoomSyncStore(
     override suspend fun pruneAfterSession(nowMillis: Long) {
         val plan = Pruner.plan(
             held = messages.all().map { it.toHeldMessage() },
-            listen = database.listen().authors().toSet(),
+            follow = database.follow().authors().toSet(),
             blocklist = blocklist(),
-            favourites = Favourites(database.favourites().starredRoots().toSet()),
+            pinnedRoots = PinnedRoots(database.pins().pinnedRoots().toSet()),
             budgets = config.budgets(),
             windowMillis = config.windowMillis,
             nowMillis = nowMillis,

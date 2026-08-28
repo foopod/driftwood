@@ -42,13 +42,13 @@ class HomeViewModel @Inject constructor(
 
     val uiState: StateFlow<HomeUiState> = combine(
         repository.observeHasAnyMessage(),
-        directory.observeListenScope(),
+        directory.observeFollowList(),
         directory.observeNames(),
-    ) { hasAnyMessage, listenScope, names ->
+    ) { hasAnyMessage, followList, names ->
         if (!hasAnyMessage) {
             HomeUiState.Empty
         } else {
-            HomeUiState.Threads(names = names, listenScope = listenScope)
+            HomeUiState.Threads(names = names, followList = followList)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState.Loading)
 
@@ -65,8 +65,8 @@ class HomeViewModel @Inject constructor(
         ThreadListParams(unreadOnly = unread, authorFilter = author, textQuery = text.ifBlank { null })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ThreadListParams())
 
-    val listeningThreads: Flow<PagingData<ThreadSummary>> = pagedThreadsFor(wantListening = true)
-    val gossipThreads: Flow<PagingData<ThreadSummary>> = pagedThreadsFor(wantListening = false)
+    val listeningThreads: Flow<PagingData<ThreadSummary>> = pagedThreadsFor(wantFollowing = true)
+    val gossipThreads: Flow<PagingData<ThreadSummary>> = pagedThreadsFor(wantFollowing = false)
 
     fun setUnreadOnly(value: Boolean) {
         unreadOnly.value = value
@@ -89,9 +89,9 @@ class HomeViewModel @Inject constructor(
         authorFilter.value = null
     }
 
-    private fun pagedThreadsFor(wantListening: Boolean) =
+    private fun pagedThreadsFor(wantFollowing: Boolean) =
         params
-            .flatMapLatest { p -> repository.pagedThreads(wantListening, p.unreadOnly, p.authorFilter, p.textQuery) }
+            .flatMapLatest { p -> repository.pagedThreads(wantFollowing, p.unreadOnly, p.authorFilter, p.textQuery) }
             .cachedIn(viewModelScope)
 }
 

@@ -240,7 +240,7 @@ private fun ChooseUsername(state: FirstRunUiState.ChooseUsername, actions: First
         Text(
             "This travels with your messages so people can read who said what. Nobody " +
                 "owns a username here — anyone can claim any username, and others will " +
-                "always see it alongside a short code derived from your key.",
+                "always see it alongside a fingerprint derived from your key.",
             style = MaterialTheme.typography.bodyMedium,
         )
     }

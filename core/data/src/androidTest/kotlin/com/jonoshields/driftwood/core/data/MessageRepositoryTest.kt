@@ -141,7 +141,7 @@ class MessageRepositoryTest {
 
     @Test
     fun ownMessagesAreGossipTierUntilYouListenToYourself() = runTest {
-        // Nothing is in the listen list yet, so even your own messages classify as gossip.
+        // Nothing is in the follow list yet, so even your own messages classify as gossip.
         val repository = repository()
         val posted = repository.post("mine").getOrThrow()
         assertEquals(Tier.GOSSIP, requireNotNull(database.messages().find(posted.id)).tier)
@@ -150,20 +150,20 @@ class MessageRepositoryTest {
     @Test
     fun starringAThreadIsPersistedAndReversible() = runTest {
         val repository = repository()
-        val root = repository.post("star this thread").getOrThrow()
+        val root = repository.post("pin this thread").getOrThrow()
 
-        assertFalse(repository.observeThreadFavourite(root.id).first())
+        assertFalse(repository.observeThreadPinned(root.id).first())
 
-        repository.setThreadFavourite(root.id, true).getOrThrow()
-        assertTrue(repository.observeThreadFavourite(root.id).first())
+        repository.setThreadPinned(root.id, true).getOrThrow()
+        assertTrue(repository.observeThreadPinned(root.id).first())
 
-        repository.setThreadFavourite(root.id, false).getOrThrow()
-        assertFalse(repository.observeThreadFavourite(root.id).first())
+        repository.setThreadPinned(root.id, false).getOrThrow()
+        assertFalse(repository.observeThreadPinned(root.id).first())
     }
 
     @Test
     fun aThreadCanBeStarredEvenWhenItsRootIsNotHeld() = runTest {
-        // The star keys on the root id, which survives its message. Someone reading a
+        // The pin keys on the root id, which survives its message. Someone reading a
         // fragment of an old conversation can still choose to keep it.
         val repository = repository()
         val root = repository.post("about to disappear").getOrThrow()
@@ -171,7 +171,7 @@ class MessageRepositoryTest {
         val reply = repository.reply(root.id, root.id, "the part that remains").getOrThrow()
         database.messages().deleteChunk(listOf(root.id))
 
-        repository.setThreadFavourite(root.id, true).getOrThrow()
+        repository.setThreadPinned(root.id, true).getOrThrow()
         repository.prune().getOrThrow()
 
         assertNotNull("the surviving reply must be kept", database.messages().find(reply.id))
@@ -196,11 +196,11 @@ class MessageRepositoryTest {
     @Test
     fun pruningEvictsOldestFirstWithinTheCap() = runTest {
         // A tiny budget so fair share bites: three messages of nominal size, all of it
-        // given to gossip since that is where an unlistened author's own posts land.
+        // given to gossip since that is where an unfollowed author's own posts land.
         val repository = repository(
             StorageConfig(
                 totalBudgetBytes = 3L * 512,
-                split = PartitionSplit(listen = 0.0, context = 0.0, gossip = 1.0),
+                split = PartitionSplit(follow = 0.0, context = 0.0, gossip = 1.0),
             )
         )
         val posted = (1..6).map { now += 1000; repository.post("message $it").getOrThrow() }
@@ -225,14 +225,14 @@ class MessageRepositoryTest {
             StorageConfig(totalBudgetBytes = 512, split = PartitionSplit(0.0, 0.0, 1.0))
         )
         val kept = repository.post("keep this whole conversation").getOrThrow()
-        repository.setThreadFavourite(kept.id, true).getOrThrow()
+        repository.setThreadPinned(kept.id, true).getOrThrow()
         now += 1000
         val keptReply = repository.reply(kept.id, kept.id, "including this reply").getOrThrow()
         (1..5).forEach { now += 1000; repository.post("filler $it").getOrThrow() }
 
         repository.prune().getOrThrow()
 
-        // The star covers the thread, not the one message that was starred.
+        // The pin covers the thread, not the one message that was pinned.
         assertNotNull(database.messages().find(kept.id))
         assertNotNull(database.messages().find(keptReply.id))
     }
@@ -240,12 +240,12 @@ class MessageRepositoryTest {
     @Test
     fun aReplyArrivingAfterTheStarIsAlsoKept() = runTest {
         // Starring is forward-looking: it exempts the thread, so replies written later are
-        // covered too. This is also the reason a starred thread has no cap at all.
+        // covered too. This is also the reason a pinned thread has no cap at all.
         val repository = repository(
             StorageConfig(totalBudgetBytes = 512, split = PartitionSplit(0.0, 0.0, 1.0))
         )
-        val root = repository.post("starred before the reply existed").getOrThrow()
-        repository.setThreadFavourite(root.id, true).getOrThrow()
+        val root = repository.post("pinned before the reply existed").getOrThrow()
+        repository.setThreadPinned(root.id, true).getOrThrow()
         (1..5).forEach { now += 1000; repository.post("filler $it").getOrThrow() }
 
         now += 1000

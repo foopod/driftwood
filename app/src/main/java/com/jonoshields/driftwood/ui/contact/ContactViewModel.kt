@@ -24,7 +24,7 @@ sealed interface ContactUiState {
 
     data class Loaded(
         val displayName: DisplayName,
-        val isListening: Boolean,
+        val isFollowing: Boolean,
         val isBlocked: Boolean,
     ) : ContactUiState
 }
@@ -45,12 +45,12 @@ class ContactViewModel @Inject constructor(
         .flatMapLatest { a ->
             combine(
                 directory.observeNames(),
-                directory.observeListenScope(),
+                directory.observeFollowList(),
                 repository.observeBlockedAuthors(),
-            ) { names, listenScope, blockedAuthors ->
+            ) { names, followList, blockedAuthors ->
                 ContactUiState.Loaded(
                     displayName = names[a] ?: NameResolver.resolve(a, nickname = null, username = null),
-                    isListening = a in listenScope,
+                    isFollowing = a in followList,
                     isBlocked = a in blockedAuthors,
                 )
             }
@@ -66,20 +66,20 @@ class ContactViewModel @Inject constructor(
         viewModelScope.launch { directory.setNickname(a, nickname) }
     }
 
-    fun toggleListen() {
+    fun toggleFollow() {
         val a = author.value ?: return
-        val listening = (uiState.value as? ContactUiState.Loaded)?.isListening ?: false
+        val listening = (uiState.value as? ContactUiState.Loaded)?.isFollowing ?: false
         viewModelScope.launch {
-            if (listening) directory.stopListening(a) else directory.listenTo(a)
+            if (listening) directory.unfollow(a) else directory.follow(a)
         }
     }
 
     fun block() {
         val a = author.value ?: return
-        // Blocking someone you listen to stops the listening too, not just the display.
+        // Blocking someone you follow stops the following too, not just the display.
         viewModelScope.launch {
             repository.block(a)
-            directory.stopListening(a)
+            directory.unfollow(a)
         }
     }
 

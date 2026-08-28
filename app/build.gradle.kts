@@ -84,6 +84,7 @@ dependencies {
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.compose.material3)
   implementation(libs.androidx.compose.material.icons.core)
+  implementation(libs.androidx.compose.material.icons.extended)
   // M4.1: paginated thread list (collectAsLazyPagingItems).
   implementation(libs.androidx.paging.compose)
   // Tooling

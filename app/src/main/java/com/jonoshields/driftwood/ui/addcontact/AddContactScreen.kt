@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -74,7 +76,7 @@ fun AddContactScreen(
         onCancelScanning = viewModel::cancelScanning,
         onQrScanned = viewModel::onQrScanned,
         onSetNickname = viewModel::setNickname,
-        onToggleListen = viewModel::toggleListen,
+        onToggleFollow = viewModel::toggleFollow,
         onConfirm = viewModel::confirm,
         // Stays on this screen, back to showing your own code — a real exit is via top bar Back.
         onDone = viewModel::done,
@@ -91,7 +93,7 @@ internal fun AddContactContent(
     onCancelScanning: () -> Unit,
     onQrScanned: (String) -> Unit,
     onSetNickname: (String) -> Unit,
-    onToggleListen: () -> Unit,
+    onToggleFollow: () -> Unit,
     onConfirm: () -> Unit,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
@@ -103,7 +105,7 @@ internal fun AddContactContent(
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text("Add contact") },
+                title = { Text("Quick verify") },
                 navigationIcon = {
                     if (!midFlow) TextButton(onClick = onBack) { Text("Back") }
                 },
@@ -115,7 +117,11 @@ internal fun AddContactContent(
             )
         },
     ) { padding ->
-        Column(Modifier.padding(padding).padding(24.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        Column(
+            // Scrollable so the nickname field/save button stay reachable behind the keyboard.
+            Modifier.padding(padding).padding(24.dp).fillMaxSize().verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
             when (state) {
                 is AddContactUiState.Ready ->
                     if (state.scanning) {
@@ -126,9 +132,9 @@ internal fun AddContactContent(
 
                 is AddContactUiState.Confirming -> ConfirmContent(
                     displayName = state.displayName,
-                    isListening = state.isListening,
+                    isFollowing = state.isFollowing,
                     onSetNickname = onSetNickname,
-                    onToggleListen = onToggleListen,
+                    onToggleFollow = onToggleFollow,
                     onConfirm = onConfirm,
                 )
 
@@ -270,26 +276,26 @@ private fun encodeQrBitmap(payload: String, sizePx: Int): androidx.compose.ui.gr
 @Composable
 private fun ConfirmContent(
     displayName: DisplayName,
-    isListening: Boolean,
+    isFollowing: Boolean,
     onSetNickname: (String) -> Unit,
-    onToggleListen: () -> Unit,
+    onToggleFollow: () -> Unit,
     onConfirm: () -> Unit,
 ) {
     // Saved on confirm, not via its own button — nothing needs the nickname before then.
     var nicknameDraft by rememberSaveable { mutableStateOf("") }
 
-    Text("Add this contact?", style = MaterialTheme.typography.titleMedium)
+    Text("Verify this contact?", style = MaterialTheme.typography.titleMedium)
     AuthorName(displayName)
     Text(
-        "Only add someone whose code you scanned yourself, in person.",
+        "Only verify someone whose code you scanned yourself, in person.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.error,
     )
     ContactControls(
         currentNickname = null,
-        isListening = isListening,
+        isFollowing = isFollowing,
         onSetNickname = onSetNickname,
-        onToggleListen = onToggleListen,
+        onToggleFollow = onToggleFollow,
         showSaveButton = false,
         onDraftChange = { nicknameDraft = it },
     )
@@ -299,7 +305,7 @@ private fun ConfirmContent(
             onConfirm()
         },
         modifier = Modifier.fillMaxWidth(),
-    ) { Text("Add contact") }
+    ) { Text("Verify") }
 }
 
 @Composable

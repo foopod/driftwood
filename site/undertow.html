@@ -17,7 +17,7 @@
   <header class="border-b border-white/5 sticky top-0 bg-drift-bg/90 backdrop-blur z-10">
     <div class="mx-auto max-w-5xl px-6 py-5 flex items-center justify-between">
       <a href="index.html" class="flex items-center gap-2.5 font-semibold tracking-tight text-lg">
-        <svg width="24" height="24" viewBox="0 0 270.93333 270.93333" aria-hidden="true">
+        <svg width="48" height="48" viewBox="0 0 270.93333 270.93333" aria-hidden="true" style="scale:2">
           <defs>
             <linearGradient id="navmark2-a" x1="49.856134" y1="136.80348" x2="220.15707" y2="136.80348" gradientUnits="userSpaceOnUse" gradientTransform="matrix(0.75050438,0,0,0.75050438,29.51507,33.89435)">
               <stop offset="0" stop-color="#7488ff" />
@@ -280,12 +280,12 @@
           </defs>
 
           <!-- phase bands -->
-          <rect x="40" y="52" width="640" height="270" rx="12" fill="#7488ff" opacity="0.06" />
-          <rect x="40" y="340" width="640" height="150" rx="12" fill="#70e5b5" opacity="0.06" />
+          <rect x="40" y="52" width="640" height="284" rx="12" fill="#7488ff" opacity="0.06" />
+          <rect x="40" y="354" width="640" height="150" rx="12" fill="#70e5b5" opacity="0.06" />
 
           <!-- lifelines -->
-          <line x1="140" y1="50" x2="140" y2="500" stroke="#A8AFC7" stroke-opacity="0.25" />
-          <line x1="580" y1="50" x2="580" y2="500" stroke="#A8AFC7" stroke-opacity="0.25" />
+          <line x1="140" y1="50" x2="140" y2="514" stroke="#A8AFC7" stroke-opacity="0.25" />
+          <line x1="580" y1="50" x2="580" y2="514" stroke="#A8AFC7" stroke-opacity="0.25" />
           <text x="140" y="35" text-anchor="middle" font-size="15" font-weight="600" fill="#EDEFF7">A</text>
           <text x="580" y="35" text-anchor="middle" font-size="15" font-weight="600" fill="#EDEFF7">B</text>
 
@@ -313,41 +313,49 @@
           <line x1="580" y1="232" x2="140" y2="232" stroke="#70e5b5" stroke-width="1.5" marker-end="url(#arrowMint)" />
           <text x="360" y="248" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">HASHLIST (own scope)</text>
 
-          <!-- 7. MESSAGE/PROFILE A->B -->
+          <!-- 7. MESSAGE/PROFILE A->B (one batch) -->
           <line x1="140" y1="270" x2="580" y2="270" stroke="#7488ff" stroke-width="1.5" marker-end="url(#arrowBlue)" />
-          <text x="360" y="264" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">MESSAGE × n, PROFILE × m</text>
+          <text x="360" y="264" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">MESSAGE × k, PROFILE × m (one batch)</text>
 
-          <!-- 8. PHASE_DONE A->B -->
-          <line x1="140" y1="300" x2="580" y2="300" stroke="#7488ff" stroke-width="1.5" marker-end="url(#arrowBlue)" />
-          <text x="360" y="294" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">PHASE_DONE — apply now</text>
+          <!-- 8. BATCH_DONE/PHASE_DONE B->A (B's own batch, same phase — repeats, alternating, until both send PHASE_DONE) -->
+          <line x1="580" y1="300" x2="140" y2="300" stroke="#70e5b5" stroke-width="1.5" marker-end="url(#arrowMint)" />
+          <text x="360" y="316" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">BATCH_DONE / PHASE_DONE</text>
 
           <!-- gossip phase label -->
-          <text x="60" y="360" font-size="11" fill="#70e5b5" font-family="monospace">GOSSIP PHASE — best-effort, skippable</text>
+          <text x="60" y="374" font-size="11" fill="#70e5b5" font-family="monospace">GOSSIP PHASE — best-effort, skippable</text>
 
           <!-- 9. GOSSIP_OFFER A->B -->
-          <line x1="140" y1="390" x2="580" y2="390" stroke="#7488ff" stroke-width="1.5" marker-end="url(#arrowBlue)" />
-          <text x="360" y="384" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">GOSSIP_OFFER (newest ids)</text>
+          <line x1="140" y1="404" x2="580" y2="404" stroke="#7488ff" stroke-width="1.5" marker-end="url(#arrowBlue)" />
+          <text x="360" y="398" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">GOSSIP_OFFER (newest ids)</text>
 
           <!-- 10. GOSSIP_REQUEST B->A -->
-          <line x1="580" y1="420" x2="140" y2="420" stroke="#70e5b5" stroke-width="1.5" marker-end="url(#arrowMint)" />
-          <text x="360" y="436" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">GOSSIP_REQUEST (subset)</text>
+          <line x1="580" y1="434" x2="140" y2="434" stroke="#70e5b5" stroke-width="1.5" marker-end="url(#arrowMint)" />
+          <text x="360" y="450" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">GOSSIP_REQUEST (subset)</text>
 
           <!-- 11. MESSAGE x j A->B -->
-          <line x1="140" y1="458" x2="580" y2="458" stroke="#7488ff" stroke-width="1.5" marker-end="url(#arrowBlue)" />
-          <text x="360" y="452" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">MESSAGE × j</text>
+          <line x1="140" y1="472" x2="580" y2="472" stroke="#7488ff" stroke-width="1.5" marker-end="url(#arrowBlue)" />
+          <text x="360" y="466" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">MESSAGE × j</text>
 
           <!-- 12. SESSION_DONE -->
-          <line x1="140" y1="488" x2="580" y2="488" stroke="#A8AFC7" stroke-width="1.5" marker-end="url(#arrowBlue)" />
-          <text x="360" y="482" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">SESSION_DONE</text>
+          <line x1="140" y1="502" x2="580" y2="502" stroke="#A8AFC7" stroke-width="1.5" marker-end="url(#arrowBlue)" />
+          <text x="360" y="496" text-anchor="middle" font-size="12" font-family="monospace" fill="#EDEFF7">SESSION_DONE</text>
         </svg>
       </div>
 
       <p class="text-drift-muted leading-relaxed max-w-2xl mb-4">
-        Each phase is applied on completion, not buffered until the session ends. If the
-        connection dies during the gossip phase, the priority phase's results are already
-        persisted — the priority phase is independently valid by design. A sync session is
-        brief and in person, and can end at any moment, so a session that's 90% done is still
-        worth something. If the bus arrives, what you already exchanged is yours.
+        A phase is a sequence of batches, not one unbroken stream — the priority phase's two
+        directions alternate a batch at a time (A sends one, B sends one, and so on), each
+        ending in <code class="font-mono text-drift-blue">BATCH_DONE</code>, except the last of
+        each side's delivery, which gets <code class="font-mono text-drift-blue">PHASE_DONE</code>
+        instead. This repeats until <em class="text-drift-text not-italic">both</em> sides have
+        sent their <code class="font-mono text-drift-blue">PHASE_DONE</code>.
+      </p>
+      <p class="text-drift-muted leading-relaxed max-w-2xl mb-4">
+        Each batch is applied the moment it's received, not buffered until the phase or the
+        session ends. If the connection dies mid-phase, everything already received is already
+        persisted — a session that's 90% done is worth ninety percent, not zero. A sync is
+        brief and in person and can end at any moment, so that's not an edge case, it's the
+        normal shape of use. If the bus arrives, what you already exchanged is yours.
       </p>
       <p class="text-drift-muted leading-relaxed max-w-2xl">
         Identity travels in <code class="font-mono text-drift-blue">HELLO</code> — both people
@@ -401,7 +409,8 @@
             <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">GOSSIP_OFFER</td><td class="py-2 pr-6 text-drift-muted">0x07</td><td class="py-2 text-drift-muted">ids offered</td></tr>
             <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">GOSSIP_REQUEST</td><td class="py-2 pr-6 text-drift-muted">0x08</td><td class="py-2 text-drift-muted">ids wanted from that offer</td></tr>
             <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">SESSION_DONE</td><td class="py-2 pr-6 text-drift-muted">0x09</td><td class="py-2 text-drift-muted">—</td></tr>
-            <tr><td class="py-2 pr-6 text-drift-blue">ABORT</td><td class="py-2 pr-6 text-drift-muted">0x0A</td><td class="py-2 text-drift-muted">reason code (u8)</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">ABORT</td><td class="py-2 pr-6 text-drift-muted">0x0A</td><td class="py-2 text-drift-muted">reason code (u8)</td></tr>
+            <tr><td class="py-2 pr-6 text-drift-blue">BATCH_DONE</td><td class="py-2 pr-6 text-drift-muted">0x0B</td><td class="py-2 text-drift-muted">— (ends one batch; more of that direction's delivery still to come)</td></tr>
           </tbody>
         </table>
       </div>
@@ -433,9 +442,10 @@
             <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-muted">A message with a flipped bit</td><td class="py-2">Rejected — the hash doesn't match the id. Never stored, never relayed.</td></tr>
             <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-muted">A message signed by the wrong key</td><td class="py-2">Rejected — bad signature.</td></tr>
             <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-muted">A profile renamed in transit</td><td class="py-2">Rejected — the claim is signed by the key it names, so a relay can withhold a name but never edit one.</td></tr>
-            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-muted">Too many rejections from one peer</td><td class="py-2">Session aborted. Content already merged stays — each piece was individually valid.</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-muted">Too many rejections from one peer</td><td class="py-2">Session aborted once the cutoff is hit — counted for the whole phase, across every batch in it, so spreading garbage across more/smaller batches buys nothing. Content already merged stays — each piece was individually valid.</td></tr>
             <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-muted">A flood of unverifiable garbage</td><td class="py-2">Nothing that fails verification consumes storage.</td></tr>
-            <tr><td class="py-2 pr-6 text-drift-muted">Offering a huge batch of gossip ids</td><td class="py-2">Bounded by the receiver's gossip budget, regardless of what's offered.</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-muted">Offering a huge batch of gossip ids</td><td class="py-2">Bounded by the receiver's gossip budget, regardless of what's offered.</td></tr>
+            <tr><td class="py-2 pr-6 text-drift-muted">A peer that never sends <code class="font-mono">BATCH_DONE</code>/<code class="font-mono">PHASE_DONE</code></td><td class="py-2">Reading stops after <code class="font-mono">MAX_BATCHES_PER_PHASE</code> batches with neither — nothing is lost, since every batch received up to that point is already persisted.</td></tr>
           </tbody>
         </table>
       </div>
@@ -480,6 +490,8 @@
             <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">GOSSIP_INTAKE_CAP</td><td class="py-2 text-drift-muted">1000 per session</td></tr>
             <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">VERIFY_FAIL_CUTOFF</td><td class="py-2 text-drift-muted">20 rejections before abort</td></tr>
             <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">MAX_FRAME_BYTES</td><td class="py-2 text-drift-muted">4 MiB</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">PHASE_BATCH_SIZE</td><td class="py-2 text-drift-muted">10,000 messages per batch</td></tr>
+            <tr class="border-b border-white/5"><td class="py-2 pr-6 text-drift-blue">MAX_BATCHES_PER_PHASE</td><td class="py-2 text-drift-muted">50 batches before an uncooperative peer is stopped</td></tr>
             <tr><td class="py-2 pr-6 text-drift-blue">WANT_TTL</td><td class="py-2 text-drift-muted">10 fruitless syncs</td></tr>
           </tbody>
         </table>

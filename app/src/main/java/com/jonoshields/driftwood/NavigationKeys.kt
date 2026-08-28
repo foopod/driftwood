@@ -21,7 +21,7 @@ data class Compose(
 
 @Serializable data object Sync : NavKey
 
-/** The merged list of everyone confirmed, plus everyone listened to. */
+/** The merged list of everyone confirmed, plus everyone followed. */
 @Serializable data object Contacts : NavKey
 
 @Serializable data object Blocklist : NavKey

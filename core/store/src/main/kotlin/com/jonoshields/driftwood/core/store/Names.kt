@@ -12,6 +12,10 @@ data class DisplayName(
     val verified: Boolean,
     /** Chip hue for a claimed (unverified) name; meaningless once [verified]. */
     val hue: Float,
+    /** The name they claim in their own posts, independent of [label] — which prefers your nickname for them. */
+    val claimedName: String? = null,
+    /** What you privately called them, if anything — set independently of [verified], which tracks fingerprint confirmation, not naming. */
+    val nickname: String? = null,
 ) {
     /** A claimed name never appears without its fingerprint, since two keys claiming the same name is expected. */
     val text: String
@@ -40,7 +44,7 @@ object NameResolver {
         val fingerprint = fingerprint(author)
         val hue = hue(author)
         val label = nickname ?: username
-        return DisplayName(label, fingerprint, verified = confirmed, hue = hue)
+        return DisplayName(label, fingerprint, verified = confirmed, hue = hue, claimedName = username, nickname = nickname)
     }
 
     /** An at-a-glance colour, not a defence — a few dozen throwaway keypairs can match any hue. */
@@ -63,7 +67,7 @@ object DirectoryPruner {
 
     fun plan(
         entries: List<DirectoryEntry>,
-        listen: Set<AuthorId>,
+        follow: Set<AuthorId>,
         contacts: Set<AuthorId>,
         authorsHeld: Set<AuthorId>,
         blockedAuthors: Set<AuthorId>,
@@ -74,7 +78,7 @@ object DirectoryPruner {
             // Blocked wins over every reason to keep a name, as it does for content.
             entry.author in blockedAuthors -> true
             // A name you deliberately follow is the last one you would want to lose.
-            entry.author in listen -> false
+            entry.author in follow -> false
             entry.author in contacts -> false
             entry.author in authorsHeld -> false
             else -> entry.lastSeenPost < nowMillis - ttlMillis

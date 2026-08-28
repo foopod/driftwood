@@ -1,5 +1,8 @@
 package com.jonoshields.driftwood.ui.thread
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -18,7 +21,12 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -32,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -54,6 +63,7 @@ fun ThreadScreen(
     rootId: MessageId,
     onReply: (root: MessageId, parent: MessageId?) -> Unit,
     onBack: () -> Unit,
+    onSettings: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: ThreadViewModel = hiltViewModel(),
 ) {
@@ -65,9 +75,10 @@ fun ThreadScreen(
         myAuthor = viewModel.myAuthor,
         onReply = onReply,
         onBack = onBack,
-        onToggleStar = viewModel::toggleStar,
+        onSettings = onSettings,
+        onTogglePin = viewModel::togglePin,
         onSetNickname = viewModel::setNickname,
-        onToggleListen = viewModel::toggleListen,
+        onToggleFollow = viewModel::toggleFollow,
         onBlock = viewModel::block,
         onUnblock = viewModel::unblock,
         modifier = modifier,
@@ -81,9 +92,10 @@ internal fun ThreadContent(
     myAuthor: AuthorId?,
     onReply: (MessageId, MessageId?) -> Unit,
     onBack: () -> Unit,
-    onToggleStar: () -> Unit,
+    onSettings: () -> Unit,
+    onTogglePin: () -> Unit,
     onSetNickname: (AuthorId, String) -> Unit,
-    onToggleListen: (AuthorId) -> Unit,
+    onToggleFollow: (AuthorId) -> Unit,
     onBlock: (AuthorId) -> Unit,
     onUnblock: (AuthorId) -> Unit,
     modifier: Modifier = Modifier,
@@ -104,17 +116,17 @@ internal fun ThreadContent(
                 },
                 actions = {
                     if (state is ThreadUiState.Loaded && selectedAuthor == null) {
-                        // One star for the whole conversation, including parts other people wrote.
-                        TextButton(
-                            onClick = onToggleStar,
+                        // One pin for the whole thread, including parts other people wrote.
+                        IconButton(
+                            onClick = onTogglePin,
                             modifier = Modifier.semantics {
                                 contentDescription =
-                                    if (state.starred) "Unstar this thread" else "Star this thread"
+                                    if (state.pinned) "Unpin this thread" else "Pin this thread"
                             },
                         ) {
-                            Text(
-                                text = if (state.starred) "★" else "☆",
-                                style = MaterialTheme.typography.headlineSmall,
+                            Icon(
+                                imageVector = if (state.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                                contentDescription = null,
                             )
                         }
                     }
@@ -144,10 +156,10 @@ internal fun ThreadContent(
                     ContactActionsContent(
                         author = author,
                         displayName = state.nameOf(author),
-                        isListening = author in state.listenScope,
+                        isFollowing = author in state.followList,
                         isBlocked = author in state.blockedAuthors,
                         onSetNickname = { name -> onSetNickname(author, name) },
-                        onToggleListen = { onToggleListen(author) },
+                        onToggleFollow = { onToggleFollow(author) },
                         onBlock = {
                             onBlock(author)
                             selectedAuthor = null
@@ -158,13 +170,14 @@ internal fun ThreadContent(
                 } else {
                     ThreadBody(
                         thread = state.thread,
-                        starred = state.starred,
+                        pinned = state.pinned,
                         nameOf = state::nameOf,
                         myAuthor = myAuthor,
                         onReply = onReply,
-                        // Your own messages have nothing to open — nothing to listen to, block, or name.
-                        onAuthorClick = { a -> if (a != myAuthor) selectedAuthor = a },
-                        onToggleStar = onToggleStar,
+                        // Your own name goes to Settings, same as tapping it from Home — everyone
+                        // else's opens the in-place contact actions instead.
+                        onAuthorClick = { a -> if (a == myAuthor) onSettings() else selectedAuthor = a },
+                        onTogglePin = onTogglePin,
                         modifier = Modifier.padding(padding),
                     )
                 }
@@ -176,12 +189,12 @@ internal fun ThreadContent(
 @Composable
 private fun ThreadBody(
     thread: ThreadView,
-    starred: Boolean,
+    pinned: Boolean,
     nameOf: (AuthorId) -> DisplayName,
     myAuthor: AuthorId?,
     onReply: (MessageId, MessageId?) -> Unit,
     onAuthorClick: (AuthorId) -> Unit,
-    onToggleStar: () -> Unit,
+    onTogglePin: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -190,10 +203,10 @@ private fun ThreadBody(
         contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        if (starred) {
+        if (pinned) {
             item {
                 Text(
-                    "Starred — this whole thread is kept, including replies that arrive later.",
+                    "Pinned — this whole thread is kept, including replies that arrive later.",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -207,7 +220,7 @@ private fun ThreadBody(
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            "The start of this conversation isn't carried here.",
+                            "The start of this thread isn't carried here.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Text(
@@ -224,10 +237,10 @@ private fun ThreadBody(
                     isMine = root.body.author == myAuthor,
                     depth = 0,
                     detached = false,
-                    starred = starred,
+                    pinned = pinned,
                     onReply = { onReply(thread.rootId, root.id) },
                     onAuthorClick = { onAuthorClick(root.body.author) },
-                    onToggleStar = onToggleStar,
+                    onTogglePin = onTogglePin,
                 )
             }
         }
@@ -238,10 +251,10 @@ private fun ThreadBody(
             rootId = thread.rootId,
             nameOf = nameOf,
             myAuthor = myAuthor,
-            starred = starred,
+            pinned = pinned,
             onReply = onReply,
             onAuthorClick = onAuthorClick,
-            onToggleStar = onToggleStar,
+            onTogglePin = onTogglePin,
         )
     }
 }
@@ -253,10 +266,10 @@ private fun LazyListScope.renderNodes(
     rootId: MessageId,
     nameOf: (AuthorId) -> DisplayName,
     myAuthor: AuthorId?,
-    starred: Boolean,
+    pinned: Boolean,
     onReply: (MessageId, MessageId?) -> Unit,
     onAuthorClick: (AuthorId) -> Unit,
-    onToggleStar: () -> Unit,
+    onTogglePin: () -> Unit,
 ) {
     nodes.forEach { node ->
         item(key = node.message.id.toHex()) {
@@ -266,14 +279,14 @@ private fun LazyListScope.renderNodes(
                 isMine = node.message.body.author == myAuthor,
                 depth = depth,
                 detached = node.detached,
-                starred = starred,
+                pinned = pinned,
                 // Every message is a reply target, carrying both the root id and this message.
                 onReply = { onReply(rootId, node.message.id) },
                 onAuthorClick = { onAuthorClick(node.message.body.author) },
-                onToggleStar = onToggleStar,
+                onTogglePin = onTogglePin,
             )
         }
-        renderNodes(node.children, depth + 1, rootId, nameOf, myAuthor, starred, onReply, onAuthorClick, onToggleStar)
+        renderNodes(node.children, depth + 1, rootId, nameOf, myAuthor, pinned, onReply, onAuthorClick, onTogglePin)
     }
 }
 
@@ -285,16 +298,17 @@ private fun MessageCard(
     isMine: Boolean,
     depth: Int,
     detached: Boolean,
-    starred: Boolean,
+    pinned: Boolean,
     onReply: () -> Unit,
     onAuthorClick: () -> Unit,
-    onToggleStar: () -> Unit,
+    onTogglePin: () -> Unit,
 ) {
     // Read once per card — a relative time drifting a few seconds stale isn't worth a ticker.
     val now = remember { System.currentTimeMillis() }
 
     // Not rememberSaveable — losing an open menu on rotation is a fine trade.
     var showMenu by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Row(Modifier.fillMaxWidth().padding(start = (depth.coerceAtMost(5) * 14).dp)) {
         Box(Modifier.fillMaxWidth()) {
@@ -334,13 +348,23 @@ private fun MessageCard(
                     onClick = { showMenu = false; onAuthorClick() },
                     modifier = Modifier.testTag("message-context-profile"),
                 )
-                // Favourites the whole thread, same as the top-bar star, offered from any message.
                 DropdownMenuItem(
-                    text = { Text(if (starred) "Unfavourite thread" else "Favourite thread") },
-                    onClick = { showMenu = false; onToggleStar() },
-                    modifier = Modifier.testTag("message-context-favourite"),
+                    text = { Text("Copy text") },
+                    onClick = { showMenu = false; copyToClipboard(context, "Message", message.body.text) },
+                    modifier = Modifier.testTag("message-context-copy"),
+                )
+                // Pins the whole thread, same as the top-bar pin, offered from any message.
+                DropdownMenuItem(
+                    text = { Text(if (pinned) "Unpin thread" else "Pin thread") },
+                    onClick = { showMenu = false; onTogglePin() },
+                    modifier = Modifier.testTag("message-context-pin"),
                 )
             }
         }
     }
+}
+
+private fun copyToClipboard(context: Context, label: String, text: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
 }

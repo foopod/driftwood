@@ -26,14 +26,14 @@ class ReconcilerTest {
         val mine = held(theirAuthor, 10)
         val notListened = held(stranger, 10)
 
-        val list = Reconciler.hashList(listOf(mine, notListened), scope(listen = setOf(theirAuthor)))
+        val list = Reconciler.hashList(listOf(mine, notListened), scope(follow = setOf(theirAuthor)))
 
         assertEquals(setOf(mine.id), list)
     }
 
     @Test
     fun `the hash-list is not window-filtered`() {
-        // A starred thread is exempt from pruning (§4), so we can hold content older than
+        // A pinned thread is exempt from pruning (§4), so we can hold content older than
         // our own cutoff. Naming it is what stops a peer sending it to us again.
         val ancient = held(theirAuthor, effectiveTime = 1)
         val list = Reconciler.hashList(listOf(ancient), scope(setOf(theirAuthor), windowCutoff = 1_000))
@@ -54,7 +54,7 @@ class ReconcilerTest {
 
         val delivery = Reconciler.plan(
             held = listOf(a, b),
-            peer = scope(listen = setOf(theirAuthor)),
+            peer = scope(follow = setOf(theirAuthor)),
             peerHolds = setOf(a.id, b.id),
             blocklist = noBlocks(),
         )
@@ -70,7 +70,7 @@ class ReconcilerTest {
 
         val delivery = Reconciler.plan(
             held = listOf(old, mid, new),
-            peer = scope(listen = setOf(theirAuthor)),
+            peer = scope(follow = setOf(theirAuthor)),
             peerHolds = setOf(mid.id),
             blocklist = noBlocks(),
         )
@@ -79,13 +79,13 @@ class ReconcilerTest {
     }
 
     @Test
-    fun `content from authors they do not listen to is never in scope`() {
+    fun `content from authors they do not follow is never in scope`() {
         val theirs = held(theirAuthor, 10, threadB)
         val unrelated = held(stranger, 10, threadB)
 
         val delivery = Reconciler.plan(
             held = listOf(theirs, unrelated),
-            peer = scope(listen = setOf(theirAuthor)),
+            peer = scope(follow = setOf(theirAuthor)),
             peerHolds = emptySet(),
             blocklist = noBlocks(),
         )
@@ -102,7 +102,7 @@ class ReconcilerTest {
 
         val delivery = Reconciler.plan(
             held = listOf(tooOld, fresh),
-            peer = scope(listen = setOf(theirAuthor), windowCutoff = 100),
+            peer = scope(follow = setOf(theirAuthor), windowCutoff = 100),
             peerHolds = emptySet(),
             blocklist = noBlocks(),
         )
@@ -120,7 +120,7 @@ class ReconcilerTest {
 
         val delivery = Reconciler.plan(
             held = listOf(orphanParent),
-            peer = scope(listen = setOf(theirAuthor), wants = setOf(orphanParent.id)),
+            peer = scope(follow = setOf(theirAuthor), wants = setOf(orphanParent.id)),
             peerHolds = emptySet(),
             blocklist = noBlocks(),
         )
@@ -145,7 +145,7 @@ class ReconcilerTest {
 
         val delivery = Reconciler.plan(
             held = listOf(both),
-            peer = scope(listen = setOf(theirAuthor), wants = setOf(both.id)),
+            peer = scope(follow = setOf(theirAuthor), wants = setOf(both.id)),
             peerHolds = emptySet(),
             blocklist = noBlocks(),
         )
@@ -163,7 +163,7 @@ class ReconcilerTest {
 
         val delivery = Reconciler.plan(
             held = listOf(theirs, strangerReply),
-            peer = scope(listen = setOf(theirAuthor)),
+            peer = scope(follow = setOf(theirAuthor)),
             peerHolds = emptySet(),
             blocklist = noBlocks(),
         )
@@ -182,7 +182,7 @@ class ReconcilerTest {
 
         val delivery = Reconciler.plan(
             held = listOf(theirs, strangerReply),
-            peer = scope(listen = setOf(theirAuthor, stranger)),
+            peer = scope(follow = setOf(theirAuthor, stranger)),
             peerHolds = setOf(strangerReply.id),
             blocklist = noBlocks(),
         )
@@ -197,7 +197,7 @@ class ReconcilerTest {
 
         val delivery = Reconciler.plan(
             held = listOf(theirs, elsewhere),
-            peer = scope(listen = setOf(theirAuthor)),
+            peer = scope(follow = setOf(theirAuthor)),
             peerHolds = emptySet(),
             blocklist = noBlocks(),
         )
@@ -230,7 +230,7 @@ class ReconcilerTest {
 
         val delivery = Reconciler.plan(
             held = listOf(blocked),
-            peer = scope(listen = setOf(theirAuthor), wants = setOf(blocked.id)),
+            peer = scope(follow = setOf(theirAuthor), wants = setOf(blocked.id)),
             peerHolds = emptySet(),
             blocklist = Blocklist(setOf(theirAuthor), emptySet()),
         )
@@ -245,7 +245,7 @@ class ReconcilerTest {
 
         val delivery = Reconciler.plan(
             held = listOf(theirs, reply),
-            peer = scope(listen = setOf(theirAuthor)),
+            peer = scope(follow = setOf(theirAuthor)),
             peerHolds = emptySet(),
             blocklist = Blocklist(emptySet(), setOf(threadA)),
         )
@@ -266,7 +266,7 @@ class ReconcilerTest {
 
         val delivery = Reconciler.plan(
             held = messages + want,
-            peer = scope(listen = setOf(theirAuthor), wants = setOf(want.id)),
+            peer = scope(follow = setOf(theirAuthor), wants = setOf(want.id)),
             peerHolds = emptySet(),
             blocklist = noBlocks(),
             contextCap = 10,
@@ -286,7 +286,7 @@ class ReconcilerTest {
 
         val delivery = Reconciler.plan(
             held = listOf(anchor) + strangerReplies,
-            peer = scope(listen = setOf(theirAuthor)),
+            peer = scope(follow = setOf(theirAuthor)),
             peerHolds = emptySet(),
             blocklist = noBlocks(),
             contextCap = 10,
@@ -304,7 +304,7 @@ class ReconcilerTest {
 
         val delivery = Reconciler.plan(
             held = listOf(theirs, strangerReply),
-            peer = scope(listen = setOf(theirAuthor)),
+            peer = scope(follow = setOf(theirAuthor)),
             peerHolds = emptySet(),
             blocklist = noBlocks(),
             contextCap = 0,
@@ -321,7 +321,7 @@ class ReconcilerTest {
             held(listOf(theirAuthor, otherTheirs, stranger).random(random), random.nextLong(0, 100),
                 listOf(threadA, threadB).random(random))
         }
-        val peer = scope(listen = setOf(theirAuthor, otherTheirs), windowCutoff = 10)
+        val peer = scope(follow = setOf(theirAuthor, otherTheirs), windowCutoff = 10)
 
         val first = Reconciler.plan(messages, peer, emptySet(), noBlocks())
         val shuffled = Reconciler.plan(messages.shuffled(Random(3)), peer, emptySet(), noBlocks())
@@ -347,7 +347,7 @@ class ReconcilerTest {
             val delivery = Reconciler.plan(held, peer, peerHolds, blocklist, contextCap = Int.MAX_VALUE)
             val planned = (delivery.wanted + delivery.inScope + delivery.context).toSet()
 
-            held.filter { it.author in peer.listen }
+            held.filter { it.author in peer.follow }
                 .filter { it.effectiveTime >= peer.windowCutoff }
                 .filterNot { it.id in peerHolds }
                 .filterNot { it.author in blocklist.authors || it.threadRoot in blocklist.roots }
@@ -409,7 +409,7 @@ class ReconcilerTest {
                 held(authors.random(random), random.nextLong(0, 100), threads.random(random))
             }
             val peer = ScopeDeclaration(
-                listen = authors.filter { random.nextBoolean() }.toSet(),
+                follow = authors.filter { random.nextBoolean() }.toSet(),
                 windowCutoff = random.nextLong(0, 60),
                 wants = messages.filter { random.nextInt(6) == 0 }.mapTo(mutableSetOf()) { it.id },
             )

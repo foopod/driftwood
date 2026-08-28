@@ -116,10 +116,10 @@ object FrameCodec {
         is Record.Hello -> byteArrayOf(record.protocolVersion.toByte()) + record.author.toByteArray()
 
         is Record.Scope -> {
-            val listen = concat(record.declaration.listen.map { it.toByteArray() })
+            val follow = concat(record.declaration.follow.map { it.toByteArray() })
             val wants = concat(record.declaration.wants.map { it.toByteArray() })
-            ByteBuffer.allocate(4 + listen.size + 8 + 4 + wants.size)
-                .putInt(listen.size).put(listen)
+            ByteBuffer.allocate(4 + follow.size + 8 + 4 + wants.size)
+                .putInt(follow.size).put(follow)
                 .putLong(record.declaration.windowCutoff)
                 .putInt(wants.size).put(wants)
                 .array()
@@ -180,11 +180,11 @@ object FrameCodec {
         if (payload.size < 16) return malformed("scope too short")
         val buffer = ByteBuffer.wrap(payload)
 
-        val listenBytes = buffer.int
-        if (listenBytes < 0 || buffer.remaining() < listenBytes) return malformed("scope listen length")
-        val listen = ByteArray(listenBytes).also(buffer::get)
+        val followBytes = buffer.int
+        if (followBytes < 0 || buffer.remaining() < followBytes) return malformed("scope follow length")
+        val follow = ByteArray(followBytes).also(buffer::get)
 
-        if (buffer.remaining() < 12) return malformed("scope truncated after listen")
+        if (buffer.remaining() < 12) return malformed("scope truncated after follow")
         val cutoff = buffer.long
         if (cutoff < 0) return malformed("negative window cutoff")
 
@@ -192,13 +192,13 @@ object FrameCodec {
         if (wantBytes < 0 || buffer.remaining() != wantBytes) return malformed("scope wants length")
         val wants = ByteArray(wantBytes).also(buffer::get)
 
-        val listenIds = ids(listen) ?: return malformed("listen set is not a whole number of ids")
+        val followIds = ids(follow) ?: return malformed("follow set is not a whole number of ids")
         val wantIds = ids(wants) ?: return malformed("want list is not a whole number of ids")
 
         return FrameResult.Ok(
             Record.Scope(
                 ScopeDeclaration(
-                    listen = listenIds.mapTo(mutableSetOf()) { AuthorId.of(it.toByteArray()) },
+                    follow = followIds.mapTo(mutableSetOf()) { AuthorId.of(it.toByteArray()) },
                     windowCutoff = cutoff,
                     wants = wantIds.toSet(),
                 )

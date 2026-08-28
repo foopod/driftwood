@@ -19,8 +19,8 @@ class GossipPhaseTest {
         // people who already know each other.
         val hers = alice.root("alice's news", NOW - 1000)
         val his = dave.root("dave's news", NOW - 1000)
-        val aliceStore = InMemorySyncStore().seed(hers).listenTo(carol.key)
-        val daveStore = InMemorySyncStore().seed(his).listenTo(bob.key)
+        val aliceStore = InMemorySyncStore().seed(hers).follow(carol.key)
+        val daveStore = InMemorySyncStore().seed(his).follow(bob.key)
 
         val run = sync(aliceStore, daveStore)
 
@@ -36,7 +36,7 @@ class GossipPhaseTest {
         // state: converged stores would look identical either way.
         val followed = alice.root("followed content", NOW - 1000)
         val aliceStore = InMemorySyncStore().seed(followed)
-        val bobStore = InMemorySyncStore().listenTo(alice.key)
+        val bobStore = InMemorySyncStore().follow(alice.key)
 
         val run = sync(aliceStore, bobStore)
 
@@ -55,8 +55,8 @@ class GossipPhaseTest {
     @Test
     fun `gossip is not offered for content the peer's hash-list already claimed`() = runTest {
         val shared = alice.root("both have this", NOW - 1000)
-        val aliceStore = InMemorySyncStore().seed(shared).listenTo(alice.key)
-        val bobStore = InMemorySyncStore().seed(shared).listenTo(alice.key)
+        val aliceStore = InMemorySyncStore().seed(shared).follow(alice.key)
+        val bobStore = InMemorySyncStore().seed(shared).follow(alice.key)
 
         val run = sync(aliceStore, bobStore)
 

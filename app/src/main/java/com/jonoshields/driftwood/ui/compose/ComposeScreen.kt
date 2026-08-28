@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -64,13 +66,15 @@ internal fun ComposeContent(
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text(if (state.isReply) "Reply" else "New message") },
+                title = { Text(if (state.isReply) "Reply" else "New post") },
                 navigationIcon = { TextButton(onClick = onCancel) { Text("Cancel") } },
             )
         },
     ) { padding ->
         Column(
-            Modifier.padding(padding).padding(16.dp).fillMaxSize(),
+            // Scrollable so the send button stays reachable once the keyboard and a long
+            // reply (the field has no max height) together outgrow the available space.
+            Modifier.padding(padding).padding(16.dp).fillMaxSize().verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             ReplyContext(state.target)

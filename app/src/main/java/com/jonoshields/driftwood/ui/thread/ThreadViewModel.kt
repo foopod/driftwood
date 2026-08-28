@@ -26,12 +26,12 @@ import kotlinx.coroutines.launch
 sealed interface ThreadUiState {
     data object Loading : ThreadUiState
 
-    /** [starred] is a property of the whole thread, not of any message in it. */
+    /** [pinned] is a property of the whole thread, not of any message in it. */
     data class Loaded(
         val thread: ThreadView,
-        val starred: Boolean,
+        val pinned: Boolean,
         val names: Map<AuthorId, DisplayName> = emptyMap(),
-        val listenScope: Set<AuthorId> = emptySet(),
+        val followList: Set<AuthorId> = emptySet(),
         val blockedAuthors: Set<AuthorId> = emptySet(),
     ) : ThreadUiState {
         /** Falls back to the bare fingerprint for anyone with no name at all. */
@@ -59,12 +59,12 @@ class ThreadViewModel @Inject constructor(
         .flatMapLatest { id ->
             combine(
                 repository.observeThread(id),
-                repository.observeThreadFavourite(id),
+                repository.observeThreadPinned(id),
                 directory.observeNames(),
-                directory.observeListenScope(),
+                directory.observeFollowList(),
                 repository.observeBlockedAuthors(),
-            ) { thread, starred, names, listenScope, blockedAuthors ->
-                ThreadUiState.Loaded(thread, starred, names, listenScope, blockedAuthors) as ThreadUiState
+            ) { thread, pinned, names, followList, blockedAuthors ->
+                ThreadUiState.Loaded(thread, pinned, names, followList, blockedAuthors) as ThreadUiState
             }
                 // Without this, switching threads flashes the previous thread's content for a frame.
                 .onStart { emit(ThreadUiState.Loading) }
@@ -78,28 +78,28 @@ class ThreadViewModel @Inject constructor(
     }
 
     /** Keys on the thread's root id, which exists even if the root message itself was pruned. */
-    fun toggleStar() {
+    fun togglePin() {
         val id = rootId.value ?: return
-        val current = (uiState.value as? ThreadUiState.Loaded)?.starred ?: return
-        viewModelScope.launch { repository.setThreadFavourite(id, !current) }
+        val current = (uiState.value as? ThreadUiState.Loaded)?.pinned ?: return
+        viewModelScope.launch { repository.setThreadPinned(id, !current) }
     }
 
     fun setNickname(author: AuthorId, nickname: String) {
         viewModelScope.launch { directory.setNickname(author, nickname) }
     }
 
-    fun toggleListen(author: AuthorId) {
-        val listening = (uiState.value as? ThreadUiState.Loaded)?.listenScope?.contains(author) ?: false
+    fun toggleFollow(author: AuthorId) {
+        val listening = (uiState.value as? ThreadUiState.Loaded)?.followList?.contains(author) ?: false
         viewModelScope.launch {
-            if (listening) directory.stopListening(author) else directory.listenTo(author)
+            if (listening) directory.unfollow(author) else directory.follow(author)
         }
     }
 
     fun block(author: AuthorId) {
-        // Blocking someone you listen to stops the listening too, not just the display.
+        // Blocking someone you follow stops the following too, not just the display.
         viewModelScope.launch {
             repository.block(author)
-            directory.stopListening(author)
+            directory.unfollow(author)
         }
     }
 

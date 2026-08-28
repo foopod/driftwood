@@ -141,7 +141,7 @@ class Session(
     ): PriorityResult {
         val now = clock.nowMillis()
         val myScope = ScopeDeclaration(
-            listen = store.listenScope(),
+            follow = store.followList(),
             windowCutoff = store.windowCutoff(now),
             wants = store.wants(),
         )
@@ -150,7 +150,7 @@ class Session(
             ?: throw Abort(AbortReason.OUT_OF_PHASE)).declaration
 
         // Our hash-list covers our own scope only — listing more costs bytes and discloses holdings for nothing.
-        val myHashList = Reconciler.hashList(store.heldBy(myScope.listen), myScope)
+        val myHashList = Reconciler.hashList(store.heldBy(myScope.follow), myScope)
         val theirHashList = (swap(role, connection, Record.HashList(myHashList)) as? Record.HashList
             ?: throw Abort(AbortReason.OUT_OF_PHASE)).ids
 
@@ -176,7 +176,7 @@ class Session(
 
     /** Assembles just enough of our holdings for [Reconciler] to decide; anchors are fetched without a window filter, applied later at delivery. */
     private suspend fun planFor(theirScope: ScopeDeclaration, theirHashList: Set<MessageId>): Delivery {
-        val anchors = store.heldBy(theirScope.listen)
+        val anchors = store.heldBy(theirScope.follow)
         val contextThreads = anchors.mapTo(mutableSetOf()) { it.threadRoot }
 
         val relevant = (

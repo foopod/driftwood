@@ -35,11 +35,11 @@ internal fun messagesBy(
 }
 
 /** Budgets big enough that fair share never bites, for tests aimed at something else. */
-internal val UNLIMITED = PartitionBudgets(listen = 10_000, context = 10_000, gossip = 10_000)
+internal val UNLIMITED = PartitionBudgets(follow = 10_000, context = 10_000, gossip = 10_000)
 
-internal fun budgets(listen: Int, context: Int, gossip: Int) =
-    PartitionBudgets(listen = listen, context = context, gossip = gossip)
+internal fun budgets(follow: Int, context: Int, gossip: Int) =
+    PartitionBudgets(follow = follow, context = context, gossip = gossip)
 
 internal fun noBlocks() = Blocklist(authors = emptySet(), roots = emptySet())
 
-internal fun starred(vararg roots: MessageId) = Favourites(roots.toSet())
+internal fun pinned(vararg roots: MessageId) = PinnedRoots(roots.toSet())

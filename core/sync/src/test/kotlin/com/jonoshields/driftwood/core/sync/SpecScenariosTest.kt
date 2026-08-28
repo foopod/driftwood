@@ -25,8 +25,8 @@ class SpecScenariosTest {
 
         val aliceHolds = listOf(m1, m2, m3)
         val bobHolds = listOf(m1, m4)
-        val aliceScope = scope(listen = setOf(carol), windowCutoff = 1000)
-        val bobScope = scope(listen = setOf(alice, carol), windowCutoff = 900)
+        val aliceScope = scope(follow = setOf(carol), windowCutoff = 1000)
+        val bobScope = scope(follow = setOf(alice, carol), windowCutoff = 900)
 
         assertEquals(setOf(m1.id, m2.id), Reconciler.hashList(aliceHolds, aliceScope))
         assertEquals(setOf(m1.id, m4.id), Reconciler.hashList(bobHolds, bobScope))
@@ -51,7 +51,7 @@ class SpecScenariosTest {
 
         val aliceHolds = listOf(m1, m2, m3)
         val bobHolds = listOf(m2)
-        val bobScope = scope(listen = setOf(alice), windowCutoff = 0)
+        val bobScope = scope(follow = setOf(alice), windowCutoff = 0)
 
         val bobsList = Reconciler.hashList(bobHolds, bobScope)
         assertTrue("Bob holds nothing by Alice, the only person he follows", bobsList.isEmpty())
@@ -72,7 +72,7 @@ class SpecScenariosTest {
     fun `6_5 blocking is enforced by the sender, not announced`() {
         val carolsMessage = held(carol, 100, t1)
         val davesMessage = held(dave, 110, t2)
-        val bobScope = scope(listen = setOf(carol, dave), windowCutoff = 0)
+        val bobScope = scope(follow = setOf(carol, dave), windowCutoff = 0)
 
         val plan = Reconciler.plan(
             held = listOf(carolsMessage, davesMessage),
@@ -89,8 +89,8 @@ class SpecScenariosTest {
     fun `6_6 delivery respects the receiver's window, not the sender's`() {
         val old = held(carol, 600, t1)
         val recent = held(carol, 1100, t1)
-        val bobKeepsOneMonth = scope(listen = setOf(carol), windowCutoff = 500)
-        val aliceKeepsThree = scope(listen = setOf(carol), windowCutoff = 1000)
+        val bobKeepsOneMonth = scope(follow = setOf(carol), windowCutoff = 500)
+        val aliceKeepsThree = scope(follow = setOf(carol), windowCutoff = 1000)
 
         val aliceToBob = Reconciler.plan(listOf(old, recent), bobKeepsOneMonth, emptySet(), noBlocks())
         assertEquals("Bob's wider window takes both", setOf(old.id, recent.id), aliceToBob.inScope.toSet())
@@ -107,7 +107,7 @@ class SpecScenariosTest {
 
         val plan = Reconciler.plan(
             held = inScope + wants + context,
-            peer = scope(listen = setOf(carol), windowCutoff = 0, wants = wants.mapTo(mutableSetOf()) { it.id }),
+            peer = scope(follow = setOf(carol), windowCutoff = 0, wants = wants.mapTo(mutableSetOf()) { it.id }),
             peerHolds = emptySet(),
             blocklist = noBlocks(),
             contextCap = 1000,

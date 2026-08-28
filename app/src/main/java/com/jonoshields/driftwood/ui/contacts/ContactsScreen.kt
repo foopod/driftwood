@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -49,7 +52,7 @@ fun ContactsScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ContactsContent(
-    entries: List<ConfirmedEntry>,
+    entries: List<ContactEntry>,
     onBack: () -> Unit,
     onOpenContact: (AuthorId) -> Unit,
     onAddContact: () -> Unit,
@@ -70,7 +73,7 @@ internal fun ContactsContent(
                 containerColor = MaterialTheme.colorScheme.secondary,
                 contentColor = MaterialTheme.colorScheme.onSecondary,
             ) {
-                Text("+", style = MaterialTheme.typography.headlineMedium)
+                Icon(Icons.Default.Add, contentDescription = "Add contact")
             }
         },
     ) { padding ->
@@ -80,21 +83,21 @@ internal fun ContactsContent(
         ) {
             if (entries.isEmpty()) {
                 Text(
-                    "Nobody confirmed yet.",
+                    "No claimed names yet.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                // Already sorted listened-first (sortConfirmedEntries) — partition keeps that order per group.
-                val (listening, everyoneElse) = entries.partition { it.isListening }
+                // Already sorted verified/followed-first (sortContactEntries) — partition keeps that order per group.
+                val (following, everyoneElse) = entries.partition { it.isFollowing }
                 LazyColumn(
                     // Extra bottom clearance so the add-contact FAB never sits over the last entry.
                     contentPadding = PaddingValues(bottom = 96.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    if (listening.isNotEmpty()) {
-                        item(key = "header-listening") { SectionHeader("Listening") }
-                        items(listening, key = { it.author.toHex() }) { entry ->
+                    if (following.isNotEmpty()) {
+                        item(key = "header-following") { SectionHeader("Following") }
+                        items(following, key = { it.author.toHex() }) { entry ->
                             ContactRow(entry, onOpenContact)
                         }
                     }
@@ -120,8 +123,8 @@ private fun SectionHeader(title: String) {
 }
 
 @Composable
-private fun ContactRow(entry: ConfirmedEntry, onOpenContact: (AuthorId) -> Unit) {
-    // Same destination as tapping a name in a thread: nickname, listen, or block.
+private fun ContactRow(entry: ContactEntry, onOpenContact: (AuthorId) -> Unit) {
+    // Same destination as tapping a name in a thread: nickname, follow, or block.
     Row(
         Modifier.fillMaxWidth().clickable { onOpenContact(entry.author) },
         horizontalArrangement = Arrangement.spacedBy(8.dp),

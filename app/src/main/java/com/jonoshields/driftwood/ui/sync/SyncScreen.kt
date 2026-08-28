@@ -11,9 +11,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -64,7 +67,7 @@ fun SyncScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val discoveredPeers by viewModel.discoveredPeers.collectAsStateWithLifecycle()
     val names by viewModel.names.collectAsStateWithLifecycle()
-    val listenScope by viewModel.listenScope.collectAsStateWithLifecycle()
+    val followList by viewModel.followList.collectAsStateWithLifecycle()
 
     // Asked once, opportunistically, on entry — never blocking. Denial just stays LAN-only.
     val context = LocalContext.current
@@ -85,7 +88,7 @@ fun SyncScreen(
         state = state,
         discoveredPeers = discoveredPeers,
         names = names,
-        listenScope = listenScope,
+        followList = followList,
         myAuthor = viewModel.myAuthor,
         wifiDirectPermissionDenied = wifiDirectPermissionDenied,
         onBack = onBack,
@@ -97,7 +100,7 @@ fun SyncScreen(
         onDone = viewModel::reset,
         onFinished = { viewModel.reset(); onBack() },
         onSetNickname = viewModel::setNickname,
-        onToggleListen = viewModel::toggleListen,
+        onToggleFollow = viewModel::toggleFollow,
         onSendLog = { SyncLogReport.send(context, viewModel.logSnapshot()) },
         modifier = modifier,
     )
@@ -109,7 +112,7 @@ internal fun SyncContent(
     state: SyncUiState,
     discoveredPeers: List<NearbyPeer> = emptyList(),
     names: Map<AuthorId, DisplayName> = emptyMap(),
-    listenScope: Set<AuthorId> = emptySet(),
+    followList: Set<AuthorId> = emptySet(),
     myAuthor: AuthorId? = null,
     wifiDirectPermissionDenied: Boolean = false,
     onBack: () -> Unit,
@@ -122,7 +125,7 @@ internal fun SyncContent(
     // A successful sync returns straight to Home; a failed one returns to this screen's Idle.
     onFinished: () -> Unit,
     onSetNickname: (AuthorId, String) -> Unit,
-    onToggleListen: (AuthorId) -> Unit,
+    onToggleFollow: (AuthorId) -> Unit,
     onSendLog: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -157,7 +160,8 @@ internal fun SyncContent(
         },
     ) { padding ->
         Column(
-            Modifier.padding(padding).padding(24.dp).fillMaxSize(),
+            // Scrollable so manual-connect's fields and button stay reachable behind the keyboard.
+            Modifier.padding(padding).padding(24.dp).fillMaxSize().verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             when (state) {
@@ -177,10 +181,10 @@ internal fun SyncContent(
                     myDisplayName = myAuthor?.let {
                         (names[it] ?: NameResolver.resolve(it, nickname = null, username = null)).copy(verified = false)
                     },
-                    isListening = state.peer in listenScope,
+                    isFollowing = state.peer in followList,
                     onConfirm = onConfirm,
                     onSetNickname = { name -> onSetNickname(state.peer, name) },
-                    onToggleListen = { onToggleListen(state.peer) },
+                    onToggleFollow = { onToggleFollow(state.peer) },
                 )
                 SyncUiState.Running -> StatusContent("Syncing…")
                 is SyncUiState.Finished -> FinishedContent(state, onFinished)
@@ -313,16 +317,17 @@ private fun ConfirmingContent(
     state: SyncUiState.Confirming,
     displayName: DisplayName,
     myDisplayName: DisplayName?,
-    isListening: Boolean,
+    isFollowing: Boolean,
     onConfirm: () -> Unit,
     onSetNickname: (String) -> Unit,
-    onToggleListen: () -> Unit,
+    onToggleFollow: () -> Unit,
 ) {
     // Keyed on the peer so a different confirmation starts from a clean slate.
     var confirmed by rememberSaveable(state.peer) { mutableStateOf(false) }
     var nicknameDraft by rememberSaveable(state.peer) { mutableStateOf("") }
+    var hashesChecked by rememberSaveable(state.peer) { mutableStateOf(false) }
 
-    // Already confirmed skips only the re-verification ceremony, not the fingerprint/listen toggle.
+    // Already confirmed skips only the re-verification ceremony, not the fingerprint/follow toggle.
     val heading = when {
         displayName.verified -> "Sync with ${displayName.text}?"
         displayName.label != null -> "Is this ${displayName.label} you're syncing with?"
@@ -350,23 +355,36 @@ private fun ConfirmingContent(
 
     if (!displayName.verified) {
         Text(
-            "Only sync with someone you trust — syncing shares your listen list with them, and theirs with you.",
+            "Only sync with someone you trust — syncing shares your follow list with them, and theirs with you.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
         )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(
+                checked = hashesChecked,
+                onCheckedChange = { hashesChecked = it },
+                modifier = Modifier.testTag("sync-hashes-match-checkbox"),
+            )
+            Text(
+                "I have confirmed the hashes match for the person I am syncing with.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
     }
 
     ContactControls(
-        currentNickname = if (displayName.verified) displayName.label else null,
-        isListening = isListening,
+        currentNickname = displayName.nickname,
+        isFollowing = isFollowing,
         onSetNickname = onSetNickname,
-        onToggleListen = onToggleListen,
+        onToggleFollow = onToggleFollow,
         showSaveButton = false,
         onDraftChange = { nicknameDraft = it },
     )
 
     ConfirmButton(
         confirmed = confirmed,
+        // Already-verified peers skip the ceremony; an unverified peer needs the checkbox first.
+        enabled = displayName.verified || hashesChecked,
         onClick = {
             if (nicknameDraft.isNotBlank()) onSetNickname(nicknameDraft)
             confirmed = true
@@ -376,11 +394,11 @@ private fun ConfirmingContent(
 }
 
 @Composable
-private fun ConfirmButton(confirmed: Boolean, onClick: () -> Unit) {
+private fun ConfirmButton(confirmed: Boolean, enabled: Boolean, onClick: () -> Unit) {
     // Tagged rather than found by text — "Sync" matches the screen's own TopAppBar title too.
     Button(
         onClick = onClick,
-        enabled = !confirmed,
+        enabled = !confirmed && enabled,
         modifier = Modifier.fillMaxWidth().testTag("sync-confirm-button"),
     ) {
         Text(if (confirmed) "Waiting…" else "Sync")

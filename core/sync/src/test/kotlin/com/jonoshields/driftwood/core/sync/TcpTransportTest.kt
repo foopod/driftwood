@@ -18,7 +18,7 @@ class TcpTransportTest {
     fun `a full session converges over real localhost sockets`() = runTest {
         val hers = alice.root("hello over a real socket", NOW - 1000)
         val aliceStore = InMemorySyncStore().seed(hers)
-        val bobStore = InMemorySyncStore().listenTo(alice.key)
+        val bobStore = InMemorySyncStore().follow(alice.key)
         val clock = Clock.fixed(NOW)
 
         val listener = TcpTransport.Listener()

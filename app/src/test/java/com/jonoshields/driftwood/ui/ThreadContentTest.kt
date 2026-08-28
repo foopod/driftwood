@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -47,10 +48,11 @@ class ThreadContentTest {
     private var repliedToParent: MessageId? = null
     private var parentWasProvided = false
     private var nicknameSet: Pair<com.jonoshields.driftwood.core.model.AuthorId, String>? = null
-    private var listenToggled: com.jonoshields.driftwood.core.model.AuthorId? = null
+    private var followToggled: com.jonoshields.driftwood.core.model.AuthorId? = null
     private var blocked: com.jonoshields.driftwood.core.model.AuthorId? = null
     private var unblocked: com.jonoshields.driftwood.core.model.AuthorId? = null
-    private var starToggled = false
+    private var pinToggled = false
+    private var settingsOpened = false
 
     private fun show(state: ThreadUiState, myAuthor: com.jonoshields.driftwood.core.model.AuthorId? = null) {
         compose.setContent {
@@ -59,9 +61,10 @@ class ThreadContentTest {
                 myAuthor = myAuthor,
                 onReply = { r, p -> repliedToRoot = r; repliedToParent = p; parentWasProvided = true },
                 onBack = {},
-                onToggleStar = { starToggled = true },
+                onSettings = { settingsOpened = true },
+                onTogglePin = { pinToggled = true },
                 onSetNickname = { author, name -> nicknameSet = author to name },
-                onToggleListen = { author -> listenToggled = author },
+                onToggleFollow = { author -> followToggled = author },
                 onBlock = { author -> blocked = author },
                 onUnblock = { author -> unblocked = author },
             )
@@ -72,14 +75,14 @@ class ThreadContentTest {
         rootId: MessageId,
         messages: List<com.jonoshields.driftwood.core.model.Message>,
         names: Map<com.jonoshields.driftwood.core.model.AuthorId, com.jonoshields.driftwood.core.store.DisplayName> = emptyMap(),
-        listenScope: Set<com.jonoshields.driftwood.core.model.AuthorId> = emptySet(),
+        followList: Set<com.jonoshields.driftwood.core.model.AuthorId> = emptySet(),
         blockedAuthors: Set<com.jonoshields.driftwood.core.model.AuthorId> = emptySet(),
-        starred: Boolean = false,
+        pinned: Boolean = false,
     ) = ThreadUiState.Loaded(
         ThreadAssembler.assemble(rootId, messages),
-        starred = starred,
+        pinned = pinned,
         names = names,
-        listenScope = listenScope,
+        followList = followList,
         blockedAuthors = blockedAuthors,
     )
 
@@ -131,27 +134,27 @@ class ThreadContentTest {
     }
 
     @Test
-    fun `the message context menu also offers favouriting the whole thread`() {
-        // "Favourite from any surface" (plan.md M4): any message's menu, not just the
-        // thread's own top bar, can favourite it.
+    fun `the message context menu also offers pinning the whole thread`() {
+        // "Pin from any surface" (plan.md M4): any message's menu, not just the
+        // thread's own top bar, can pin it.
         val r = root("hello")
         show(loaded(r.id, listOf(r)))
 
         compose.onNodeWithText("hello").performTouchInput { longClick() }
-        compose.onNodeWithTag("message-context-favourite").assertExists()
-        compose.onNodeWithTag("message-context-favourite").performClick()
+        compose.onNodeWithTag("message-context-pin").assertExists()
+        compose.onNodeWithTag("message-context-pin").performClick()
 
-        assertEquals(true, starToggled)
+        assertEquals(true, pinToggled)
     }
 
     @Test
-    fun `the favourite context item offers to unfavourite an already-starred thread`() {
+    fun `the pin context item offers to unpin an already-pinned thread`() {
         val r = root("hello")
-        show(loaded(r.id, listOf(r), starred = true))
+        show(loaded(r.id, listOf(r), pinned = true))
 
         compose.onNodeWithText("hello").performTouchInput { longClick() }
 
-        compose.onNodeWithText("Unfavourite thread").assertExists()
+        compose.onNodeWithText("Unpin thread").assertExists()
     }
 
     @Test
@@ -179,7 +182,7 @@ class ThreadContentTest {
     }
 
     @Test
-    fun `choosing user profile on your own message does nothing`() {
+    fun `choosing user profile on your own message opens settings instead`() {
         val r = root("hello")
         show(loaded(r.id, listOf(r)), myAuthor = me)
 
@@ -187,6 +190,7 @@ class ThreadContentTest {
         compose.onNodeWithTag("message-context-profile").performClick()
 
         compose.onNodeWithText("Save nickname").assertDoesNotExist()
+        assertEquals(true, settingsOpened)
     }
 
     @Test
@@ -194,7 +198,7 @@ class ThreadContentTest {
         val r = root("pruned away")
         show(loaded(r.id, listOf(reply(r.id, r.id, "what is left"))))
 
-        compose.onNodeWithText("The start of this conversation isn't carried here.").assertExists()
+        compose.onNodeWithText("The start of this thread isn't carried here.").assertExists()
     }
 
     @Test
@@ -248,23 +252,23 @@ class ThreadContentTest {
     }
 
     @Test
-    fun `a starred thread says so`() {
+    fun `a pinned thread says so`() {
         val r = root("kept")
-        val state = ThreadUiState.Loaded(ThreadAssembler.assemble(r.id, listOf(r)), starred = true)
+        val state = ThreadUiState.Loaded(ThreadAssembler.assemble(r.id, listOf(r)), pinned = true)
         show(state)
 
-        compose.onNodeWithText("★").assertExists()
+        compose.onNodeWithContentDescription("Unpin this thread").assertExists()
         compose.onNodeWithText(
-            "Starred — this whole thread is kept, including replies that arrive later.",
+            "Pinned — this whole thread is kept, including replies that arrive later.",
         ).assertExists()
     }
 
     @Test
-    fun `an unstarred thread shows a hollow star`() {
+    fun `an unpinned thread shows the outline pin toggle`() {
         val r = root("not kept")
         show(loaded(r.id, listOf(r)))
 
-        compose.onNodeWithText("☆").assertExists()
+        compose.onNodeWithContentDescription("Pin this thread").assertExists()
     }
 
     @Test
@@ -278,7 +282,7 @@ class ThreadContentTest {
     }
 
     @Test
-    fun `tapping your own name does nothing`() {
+    fun `tapping your own name opens settings`() {
         val r = root("hello")
         val myName = NameResolver.resolve(me, nickname = null, username = "myself")
         show(loaded(r.id, listOf(r), names = mapOf(me to myName)), myAuthor = me)
@@ -286,6 +290,7 @@ class ThreadContentTest {
         compose.onNodeWithText("myself").performClick()
 
         compose.onNodeWithText("Save nickname").assertDoesNotExist()
+        assertEquals(true, settingsOpened)
     }
 
     @Test
@@ -314,14 +319,14 @@ class ThreadContentTest {
     }
 
     @Test
-    fun `toggling listen calls through for the right author`() {
+    fun `toggling follow calls through for the right author`() {
         val r = theirRoot("hello")
         show(loaded(r.id, listOf(r)), myAuthor = me)
         compose.onNodeWithText(NameResolver.fingerprint(them)).performClick()
 
-        compose.onNodeWithText("Not listening").performClick()
+        compose.onNodeWithText("Not following").performClick()
 
-        assertEquals(them, listenToggled)
+        assertEquals(them, followToggled)
     }
 
     @Test
@@ -358,14 +363,14 @@ class ThreadContentTest {
     }
 
     @Test
-    fun `a blocked author cannot be listened to`() {
+    fun `a blocked author cannot be followed`() {
         val r = theirRoot("hello")
         show(loaded(r.id, listOf(r), blockedAuthors = setOf(them)), myAuthor = me)
         compose.onNodeWithText(NameResolver.fingerprint(them)).performClick()
 
-        compose.onNodeWithText("Not listening").performClick()
+        compose.onNodeWithText("Not following").performClick()
 
-        assertNull("listen is disabled while blocked", listenToggled)
+        assertNull("follow is disabled while blocked", followToggled)
     }
 
     @Test
@@ -418,14 +423,14 @@ class ThreadContentTest {
     }
 
     @Test
-    fun `the thread's star toggle is hidden while viewing the user panel`() {
+    fun `the thread's pin toggle is hidden while viewing the user panel`() {
         val r = theirRoot("hello")
         show(loaded(r.id, listOf(r)), myAuthor = me)
 
-        compose.onNodeWithText("☆").assertExists()
+        compose.onNodeWithContentDescription("Pin this thread").assertExists()
         compose.onNodeWithText(NameResolver.fingerprint(them)).performClick()
 
-        compose.onNodeWithText("☆").assertDoesNotExist()
-        compose.onNodeWithText("★").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Pin this thread").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Unpin this thread").assertDoesNotExist()
     }
 }

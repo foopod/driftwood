@@ -3,6 +3,7 @@ package com.jonoshields.driftwood.ui
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import com.jonoshields.driftwood.core.model.Ed25519Signer
 import com.jonoshields.driftwood.core.store.NameResolver
@@ -25,7 +26,7 @@ class ContactContentTest {
     private val them = Ed25519Signer(ByteArray(32) { it.toByte() }).publicKey
 
     private var backPressed = false
-    private var listenToggled = false
+    private var followToggled = false
     private var blockCalled = false
     private var unblockCalled = false
     private var nicknameSet: String? = null
@@ -37,16 +38,16 @@ class ContactContentTest {
                 state = state,
                 onBack = { backPressed = true },
                 onSetNickname = { nicknameSet = it },
-                onToggleListen = { listenToggled = true },
+                onToggleFollow = { followToggled = true },
                 onBlock = { blockCalled = true },
                 onUnblock = { unblockCalled = true },
             )
         }
     }
 
-    private fun loaded(isListening: Boolean = false, isBlocked: Boolean = false) = ContactUiState.Loaded(
+    private fun loaded(isFollowing: Boolean = false, isBlocked: Boolean = false) = ContactUiState.Loaded(
         displayName = NameResolver.resolve(them, nickname = null, username = "sam"),
-        isListening = isListening,
+        isFollowing = isFollowing,
         isBlocked = isBlocked,
     )
 
@@ -84,11 +85,11 @@ class ContactContentTest {
     }
 
     @Test
-    fun `a blocked contact cannot be listened to and offers unblock`() {
+    fun `a blocked contact cannot be followed and offers unblock`() {
         show(loaded(isBlocked = true))
 
-        compose.onNodeWithText("Not listening").performClick()
-        assertEquals(false, listenToggled)
+        compose.onNodeWithText("Not following").performClick()
+        assertEquals(false, followToggled)
 
         compose.onNodeWithText("Unblock").assertExists()
         compose.onNodeWithText("Block").assertDoesNotExist()
@@ -98,19 +99,19 @@ class ContactContentTest {
     fun `unblocking calls through with no confirmation step`() {
         show(loaded(isBlocked = true))
 
-        compose.onNodeWithText("Unblock").performClick()
+        compose.onNodeWithText("Unblock").performScrollTo().performClick()
 
         assertEquals(true, unblockCalled)
     }
 
     @Test
     fun `blocking requires a confirm step before calling through`() {
-        show(loaded(isListening = true))
+        show(loaded(isFollowing = true))
 
-        compose.onNodeWithText("Block").performClick()
+        compose.onNodeWithText("Block").performScrollTo().performClick()
         assertEquals(false, blockCalled)
 
-        compose.onNodeWithText("Block").performClick()
+        compose.onNodeWithText("Block").performScrollTo().performClick()
         assertEquals(true, blockCalled)
     }
 }

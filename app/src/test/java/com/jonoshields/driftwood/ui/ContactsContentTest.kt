@@ -1,12 +1,13 @@
 package com.jonoshields.driftwood.ui
 
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.jonoshields.driftwood.core.model.AuthorId
 import com.jonoshields.driftwood.core.model.Ed25519Signer
 import com.jonoshields.driftwood.core.store.NameResolver
-import com.jonoshields.driftwood.ui.contacts.ConfirmedEntry
+import com.jonoshields.driftwood.ui.contacts.ContactEntry
 import com.jonoshields.driftwood.ui.contacts.ContactsContent
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -27,7 +28,7 @@ class ContactsContentTest {
     private var openedContact: AuthorId? = null
     private var addContactCalled = false
 
-    private fun show(entries: List<ConfirmedEntry>) {
+    private fun show(entries: List<ContactEntry>) {
         compose.setContent {
             ContactsContent(
                 entries = entries,
@@ -42,13 +43,13 @@ class ContactsContentTest {
     fun `no entries says so rather than showing a blank list`() {
         show(emptyList())
 
-        compose.onNodeWithText("Nobody confirmed yet.").assertExists()
+        compose.onNodeWithText("No claimed names yet.").assertExists()
     }
 
     @Test
     fun `tapping an entry opens its contact actions`() {
         val a = author(1)
-        val entry = ConfirmedEntry(a, NameResolver.resolve(a, nickname = "Sam", username = null), isListening = false)
+        val entry = ContactEntry(a, NameResolver.resolve(a, nickname = "Sam", username = null), isFollowing = false)
         show(listOf(entry))
 
         compose.onNodeWithText("Sam").assertExists()
@@ -60,7 +61,7 @@ class ContactsContentTest {
     @Test
     fun `every row shows the full hash, even for a nicknamed contact`() {
         val a = author(1)
-        val entry = ConfirmedEntry(a, NameResolver.resolve(a, nickname = "Sam", username = null), isListening = false)
+        val entry = ContactEntry(a, NameResolver.resolve(a, nickname = "Sam", username = null), isFollowing = false)
         show(listOf(entry))
 
         compose.onNodeWithText(a.toHex()).assertExists()
@@ -70,7 +71,7 @@ class ContactsContentTest {
     fun `the add button calls through`() {
         show(emptyList())
 
-        compose.onNodeWithText("+").performClick()
+        compose.onNodeWithContentDescription("Add contact").performClick()
 
         assertEquals(true, addContactCalled)
     }
@@ -85,42 +86,41 @@ class ContactsContentTest {
     }
 
     @Test
-    fun `listened and non-listened contacts appear under separate section headers`() {
-        val listened = author(1)
+    fun `followed and non-followed contacts appear under separate section headers`() {
+        val followed = author(1)
         val confirmedOnly = author(2)
         show(
             listOf(
-                ConfirmedEntry(listened, NameResolver.resolve(listened, nickname = "Ears", username = null), isListening = true),
-                ConfirmedEntry(confirmedOnly, NameResolver.resolve(confirmedOnly, nickname = "Quiet", username = null), isListening = false),
+                ContactEntry(followed, NameResolver.resolve(followed, nickname = "Ears", username = null), isFollowing = true),
+                ContactEntry(confirmedOnly, NameResolver.resolve(confirmedOnly, nickname = "Quiet", username = null), isFollowing = false),
             ),
         )
 
-        compose.onNodeWithText("Listening").assertExists()
+        compose.onNodeWithText("Following").assertExists()
         compose.onNodeWithText("Everyone else").assertExists()
     }
 
     @Test
-    fun `only-listened contacts show just the Listening section`() {
+    fun `only-followed contacts show just the Following section`() {
         val a = author(1)
-        show(listOf(ConfirmedEntry(a, NameResolver.resolve(a, nickname = "Ears", username = null), isListening = true)))
+        show(listOf(ContactEntry(a, NameResolver.resolve(a, nickname = "Ears", username = null), isFollowing = true)))
 
-        compose.onNodeWithText("Listening").assertExists()
+        compose.onNodeWithText("Following").assertExists()
         compose.onNodeWithText("Everyone else").assertDoesNotExist()
     }
 
     @Test
-    fun `a listened-but-unconfirmed person still shows up`() {
-        // Their posts arrived via gossip relay, never a direct sync or QR — the whole point
-        // of merging the two lists rather than only showing confirmed people.
+    fun `a followed-but-unverified person still shows up`() {
+        // Following someone doesn't require ever checking their fingerprint.
         val a = author(1)
-        val unconfirmedButListened = ConfirmedEntry(
+        val unverifiedButFollowed = ContactEntry(
             a,
             NameResolver.resolve(a, nickname = null, username = "claimed", confirmed = false),
-            isListening = true,
+            isFollowing = true,
         )
-        show(listOf(unconfirmedButListened))
+        show(listOf(unverifiedButFollowed))
 
-        compose.onNodeWithText("Listening").assertExists()
+        compose.onNodeWithText("Following").assertExists()
     }
 
 }

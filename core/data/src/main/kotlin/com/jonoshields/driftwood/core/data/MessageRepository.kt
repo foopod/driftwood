@@ -13,7 +13,7 @@ import com.jonoshields.driftwood.core.model.MessageId
 import com.jonoshields.driftwood.core.store.Blocklist
 import com.jonoshields.driftwood.core.store.Clock
 import com.jonoshields.driftwood.core.model.EffectiveTime
-import com.jonoshields.driftwood.core.store.Favourites
+import com.jonoshields.driftwood.core.store.PinnedRoots
 import com.jonoshields.driftwood.core.store.HeldMessage
 import com.jonoshields.driftwood.core.store.PruningPlan
 import com.jonoshields.driftwood.core.store.Pruner
@@ -25,18 +25,30 @@ import com.jonoshields.driftwood.core.store.TierClassifier
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-/** One thread as it appears in the paginated list: the root, plus the latest reply from someone in scope, plus per-thread flags. */
+/** One thread as it appears in the paginated list: the root, plus up to two "known" (verified/followed/self) reply previews, plus per-thread counts. */
 data class ThreadSummary(
     val rootId: MessageId,
     val rootAuthor: AuthorId?,
     val rootText: String?,
     val rootTimestamp: Long?,
-    val latestListenedAuthor: AuthorId?,
-    val latestListenedText: String?,
-    val latestListenedTimestamp: Long?,
-    val messageCount: Int,
-    val hasUnread: Boolean,
-    val isFavourite: Boolean,
+    val rootUnread: Boolean,
+    val replyCount: Int,
+    val unreadReplyCount: Int,
+    val knownReplyCount: Int,
+    val knownUnreadReplyCount: Int,
+    val latestKnownReplyAuthor: AuthorId?,
+    val latestKnownReplyText: String?,
+    val latestKnownReplyTimestamp: Long?,
+    val secondKnownReplyAuthor: AuthorId?,
+    val secondKnownReplyText: String?,
+    val secondKnownReplyTimestamp: Long?,
+    val latestKnownUnreadReplyAuthor: AuthorId?,
+    val latestKnownUnreadReplyText: String?,
+    val latestKnownUnreadReplyTimestamp: Long?,
+    val secondKnownUnreadReplyAuthor: AuthorId?,
+    val secondKnownUnreadReplyText: String?,
+    val secondKnownUnreadReplyTimestamp: Long?,
+    val isPinned: Boolean,
 )
 
 /** Errors that cross the repository boundary. Platform exceptions never do. */
@@ -53,9 +65,9 @@ interface MessageRepository {
     /** Cheap existence check behind the first-run empty state. */
     fun observeHasAnyMessage(): Flow<Boolean>
 
-    /** The paginated thread list for one tab; [wantListening] selects "My Circle" vs "Other", [authorFilter]/[textQuery] are the search box. */
+    /** The paginated thread list for one tab; [wantFollowing] selects "My Circle" vs "Other", [authorFilter]/[textQuery] are the search box. */
     fun pagedThreads(
-        wantListening: Boolean,
+        wantFollowing: Boolean,
         unreadOnly: Boolean,
         authorFilter: AuthorId? = null,
         textQuery: String? = null,
@@ -70,10 +82,10 @@ interface MessageRepository {
     /** One message, for showing what a reply is replying to. */
     suspend fun message(id: MessageId): Result<Message?>
 
-    /** Stars or unstars a whole thread, keyed on the root id so it survives the root itself being pruned. */
-    suspend fun setThreadFavourite(rootId: MessageId, favourite: Boolean): Result<Unit>
+    /** Pins or unpins a whole thread, keyed on the root id so it survives the root itself being pruned. */
+    suspend fun setThreadPinned(rootId: MessageId, pinned: Boolean): Result<Unit>
 
-    fun observeThreadFavourite(rootId: MessageId): Flow<Boolean>
+    fun observeThreadPinned(rootId: MessageId): Flow<Boolean>
 
     /** Marks every message in a thread read. Opening a thread is what calls this. */
     suspend fun markThreadRead(rootId: MessageId): Result<Unit>
@@ -106,14 +118,14 @@ class RoomMessageRepository internal constructor(
     override fun observeHasAnyMessage(): Flow<Boolean> = messages.observeHasAnyMessage()
 
     override fun pagedThreads(
-        wantListening: Boolean,
+        wantFollowing: Boolean,
         unreadOnly: Boolean,
         authorFilter: AuthorId?,
         textQuery: String?,
     ): Flow<PagingData<ThreadSummary>> {
         val myAuthor = runCatching { identity.publicKey() }.getOrNull()
         return Pager(PagingConfig(pageSize = THREAD_PAGE_SIZE, prefetchDistance = THREAD_PREFETCH, enablePlaceholders = false)) {
-            messages.pagedThreads(myAuthor, wantListening, unreadOnly, authorFilter, textQuery)
+            messages.pagedThreads(myAuthor, wantFollowing, unreadOnly, authorFilter, textQuery)
         }.flow.map { page -> page.map { it.toThreadSummary() } }
     }
 
@@ -151,17 +163,17 @@ class RoomMessageRepository internal constructor(
     override suspend fun message(id: MessageId): Result<Message?> =
         runCatching { messages.find(id)?.toMessage() }.mapLocalErrors()
 
-    override suspend fun setThreadFavourite(rootId: MessageId, favourite: Boolean): Result<Unit> =
+    override suspend fun setThreadPinned(rootId: MessageId, pinned: Boolean): Result<Unit> =
         runCatching {
-            if (favourite) {
-                database.favourites().star(FavouriteRootEntity(rootId, clock.nowMillis()))
+            if (pinned) {
+                database.pins().pin(PinnedRootEntity(rootId, clock.nowMillis()))
             } else {
-                database.favourites().unstar(rootId)
+                database.pins().unpin(rootId)
             }
         }.mapLocalErrors()
 
-    override fun observeThreadFavourite(rootId: MessageId): Flow<Boolean> =
-        database.favourites().observeIsStarred(rootId)
+    override fun observeThreadPinned(rootId: MessageId): Flow<Boolean> =
+        database.pins().observeIsPinned(rootId)
 
     override suspend fun markThreadRead(rootId: MessageId): Result<Unit> =
         runCatching { messages.markThreadRead(rootId) }.mapLocalErrors()
@@ -193,12 +205,12 @@ class RoomMessageRepository internal constructor(
         val held = messages.all()
         return Pruner.plan(
             held = held.map { it.toHeldMessage() },
-            listen = database.listen().authors().toSet(),
+            follow = database.follow().authors().toSet(),
             blocklist = Blocklist(
                 authors = database.blocklist().blockedAuthors().toSet(),
                 roots = database.blocklist().blockedRoots().toSet(),
             ),
-            favourites = Favourites(database.favourites().starredRoots().toSet()),
+            pinnedRoots = PinnedRoots(database.pins().pinnedRoots().toSet()),
             budgets = config.budgets(),
             windowMillis = config.windowMillis,
             nowMillis = clock.nowMillis(),
@@ -214,9 +226,9 @@ class RoomMessageRepository internal constructor(
     }
 
     private suspend fun insert(message: Message, firstReceivedTime: Long) {
-        val listen = database.listen().authors().toSet()
+        val follow = database.follow().authors().toSet()
         val tier = TierClassifier
-            .classify(listOf(message.toHeldMessage(firstReceivedTime)), listen)
+            .classify(listOf(message.toHeldMessage(firstReceivedTime)), follow)
             .getValue(message.id)
         // Composed here, on this device — you have obviously already read your own message.
         messages.insert(message.toEntity(firstReceivedTime, tier, read = true))
@@ -243,12 +255,24 @@ internal fun ThreadSummaryRow.toThreadSummary() = ThreadSummary(
     rootAuthor = rootAuthor,
     rootText = rootText,
     rootTimestamp = rootTimestamp,
-    latestListenedAuthor = latestListenedAuthor,
-    latestListenedText = latestListenedText,
-    latestListenedTimestamp = latestListenedTimestamp,
-    messageCount = messageCount,
-    hasUnread = hasUnread,
-    isFavourite = isFavourite,
+    rootUnread = rootUnread,
+    replyCount = replyCount,
+    unreadReplyCount = unreadReplyCount,
+    knownReplyCount = knownReplyCount,
+    knownUnreadReplyCount = knownUnreadReplyCount,
+    latestKnownReplyAuthor = latestKnownReplyAuthor,
+    latestKnownReplyText = latestKnownReplyText,
+    latestKnownReplyTimestamp = latestKnownReplyTimestamp,
+    secondKnownReplyAuthor = secondKnownReplyAuthor,
+    secondKnownReplyText = secondKnownReplyText,
+    secondKnownReplyTimestamp = secondKnownReplyTimestamp,
+    latestKnownUnreadReplyAuthor = latestKnownUnreadReplyAuthor,
+    latestKnownUnreadReplyText = latestKnownUnreadReplyText,
+    latestKnownUnreadReplyTimestamp = latestKnownUnreadReplyTimestamp,
+    secondKnownUnreadReplyAuthor = secondKnownUnreadReplyAuthor,
+    secondKnownUnreadReplyText = secondKnownUnreadReplyText,
+    secondKnownUnreadReplyTimestamp = secondKnownUnreadReplyTimestamp,
+    isPinned = isPinned,
 )
 
 internal fun MessageEntity.toHeldMessage() = HeldMessage(

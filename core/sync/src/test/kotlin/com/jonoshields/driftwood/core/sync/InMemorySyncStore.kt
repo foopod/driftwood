@@ -9,7 +9,7 @@ import com.jonoshields.driftwood.core.model.OrderKey
 import com.jonoshields.driftwood.core.model.Profile
 import com.jonoshields.driftwood.core.model.ProfileCodec
 import com.jonoshields.driftwood.core.store.Blocklist
-import com.jonoshields.driftwood.core.store.Favourites
+import com.jonoshields.driftwood.core.store.PinnedRoots
 import com.jonoshields.driftwood.core.store.HeldMessage
 import com.jonoshields.driftwood.core.store.PartitionBudgets
 import com.jonoshields.driftwood.core.store.Pruner
@@ -17,7 +17,7 @@ import com.jonoshields.driftwood.core.store.StorageDefaults
 
 /** A [SyncStore] backed by maps — a real fake, not a mock, that the protocol test suite runs against. */
 class InMemorySyncStore(
-    private val listen: MutableSet<AuthorId> = mutableSetOf(),
+    private val follow: MutableSet<AuthorId> = mutableSetOf(),
     private var blocklist: Blocklist = Blocklist(emptySet(), emptySet()),
     private val windowMillis: Long = StorageDefaults.WINDOW_MILLIS,
     private val budgets: PartitionBudgets = PartitionBudgets(10_000, 10_000, 10_000),
@@ -26,7 +26,7 @@ class InMemorySyncStore(
     private val messages = linkedMapOf<MessageId, Stored>()
     private val profiles = linkedMapOf<AuthorId, ByteArray>()
     private val wantList = mutableMapOf<MessageId, Int>()
-    private val favourites = mutableSetOf<MessageId>()
+    private val pinnedRoots = mutableSetOf<MessageId>()
 
     private data class Stored(val message: Message, val firstReceived: Long) {
         val effectiveTime: Long get() = EffectiveTime.of(message.body.timestampMillis, firstReceived)
@@ -44,7 +44,7 @@ class InMemorySyncStore(
         profiles[profile.author] = ProfileCodec.encode(profile)
     }
 
-    fun listenTo(vararg authors: AuthorId) = apply { listen += authors }
+    fun follow(vararg authors: AuthorId) = apply { follow += authors }
 
     fun block(authors: Set<AuthorId> = emptySet(), roots: Set<MessageId> = emptySet()) = apply {
         blocklist = Blocklist(blocklist.authors + authors, blocklist.roots + roots)
@@ -52,7 +52,7 @@ class InMemorySyncStore(
 
     fun want(vararg ids: MessageId) = apply { ids.forEach { wantList[it] = 0 } }
 
-    fun star(root: MessageId) = apply { favourites += root }
+    fun pin(root: MessageId) = apply { pinnedRoots += root }
 
     // ---- inspecting the result -------------------------------------------------------
 
@@ -71,7 +71,7 @@ class InMemorySyncStore(
 
     // ---- SyncStore -------------------------------------------------------------------
 
-    override suspend fun listenScope(): Set<AuthorId> = listen.toSet()
+    override suspend fun followList(): Set<AuthorId> = follow.toSet()
 
     override suspend fun windowCutoff(nowMillis: Long): Long = nowMillis - windowMillis
 
@@ -141,9 +141,9 @@ class InMemorySyncStore(
     override suspend fun pruneAfterSession(nowMillis: Long) {
         val plan = Pruner.plan(
             held = messages.values.map { it.held },
-            listen = listen,
+            follow = follow,
             blocklist = blocklist,
-            favourites = Favourites(favourites.toSet()),
+            pinnedRoots = PinnedRoots(pinnedRoots.toSet()),
             budgets = budgets,
             windowMillis = windowMillis,
             nowMillis = nowMillis,

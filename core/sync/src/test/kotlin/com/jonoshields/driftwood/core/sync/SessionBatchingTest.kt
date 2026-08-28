@@ -15,7 +15,7 @@ class SessionBatchingTest {
         val backlog = (1..7).map { n -> alice.root("m$n", NOW - 1000 - n) }
         val aliceStore = InMemorySyncStore()
         backlog.forEach { aliceStore.seed(it) }
-        val bobStore = InMemorySyncStore().listenTo(alice.key)
+        val bobStore = InMemorySyncStore().follow(alice.key)
 
         val run = sync(aliceStore, bobStore, batchSize = 2)
 
@@ -34,7 +34,7 @@ class SessionBatchingTest {
         // Four batches land and persist one at a time; the connection then dies before a fifth — what already landed must stay.
         val backlog = (1..8).map { n -> alice.root("m$n", NOW - 1000 - n) }
         val wire = backlog.map { MessageCodec.encode(it) }
-        val bobStore = InMemorySyncStore().listenTo(alice.key)
+        val bobStore = InMemorySyncStore().follow(alice.key)
 
         val result = againstScriptedPeer(bobStore, batchSize = 2) { peer ->
             suspend fun send(record: Record) = peer.send(FrameCodec.encode(record))
@@ -76,7 +76,7 @@ class SessionBatchingTest {
                     .also { it[it.size - 1] = 0xFF.toByte() }
             }
         }
-        val bobStore = InMemorySyncStore().listenTo(alice.key)
+        val bobStore = InMemorySyncStore().follow(alice.key)
 
         val result = againstScriptedPeer(bobStore, batchSize = 10) { peer ->
             suspend fun send(record: Record) = peer.send(FrameCodec.encode(record))
@@ -109,7 +109,7 @@ class SessionBatchingTest {
         val neverArrives = msgId(999)
         val aliceStore = InMemorySyncStore()
         unrelated.forEach { aliceStore.seed(it) }
-        val bobStore = InMemorySyncStore().listenTo(alice.key).want(neverArrives)
+        val bobStore = InMemorySyncStore().follow(alice.key).want(neverArrives)
 
         sync(aliceStore, bobStore, batchSize = 2)
 
@@ -128,7 +128,7 @@ class SessionBatchingTest {
         val backlog = (1..(MAX_BATCHES_PER_PHASE + 1)).map { n -> alice.root("m$n", NOW - 100_000 - n) }
         val aliceStore = InMemorySyncStore()
         backlog.forEach { aliceStore.seed(it) }
-        val bobStore = InMemorySyncStore().listenTo(alice.key)
+        val bobStore = InMemorySyncStore().follow(alice.key)
 
         val run = sync(aliceStore, bobStore, batchSize = 1)
 

@@ -109,15 +109,16 @@ class DirectoryRepositoryTest {
     }
 
     @Test
-    fun aNicknameWinsOverAClaimedName() = runTest {
+    fun aNicknameWinsOverAClaimedNameForDisplayButDoesNotVerify() = runTest {
         val repository = directory()
         seedClaim("definitely not dad")
         database.contacts().upsert(ContactEntity(stranger, "Dad", now))
 
         val name = repository.observeNames().first().getValue(stranger)
 
-        assertTrue(name.verified)
-        assertEquals("Dad", name.text)
+        // Nickname is purely cosmetic now — it wins for display, but never implies verification.
+        assertTrue(!name.verified)
+        assertTrue(name.text, name.text.contains("Dad"))
     }
 
     @Test
@@ -140,9 +141,9 @@ class DirectoryRepositoryTest {
         assertEquals(setOf(stranger), repository.prune().getOrThrow())
         assertTrue(repository.observeNames().first().isEmpty())
 
-        // Now the same again, but listened to.
+        // Now the same again, but followed.
         seedClaim("sam")
-        database.listen().add(ListenEntity(stranger, now))
+        database.follow().add(FollowEntity(stranger, now))
         now += com.jonoshields.driftwood.core.store.DIRECTORY_TTL_MILLIS + 1
 
         assertTrue(repository.prune().getOrThrow().isEmpty())
@@ -182,15 +183,15 @@ class DirectoryRepositoryTest {
     }
 
     @Test
-    fun settingANicknameMakesTheDisplayNameVerified() = runTest {
+    fun settingANicknameNeverVerifies() = runTest {
         val repository = directory()
         seedClaim("definitely not dad")
 
         repository.setNickname(stranger, "Dad").getOrThrow()
 
         val name = repository.observeNames().first().getValue(stranger)
-        assertTrue(name.verified)
-        assertEquals("Dad", name.text)
+        assertTrue(!name.verified)
+        assertTrue(name.text, name.text.contains("Dad"))
     }
 
     @Test
@@ -201,16 +202,59 @@ class DirectoryRepositoryTest {
     }
 
     @Test
+    fun verifyingSetsTheFlagWithoutClobberingAnExistingNickname() = runTest {
+        val repository = directory()
+        repository.setNickname(stranger, "Dad").getOrThrow()
+
+        repository.verify(stranger).getOrThrow()
+
+        val name = repository.observeNames().first().getValue(stranger)
+        assertTrue(name.verified)
+        assertEquals("Dad", name.text)
+    }
+
+    @Test
+    fun verifyingTwiceIsANoOp() = runTest {
+        val repository = directory()
+        repository.verify(stranger).getOrThrow()
+        repository.verify(stranger).getOrThrow()
+
+        assertEquals(setOf(stranger), repository.observeVerifiedAuthors().first())
+    }
+
+    @Test
+    fun settingANicknameAfterVerifyingDoesNotClearVerified() = runTest {
+        val repository = directory()
+        repository.verify(stranger).getOrThrow()
+
+        repository.setNickname(stranger, "Dad").getOrThrow()
+
+        val name = repository.observeNames().first().getValue(stranger)
+        assertTrue(name.verified)
+        assertEquals("Dad", name.text)
+    }
+
+    @Test
+    fun observeClaimedAuthorsReflectsTheDirectoryTableOnly() = runTest {
+        val repository = directory()
+
+        assertTrue(repository.observeClaimedAuthors().first().isEmpty())
+
+        seedClaim("sam")
+        assertEquals(setOf(stranger), repository.observeClaimedAuthors().first())
+    }
+
+    @Test
     fun listeningAddsToTheScopeAndStoppingRemovesIt() = runTest {
         val repository = directory()
 
-        assertTrue(repository.observeListenScope().first().isEmpty())
+        assertTrue(repository.observeFollowList().first().isEmpty())
 
-        repository.listenTo(stranger).getOrThrow()
-        assertEquals(setOf(stranger), repository.observeListenScope().first())
+        repository.follow(stranger).getOrThrow()
+        assertEquals(setOf(stranger), repository.observeFollowList().first())
 
-        repository.stopListening(stranger).getOrThrow()
-        assertTrue(repository.observeListenScope().first().isEmpty())
+        repository.unfollow(stranger).getOrThrow()
+        assertTrue(repository.observeFollowList().first().isEmpty())
     }
 
     @Test
@@ -223,10 +267,10 @@ class DirectoryRepositoryTest {
         assertEquals(Tier.GOSSIP, database.messages().find(root.id)?.tier)
 
         val repository = directory()
-        repository.listenTo(stranger).getOrThrow()
-        assertEquals(Tier.LISTEN, database.messages().find(root.id)?.tier)
+        repository.follow(stranger).getOrThrow()
+        assertEquals(Tier.FOLLOW, database.messages().find(root.id)?.tier)
 
-        repository.stopListening(stranger).getOrThrow()
+        repository.unfollow(stranger).getOrThrow()
         assertEquals(Tier.GOSSIP, database.messages().find(root.id)?.tier)
     }
 }

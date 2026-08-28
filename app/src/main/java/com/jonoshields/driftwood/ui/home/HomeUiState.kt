@@ -12,7 +12,7 @@ sealed interface HomeUiState {
 
     data class Threads(
         val names: Map<AuthorId, DisplayName> = emptyMap(),
-        /** So a thread row knows whether to offer "Listen" for its root author. */
-        val listenScope: Set<AuthorId> = emptySet(),
+        /** So a thread row knows whether to offer "Follow" for its root author. */
+        val followList: Set<AuthorId> = emptySet(),
     ) : HomeUiState
 }

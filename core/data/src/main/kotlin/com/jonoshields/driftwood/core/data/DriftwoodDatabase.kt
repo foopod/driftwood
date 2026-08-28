@@ -84,7 +84,9 @@ internal interface MessageDao {
     @Query("UPDATE messages SET tier = :tier WHERE id = :id")
     suspend fun setTier(id: MessageId, tier: Tier)
 
-    // ---- the paginated thread list, one row per thread; "in scope" means tier = :listenTier OR author = :myAuthor.
+    // ---- the paginated thread list, one row per thread.
+    // "in scope" (tab membership) means tier = :followTier OR author = :myAuthor.
+    // "known" (naming/preview eligibility) is broader: in scope, OR a verified contact.
     @Query(
         """
         SELECT
@@ -92,27 +94,79 @@ internal interface MessageDao {
             root.author AS root_author,
             root.text AS root_text,
             root.effective_time AS root_timestamp,
-            reply.author AS latest_listened_author,
-            reply.text AS latest_listened_text,
-            reply.effective_time AS latest_listened_timestamp,
-            (SELECT COUNT(*) FROM messages c WHERE c.thread_root = m.thread_root) AS message_count,
-            EXISTS(SELECT 1 FROM messages u WHERE u.thread_root = m.thread_root AND u.read = 0) AS has_unread,
+            COALESCE(root.read = 0, 0) AS root_unread,
+            (SELECT COUNT(*) FROM messages c WHERE c.thread_root = m.thread_root AND c.id != m.thread_root) AS reply_count,
+            (SELECT COUNT(*) FROM messages u WHERE u.thread_root = m.thread_root AND u.id != m.thread_root AND u.read = 0) AS unread_reply_count,
+            (SELECT COUNT(DISTINCT r.author) FROM messages r
+                WHERE r.thread_root = m.thread_root AND r.id != m.thread_root
+                  AND (r.tier = :followTier OR r.author = :myAuthor
+                       OR EXISTS(SELECT 1 FROM contacts kc WHERE kc.author = r.author AND kc.verified = 1))
+            ) AS known_reply_count,
+            (SELECT COUNT(DISTINCT r.author) FROM messages r
+                WHERE r.thread_root = m.thread_root AND r.id != m.thread_root AND r.read = 0
+                  AND (r.tier = :followTier OR r.author = :myAuthor
+                       OR EXISTS(SELECT 1 FROM contacts kc WHERE kc.author = r.author AND kc.verified = 1))
+            ) AS known_unread_reply_count,
+            reply.author AS latest_known_reply_author,
+            reply.text AS latest_known_reply_text,
+            reply.effective_time AS latest_known_reply_timestamp,
+            reply2.author AS second_known_reply_author,
+            reply2.text AS second_known_reply_text,
+            reply2.effective_time AS second_known_reply_timestamp,
+            unread_reply.author AS latest_known_unread_reply_author,
+            unread_reply.text AS latest_known_unread_reply_text,
+            unread_reply.effective_time AS latest_known_unread_reply_timestamp,
+            unread_reply2.author AS second_known_unread_reply_author,
+            unread_reply2.text AS second_known_unread_reply_text,
+            unread_reply2.effective_time AS second_known_unread_reply_timestamp,
             EXISTS(SELECT 1 FROM favourite_roots f WHERE f.root = m.thread_root) AS is_favourite
         FROM messages m
         LEFT JOIN messages root ON root.id = m.thread_root
         LEFT JOIN messages reply ON reply.id = (
-            -- Greatest-n-per-group: the single newest in-scope, non-root message in this thread.
+            -- Greatest-n-per-group: the single newest known, non-root message in this thread.
             SELECT r2.id FROM messages r2
             WHERE r2.thread_root = m.thread_root
               AND r2.id != m.thread_root
-              AND (r2.tier = :listenTier OR r2.author = :myAuthor)
+              AND (r2.tier = :followTier OR r2.author = :myAuthor
+                   OR EXISTS(SELECT 1 FROM contacts kc WHERE kc.author = r2.author AND kc.verified = 1))
             ORDER BY r2.effective_time DESC, r2.id ASC
+            LIMIT 1
+        )
+        LEFT JOIN messages reply2 ON reply2.id = (
+            -- The next-newest known reply from a *different* author than [reply] — feeds both the
+            -- second snippet card (small threads) and the second named author (busy threads).
+            SELECT r3.id FROM messages r3
+            WHERE r3.thread_root = m.thread_root AND r3.id != m.thread_root
+              AND r3.author != reply.author
+              AND (r3.tier = :followTier OR r3.author = :myAuthor
+                   OR EXISTS(SELECT 1 FROM contacts kc WHERE kc.author = r3.author AND kc.verified = 1))
+            ORDER BY r3.effective_time DESC, r3.id ASC
+            LIMIT 1
+        )
+        LEFT JOIN messages unread_reply ON unread_reply.id = (
+            -- Same, restricted to unread — feeds the "since you last opened this" preview.
+            SELECT r5.id FROM messages r5
+            WHERE r5.thread_root = m.thread_root
+              AND r5.id != m.thread_root
+              AND r5.read = 0
+              AND (r5.tier = :followTier OR r5.author = :myAuthor
+                   OR EXISTS(SELECT 1 FROM contacts kc WHERE kc.author = r5.author AND kc.verified = 1))
+            ORDER BY r5.effective_time DESC, r5.id ASC
+            LIMIT 1
+        )
+        LEFT JOIN messages unread_reply2 ON unread_reply2.id = (
+            SELECT r4.id FROM messages r4
+            WHERE r4.thread_root = m.thread_root AND r4.id != m.thread_root AND r4.read = 0
+              AND r4.author != unread_reply.author
+              AND (r4.tier = :followTier OR r4.author = :myAuthor
+                   OR EXISTS(SELECT 1 FROM contacts kc WHERE kc.author = r4.author AND kc.verified = 1))
+            ORDER BY r4.effective_time DESC, r4.id ASC
             LIMIT 1
         )
         WHERE EXISTS(
             SELECT 1 FROM messages s
-            WHERE s.thread_root = m.thread_root AND (s.tier = :listenTier OR s.author = :myAuthor)
-        ) = :wantListening
+            WHERE s.thread_root = m.thread_root AND (s.tier = :followTier OR s.author = :myAuthor)
+        ) = :wantFollowing
         AND (:unreadOnly = 0 OR EXISTS(
             SELECT 1 FROM messages u2 WHERE u2.thread_root = m.thread_root AND u2.read = 0
         ))
@@ -132,18 +186,18 @@ internal interface MessageDao {
     )
     fun pagedThreads(
         myAuthor: AuthorId?,
-        wantListening: Boolean,
+        wantFollowing: Boolean,
         unreadOnly: Boolean,
         authorFilter: AuthorId?,
         textQuery: String?,
-        listenTier: Tier = Tier.LISTEN,
+        followTier: Tier = Tier.FOLLOW,
     ): PagingSource<Int, ThreadSummaryRow>
 }
 
 @Dao
-internal interface ListenDao {
+internal interface FollowDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun add(entry: ListenEntity)
+    suspend fun add(entry: FollowEntity)
 
     @Query("DELETE FROM listen_list WHERE author = :author")
     suspend fun remove(author: AuthorId)
@@ -177,18 +231,18 @@ internal interface BlocklistDao {
 }
 
 @Dao
-internal interface FavouriteDao {
+internal interface PinDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun star(entry: FavouriteRootEntity)
+    suspend fun pin(entry: PinnedRootEntity)
 
     @Query("DELETE FROM favourite_roots WHERE root = :root")
-    suspend fun unstar(root: MessageId)
+    suspend fun unpin(root: MessageId)
 
     @Query("SELECT root FROM favourite_roots")
-    suspend fun starredRoots(): List<MessageId>
+    suspend fun pinnedRoots(): List<MessageId>
 
     @Query("SELECT EXISTS(SELECT 1 FROM favourite_roots WHERE root = :root)")
-    fun observeIsStarred(root: MessageId): Flow<Boolean>
+    fun observeIsPinned(root: MessageId): Flow<Boolean>
 }
 
 @Dao
@@ -224,7 +278,7 @@ internal interface ContactDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(contact: ContactEntity)
 
-    /** Creates the row if absent; unlike [upsert], never clobbers an existing nickname. */
+    /** Creates the row if absent; unlike [upsert], never clobbers an existing nickname or verified flag. */
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIfAbsent(contact: ContactEntity)
 
@@ -233,6 +287,14 @@ internal interface ContactDao {
 
     @Query("SELECT author FROM contacts")
     suspend fun authors(): List<AuthorId>
+
+    /** Only settable by a completed live-sync confirm or QR verify scan — never as a side effect of naming someone. */
+    @Query("UPDATE contacts SET verified = 1 WHERE author = :author")
+    suspend fun markVerified(author: AuthorId)
+
+    /** Partial-column update so setting a nickname never clobbers [ContactEntity.verified] back to false. */
+    @Query("UPDATE contacts SET display_name = :nickname, added_at = :at WHERE author = :author")
+    suspend fun updateNickname(author: AuthorId, nickname: String?, at: Long)
 }
 
 /** The want-list: parent ids we noticed missing, opportunistically accepted from anyone until they age out after [WANT_TTL] fruitless syncs. */
@@ -258,24 +320,24 @@ internal interface WantDao {
 @Database(
     entities = [
         MessageEntity::class,
-        ListenEntity::class,
+        FollowEntity::class,
         BlockedAuthorEntity::class,
         BlockedRootEntity::class,
-        FavouriteRootEntity::class,
+        PinnedRootEntity::class,
         DirectoryEntity::class,
         WantEntity::class,
         ContactEntity::class,
     ],
-    // Pre-release, no real user data to preserve, so a version bump just wipes on upgrade.
-    version = 3,
+    // Bump this and add a Migration(N, N+1) to Migrations.kt for every schema change — see that file.
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
 internal abstract class DriftwoodDatabase : RoomDatabase() {
     abstract fun messages(): MessageDao
-    abstract fun listen(): ListenDao
+    abstract fun follow(): FollowDao
     abstract fun blocklist(): BlocklistDao
-    abstract fun favourites(): FavouriteDao
+    abstract fun pins(): PinDao
     abstract fun directory(): DirectoryDao
     abstract fun contacts(): ContactDao
     abstract fun wants(): WantDao
@@ -283,6 +345,8 @@ internal abstract class DriftwoodDatabase : RoomDatabase() {
 
 internal fun buildDriftwoodDatabase(context: Context, name: String = "driftwood.db"): DriftwoodDatabase =
     Room.databaseBuilder(context, DriftwoodDatabase::class.java, name)
-        // Pre-release: a schema change wipes and starts clean rather than migrating.
-        .fallbackToDestructiveMigration(dropAllTables = true)
+        // Every version bump ships a real Migration in Migrations.kt. No destructive fallback,
+        // and deliberately no fallbackToDestructiveMigrationOnDowngrade(): a missing/forgotten
+        // migration should crash loudly in testing, not silently wipe a real user's messages.
+        .addMigrations(*DRIFTWOOD_MIGRATIONS)
         .build()

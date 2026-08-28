@@ -20,15 +20,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
-/** What you can privately do about one identity: set a nickname, and whether you listen to them. */
+/** What you can privately do about one identity: set a nickname, and whether you follow them. */
 @Composable
 fun ContactControls(
     currentNickname: String?,
-    isListening: Boolean,
+    isFollowing: Boolean,
     onSetNickname: (String) -> Unit,
-    onToggleListen: () -> Unit,
+    onToggleFollow: () -> Unit,
     // False while blocked — disabled rather than hidden, until you unblock.
-    isListenEnabled: Boolean = true,
+    isFollowEnabled: Boolean = true,
     // Hidden on the sync confirm screen, which saves the draft itself via [onDraftChange].
     showSaveButton: Boolean = true,
     onDraftChange: (String) -> Unit = {},
@@ -61,21 +61,21 @@ fun ContactControls(
             Modifier.fillMaxWidth()
                 // The whole row toggles, not just the Switch — a bigger, more forgiving target.
                 .toggleable(
-                    value = isListening,
-                    enabled = isListenEnabled,
+                    value = isFollowing,
+                    enabled = isFollowEnabled,
                     role = Role.Switch,
-                    onValueChange = { onToggleListen() },
+                    onValueChange = { onToggleFollow() },
                 ),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(if (isListening) "Listening to their posts" else "Not listening")
-            Switch(checked = isListening, onCheckedChange = null, enabled = isListenEnabled)
+            Text(if (isFollowing) "Following their posts" else "Not following")
+            Switch(checked = isFollowing, onCheckedChange = null, enabled = isFollowEnabled)
         }
         Text(
-            if (!isListenEnabled) {
-                "You can't listen to someone you've blocked — unblock them first."
-            } else if (isListening) {
+            if (!isFollowEnabled) {
+                "You can't follow someone you've blocked — unblock them first."
+            } else if (isFollowing) {
                 "Turning this off won't remove what you already have — only future syncs stop."
             } else {
                 "You'll receive their messages from your next sync onward."

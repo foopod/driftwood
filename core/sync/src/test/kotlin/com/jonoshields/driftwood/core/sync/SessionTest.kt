@@ -15,7 +15,7 @@ class SessionTest {
     fun `a message from someone you follow arrives`() = runTest {
         val hers = alice.root("hello from alice", NOW - 1000)
         val aliceStore = InMemorySyncStore().seed(hers)
-        val bobStore = InMemorySyncStore().listenTo(alice.key)
+        val bobStore = InMemorySyncStore().follow(alice.key)
 
         val run = sync(aliceStore, bobStore)
 
@@ -29,7 +29,7 @@ class SessionTest {
     fun `nothing crosses when the peer already has it`() = runTest {
         val hers = alice.root("already known", NOW - 1000)
         val aliceStore = InMemorySyncStore().seed(hers)
-        val bobStore = InMemorySyncStore().listenTo(alice.key).seed(hers)
+        val bobStore = InMemorySyncStore().follow(alice.key).seed(hers)
 
         val run = sync(aliceStore, bobStore)
 
@@ -41,7 +41,7 @@ class SessionTest {
     fun `a name rides along with its author's content`() = runTest {
         val hers = alice.root("hello", NOW - 1000)
         val aliceStore = InMemorySyncStore().seed(hers).seedProfile(alice.profile(NOW - 2000))
-        val bobStore = InMemorySyncStore().listenTo(alice.key)
+        val bobStore = InMemorySyncStore().follow(alice.key)
 
         sync(aliceStore, bobStore)
 
@@ -53,7 +53,7 @@ class SessionTest {
         val root = alice.root("what do you think?", NOW - 3000)
         val strangerReply = carol.reply(root.id, root.id, "I think this", NOW - 2000)
         val aliceStore = InMemorySyncStore().seed(root).seed(strangerReply)
-        val bobStore = InMemorySyncStore().listenTo(alice.key)
+        val bobStore = InMemorySyncStore().follow(alice.key)
 
         sync(aliceStore, bobStore)
 
@@ -92,17 +92,17 @@ class SessionTest {
     }
 
     @Test
-    fun `an ancient want survives when the thread it belongs to is starred`() = runTest {
-        // The case the want-list actually exists to serve. Bob starred this thread, so the
+    fun `an ancient want survives when the thread it belongs to is pinned`() = runTest {
+        // The case the want-list actually exists to serve. Bob pinned this thread, so the
         // window does not apply to it (§4) and the missing parent stays once it arrives.
         //
-        // Without a star the previous test holds instead, and that is the honest limit of the
+        // Without a pin the previous test holds instead, and that is the honest limit of the
         // mechanism: content older than the window has aged out of the network by design, and
-        // fetching it back would defeat the bound that keeps storage finite. A star is how a
+        // fetching it back would defeat the bound that keeps storage finite. A pin is how a
         // person says this thread is the exception.
         val ancient = carol.root("from long ago", 1_000)
         val aliceStore = InMemorySyncStore().seed(ancient)
-        val bobStore = InMemorySyncStore().want(ancient.id).star(ancient.id)
+        val bobStore = InMemorySyncStore().want(ancient.id).pin(ancient.id)
 
         sync(aliceStore, bobStore)
 
@@ -113,7 +113,7 @@ class SessionTest {
     fun `content older than the window is dropped when nobody asked for it`() = runTest {
         val ancient = alice.root("from long ago", 1_000)
         val aliceStore = InMemorySyncStore().seed(ancient)
-        val bobStore = InMemorySyncStore().listenTo(alice.key)
+        val bobStore = InMemorySyncStore().follow(alice.key)
 
         val run = sync(aliceStore, bobStore)
 
@@ -127,7 +127,7 @@ class SessionTest {
     fun `we never relay for someone we blocked`() = runTest {
         val hers = carol.root("carol says", NOW - 1000)
         val aliceStore = InMemorySyncStore().seed(hers).block(authors = setOf(carol.key))
-        val bobStore = InMemorySyncStore().listenTo(carol.key)
+        val bobStore = InMemorySyncStore().follow(carol.key)
 
         val run = sync(aliceStore, bobStore)
 
@@ -142,7 +142,7 @@ class SessionTest {
         // who happen to relay someone we blocked.
         val hers = carol.root("carol says", NOW - 1000)
         val aliceStore = InMemorySyncStore().seed(hers)
-        val bobStore = InMemorySyncStore().listenTo(carol.key).block(authors = setOf(carol.key))
+        val bobStore = InMemorySyncStore().follow(carol.key).block(authors = setOf(carol.key))
 
         val run = sync(aliceStore, bobStore)
         val summary = run.responder.summary()
@@ -159,7 +159,7 @@ class SessionTest {
     fun `a tampered message is rejected, counted, and never stored`() = runTest {
         val hers = alice.root("honest", NOW - 1000)
         val tampered = MessageCodec.encode(hers).also { it[it.size - 1] = (it[it.size - 1] + 1).toByte() }
-        val bobStore = InMemorySyncStore().listenTo(alice.key)
+        val bobStore = InMemorySyncStore().follow(alice.key)
 
         val result = againstScriptedPeer(bobStore) { peerDeliveringMessages(it, listOf(tampered)) }
 
@@ -176,7 +176,7 @@ class SessionTest {
         val backlog = (1..GOSSIP_INTAKE_CAP + 50).map { n ->
             MessageCodec.encode(alice.root("m$n", NOW - 1000 - n))
         }
-        val bobStore = InMemorySyncStore().listenTo(alice.key)
+        val bobStore = InMemorySyncStore().follow(alice.key)
 
         val result = againstScriptedPeer(bobStore) { peerDeliveringMessages(it, backlog) }
 
@@ -186,7 +186,7 @@ class SessionTest {
 
     @Test
     fun `too many rejections tears the session down`() = runTest {
-        val bobStore = InMemorySyncStore().listenTo(alice.key)
+        val bobStore = InMemorySyncStore().follow(alice.key)
         val garbage = (1..VERIFY_FAIL_CUTOFF + 5).map { n ->
             MessageCodec.encode(alice.root("m$n", NOW - 1000)).also { it[it.size - 1] = 0xFF.toByte() }
         }
@@ -231,7 +231,7 @@ class SessionTest {
 
     @Test
     fun `declining the peer's identity aborts before anything is shared`() = runTest {
-        val aliceStore = InMemorySyncStore().listenTo(carol.key)
+        val aliceStore = InMemorySyncStore().follow(carol.key)
         val bobStore = InMemorySyncStore().seed(carol.root("hi", NOW - 1000))
 
         // Bob's human looks at Alice's identity and says no.

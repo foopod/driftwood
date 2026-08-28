@@ -46,7 +46,7 @@ class SettingsViewModel @Inject constructor(
             },
             windowDays = config.windowMillis / (24 * 60 * 60 * 1000),
             budgetMegabytes = config.totalBudgetBytes / (1024 * 1024),
-            budgetSplit = config.budgets().let { "${it.listen} / ${it.context} / ${it.gossip}" },
+            budgetSplit = config.budgets().let { "${it.follow} / ${it.context} / ${it.gossip}" },
         )
     )
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()

@@ -21,13 +21,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -42,6 +43,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -84,6 +86,7 @@ import kotlinx.coroutines.flow.flowOf
 @Composable
 fun HomeScreen(
     onOpenThread: (MessageId) -> Unit,
+    onOpenContact: (AuthorId) -> Unit,
     onCompose: () -> Unit,
     onSettings: () -> Unit,
     onSync: () -> Unit,
@@ -102,6 +105,7 @@ fun HomeScreen(
         onAuthorSelected = viewModel::selectAuthor,
         onAuthorFilterCleared = viewModel::clearAuthorFilter,
         onOpenThread = onOpenThread,
+        onOpenContact = onOpenContact,
         onCompose = onCompose,
         onSettings = onSettings,
         onSync = onSync,
@@ -122,6 +126,7 @@ internal fun HomeContent(
     onAuthorSelected: (AuthorId) -> Unit = {},
     onAuthorFilterCleared: () -> Unit = {},
     onOpenThread: (MessageId) -> Unit,
+    onOpenContact: (AuthorId) -> Unit = {},
     onCompose: () -> Unit,
     onSettings: () -> Unit,
     onSync: () -> Unit,
@@ -154,6 +159,22 @@ internal fun HomeContent(
         topBar = {
             TopAppBar(
                 title = {},
+                navigationIcon = {
+                    if (unreadOnly) {
+                        InputChip(
+                            selected = true,
+                            onClick = {
+                                unreadOnly = false
+                                onUnreadOnlyChanged(false)
+                            },
+                            label = { Text("Unread") },
+                            trailingIcon = {
+                                Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(18.dp))
+                            },
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                },
                 actions = {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     // The one thing worth a permanent, always-visible slot; everything else is one tap further away.
@@ -195,7 +216,7 @@ internal fun HomeContent(
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("Quick add") },
+                                text = { Text("Quick verify") },
                                 onClick = { menuOpen = false; onAddContact() },
                             )
                             DropdownMenuItem(
@@ -267,21 +288,34 @@ internal fun HomeContent(
                 val nameOf: (AuthorId) -> DisplayName = { author ->
                     state.names[author] ?: NameResolver.resolve(author, nickname = null, username = null)
                 }
+                // An active search explains an empty tab more precisely than unread-only does,
+                // on the rare occasion both are on at once.
+                val emptyReason = when {
+                    searchText.isNotBlank() || selectedAuthor != null -> "Nothing matches your search."
+                    unreadOnly -> "You're all caught up."
+                    else -> null
+                }
                 if (selectedTab == 0) {
                     ThreadTab(
                         threads = listeningItems,
-                        emptyMessage = "Nobody you listen to has posted yet.",
+                        emptyMessage = emptyReason ?: "Nobody you follow has posted yet.",
                         nameOf = nameOf,
                         myAuthor = myAuthor,
                         onOpenThread = onOpenThread,
+                        onOpenContact = onOpenContact,
+                        onOpenOwnProfile = onSettings,
+                        onRefresh = onSync,
                     )
                 } else {
                     ThreadTab(
                         threads = gossipItems,
-                        emptyMessage = "Nothing incidental has turned up yet.",
+                        emptyMessage = emptyReason ?: "Nothing incidental has turned up yet.",
                         nameOf = nameOf,
                         myAuthor = myAuthor,
                         onOpenThread = onOpenThread,
+                        onOpenContact = onOpenContact,
+                        onOpenOwnProfile = onSettings,
+                        onRefresh = onSync,
                     )
                 }
             }
@@ -370,6 +404,7 @@ private fun HomeSearchField(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ThreadTab(
     threads: LazyPagingItems<ThreadSummary>,
@@ -377,30 +412,39 @@ private fun ThreadTab(
     nameOf: (AuthorId) -> DisplayName,
     myAuthor: AuthorId?,
     onOpenThread: (MessageId) -> Unit,
+    onOpenContact: (AuthorId) -> Unit,
+    onOpenOwnProfile: () -> Unit,
+    onRefresh: () -> Unit,
 ) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        // Extra bottom clearance so the compose FAB never sits over the last thread.
-        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        if (threads.itemCount == 0) {
-            item {
-                Text(
-                    emptyMessage,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        } else {
-            items(count = threads.itemCount, key = threads.itemKey { it.rootId.toHex() }) { index ->
-                threads[index]?.let { thread ->
-                    ThreadRow(
-                        thread = thread,
-                        nameOf = nameOf,
-                        myAuthor = myAuthor,
-                        onClick = { onOpenThread(thread.rootId) },
+    // Never settles into a spinning state of its own — pulling just opens Sync, same as the
+    // top-bar button, since an actual sync needs a peer picked there, not a fire-and-forget refresh.
+    PullToRefreshBox(isRefreshing = false, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            // Extra bottom clearance so the compose FAB never sits over the last thread.
+            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (threads.itemCount == 0) {
+                item {
+                    Text(
+                        emptyMessage,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+            } else {
+                items(count = threads.itemCount, key = threads.itemKey { it.rootId.toHex() }) { index ->
+                    threads[index]?.let { thread ->
+                        ThreadRow(
+                            thread = thread,
+                            nameOf = nameOf,
+                            myAuthor = myAuthor,
+                            onClick = { onOpenThread(thread.rootId) },
+                            onOpenContact = onOpenContact,
+                            onOpenOwnProfile = onOpenOwnProfile,
+                        )
+                    }
                 }
             }
         }
@@ -428,9 +472,12 @@ private fun ThreadRow(
     nameOf: (AuthorId) -> DisplayName,
     myAuthor: AuthorId?,
     onClick: () -> Unit,
+    onOpenContact: (AuthorId) -> Unit,
+    onOpenOwnProfile: () -> Unit,
 ) {
     // Read once per row — a relative time drifting a few seconds stale isn't worth a ticker.
     val now = remember { System.currentTimeMillis() }
+    val preview = remember(thread) { computeThreadPreview(thread) }
 
     // One clickable area around three standalone pieces, not one card holding all of them.
     Column(
@@ -447,21 +494,29 @@ private fun ThreadRow(
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (rootAuthor == null) {
                         Text(
-                            "the start of this conversation isn't carried here",
+                            "the start of this thread isn't carried here",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     } else {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                             // Unread is a colour, not a position — a dot, not a badge count.
-                            if (thread.hasUnread) {
+                            if (preview.rootUnread) {
                                 Box(
                                     Modifier.size(8.dp).clip(CircleShape)
                                         .background(MaterialTheme.colorScheme.primary)
                                         .semantics { contentDescription = "Unread" },
                                 )
                             }
-                            AuthorName(nameOf(rootAuthor), isMine = rootAuthor == myAuthor)
+                            AuthorName(
+                                nameOf(rootAuthor),
+                                isMine = rootAuthor == myAuthor,
+                                modifier = Modifier.clickable(
+                                    onClick = {
+                                        if (rootAuthor == myAuthor) onOpenOwnProfile() else onOpenContact(rootAuthor)
+                                    },
+                                ),
+                            )
                             thread.rootTimestamp?.let {
                                 Text(
                                     RelativeTime.describe(it, now),
@@ -478,58 +533,127 @@ private fun ThreadRow(
                         )
                     }
                 }
-                // Read-only — favouriting only happens from the thread itself now.
-                if (thread.isFavourite) {
-                    Icon(Icons.Default.Star, contentDescription = "Favourited")
-                }
-            }
-        }
-
-        val listenedAuthor = thread.latestListenedAuthor
-        if (listenedAuthor != null) {
-            // Root plus the reply, not the reply alone — indented/muted so it reads as an answer.
-            Card(
-                Modifier.fillMaxWidth().padding(start = 24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            ) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        AuthorName(nameOf(listenedAuthor), isMine = listenedAuthor == myAuthor)
-                        thread.latestListenedTimestamp?.let {
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Read-only — pinning only happens from the thread itself now.
+                    if (thread.isPinned) {
+                        Icon(
+                            imageVector = Icons.Filled.PushPin,
+                            contentDescription = "Pinned",
+                        )
+                    }
+                    preview.replyCount?.let { count ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                RelativeTime.describe(it, now),
+                                count.toString(),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Comment,
+                                contentDescription = "$count replies",
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
-                    Text(
-                        "replied: ${thread.latestListenedText.orEmpty()}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
                 }
             }
         }
 
-        // Only what isn't already visible above: root and quoted reply each count for one.
-        val shown = (if (rootAuthor != null) 1 else 0) + (if (listenedAuthor != null) 1 else 0)
-        val more = thread.messageCount - shown
-        if (more > 0) {
-            Card(
-                Modifier.fillMaxWidth().padding(start = 24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            ) {
-                Text(
-                    (if (more == 1) "1 more message" else "$more more messages") + "  ›",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        when (val replyPreview = preview.preview) {
+            ReplyPreview.None -> Unit
+            is ReplyPreview.Snippets -> {
+                // Root plus each reply, not the reply alone — indented/muted so it reads as an answer.
+                // Shown oldest-first, like the conversation happened; the dot only ever marks the
+                // newest one — it's one unread signal, not one per card.
+                val newestTimestamp = replyPreview.replies.maxOf { it.timestamp }
+                replyPreview.replies.forEach { snippet ->
+                    Card(
+                        Modifier.fillMaxWidth().padding(start = 24.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                if (preview.previewUnread && snippet.timestamp == newestTimestamp) {
+                                    Box(
+                                        Modifier.size(8.dp).clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primary)
+                                            .semantics { contentDescription = "Unread" },
+                                    )
+                                }
+                                AuthorName(
+                                    nameOf(snippet.author),
+                                    isMine = snippet.author == myAuthor,
+                                    modifier = Modifier.clickable(
+                                        onClick = {
+                                            if (snippet.author == myAuthor) onOpenOwnProfile() else onOpenContact(snippet.author)
+                                        },
+                                    ),
+                                )
+                                Text(
+                                    RelativeTime.describe(snippet.timestamp, now),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Text(
+                                "replied: ${snippet.text}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+            is ReplyPreview.Summary -> {
+                Card(
+                    Modifier.fillMaxWidth().padding(start = 24.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (preview.previewUnread) {
+                            Box(
+                                Modifier.size(8.dp).clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary)
+                                    .semantics { contentDescription = "Unread" },
+                            )
+                        }
+                        Text(
+                            replySummaryText(replyPreview, preview.previewUnread, nameOf),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
     }
+}
+
+private fun replySummaryText(
+    summary: ReplyPreview.Summary,
+    unread: Boolean,
+    nameOf: (AuthorId) -> DisplayName,
+): String {
+    val count = when {
+        summary.count == 1 && unread -> "1 unread reply"
+        summary.count == 1 -> "1 reply"
+        unread -> "${summary.count} unread replies"
+        else -> "${summary.count} replies"
+    }
+    if (summary.names.isEmpty()) return count
+    val labels = summary.names.map { nameOf(it).label ?: nameOf(it).fingerprint }
+    val named = when (labels.size) {
+        1 -> labels[0]
+        else -> "${labels[0]} and ${labels[1]}"
+    }
+    val suffix = if (summary.moreCount > 0) " + ${summary.moreCount} more" else ""
+    return "$count from $named$suffix"
 }
 
 /** Default for the preview/test-friendly [HomeContent] parameters — an always-empty page. */
@@ -555,24 +679,48 @@ private fun ThreadsPreview() {
         rootAuthor = author,
         rootText = "Trying out this gossip thing.",
         rootTimestamp = System.currentTimeMillis() - 3_600_000,
-        latestListenedAuthor = author,
-        latestListenedText = "Working nicely so far.",
-        latestListenedTimestamp = System.currentTimeMillis() - 300_000,
-        messageCount = 2,
-        hasUnread = false,
-        isFavourite = false,
+        rootUnread = false,
+        replyCount = 1,
+        unreadReplyCount = 0,
+        knownReplyCount = 1,
+        knownUnreadReplyCount = 0,
+        latestKnownReplyAuthor = author,
+        latestKnownReplyText = "Working nicely so far.",
+        latestKnownReplyTimestamp = System.currentTimeMillis() - 300_000,
+        secondKnownReplyAuthor = null,
+        secondKnownReplyText = null,
+        secondKnownReplyTimestamp = null,
+        latestKnownUnreadReplyAuthor = null,
+        latestKnownUnreadReplyText = null,
+        latestKnownUnreadReplyTimestamp = null,
+        secondKnownUnreadReplyAuthor = null,
+        secondKnownUnreadReplyText = null,
+        secondKnownUnreadReplyTimestamp = null,
+        isPinned = false,
     )
     val gossip = ThreadSummary(
         rootId = MessageId.of(ByteArray(32) { 2 }),
         rootAuthor = null,
         rootText = null,
         rootTimestamp = null,
-        latestListenedAuthor = null,
-        latestListenedText = null,
-        latestListenedTimestamp = null,
-        messageCount = 4,
-        hasUnread = false,
-        isFavourite = false,
+        rootUnread = false,
+        replyCount = 4,
+        unreadReplyCount = 0,
+        knownReplyCount = 0,
+        knownUnreadReplyCount = 0,
+        latestKnownReplyAuthor = null,
+        latestKnownReplyText = null,
+        latestKnownReplyTimestamp = null,
+        secondKnownReplyAuthor = null,
+        secondKnownReplyText = null,
+        secondKnownReplyTimestamp = null,
+        latestKnownUnreadReplyAuthor = null,
+        latestKnownUnreadReplyText = null,
+        latestKnownUnreadReplyTimestamp = null,
+        secondKnownUnreadReplyAuthor = null,
+        secondKnownUnreadReplyText = null,
+        secondKnownUnreadReplyTimestamp = null,
+        isPinned = false,
     )
     DriftwoodTheme {
         HomeContent(

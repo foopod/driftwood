@@ -30,6 +30,8 @@ androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", versi
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3"}
 # Material Symbols (the standard vector icon set) — Search/Close, replacing hand-rolled glyphs.
 androidx-compose-material-icons-core = { group = "androidx.compose.material", name = "material-icons-core"}
+# Full icon set (Pin, etc.) — the handful core doesn't cover.
+androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended"}
 androidx-compose-ui = { group = "androidx.compose.ui", name = "ui"}
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview"}
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4"}

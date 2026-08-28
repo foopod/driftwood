@@ -12,13 +12,13 @@ class TierClassifierTest {
     private val threadA = msgId(100)
     private val threadB = msgId(200)
 
-    private fun classify(messages: List<HeldMessage>, listen: Set<com.jonoshields.driftwood.core.model.AuthorId>) =
-        TierClassifier.classify(messages, listen)
+    private fun classify(messages: List<HeldMessage>, follow: Set<com.jonoshields.driftwood.core.model.AuthorId>) =
+        TierClassifier.classify(messages, follow)
 
     @Test
-    fun `a listened author's message is listen tier`() {
+    fun `a listened author's message is follow tier`() {
         val message = held(listened, 1, threadA)
-        assertEquals(Tier.LISTEN, classify(listOf(message), setOf(listened))[message.id])
+        assertEquals(Tier.FOLLOW, classify(listOf(message), setOf(listened))[message.id])
     }
 
     @Test
@@ -32,7 +32,7 @@ class TierClassifierTest {
         val mine = held(listened, 1, threadA)
         val theirs = held(stranger, 2, threadA)
         val tiers = classify(listOf(mine, theirs), setOf(listened))
-        assertEquals(Tier.LISTEN, tiers[mine.id])
+        assertEquals(Tier.FOLLOW, tiers[mine.id])
         assertEquals(Tier.CONTEXT, tiers[theirs.id])
     }
 
@@ -45,14 +45,14 @@ class TierClassifierTest {
     }
 
     @Test
-    fun `listen beats context when both could apply`() {
-        // Precedence is listen > context > gossip: an author you listen to replying in a
+    fun `follow beats context when both could apply`() {
+        // Precedence is follow > context > gossip: an author you follow replying in a
         // thread you follow is a subscription, not context.
         val a = held(listened, 1, threadA)
         val b = held(listened, 2, threadA)
         val tiers = classify(listOf(a, b), setOf(listened))
-        assertEquals(Tier.LISTEN, tiers[a.id])
-        assertEquals(Tier.LISTEN, tiers[b.id])
+        assertEquals(Tier.FOLLOW, tiers[a.id])
+        assertEquals(Tier.FOLLOW, tiers[b.id])
     }
 
     @Test
@@ -67,7 +67,7 @@ class TierClassifierTest {
 
     @Test
     fun `adding a listened author reclassifies a whole thread`() {
-        // One change to the listen set reclassifies both the thread (to context) and the author's own messages (to listen).
+        // One change to the follow set reclassifies both the thread (to context) and the author's own messages (to follow).
         val theirs = held(stranger, 1, threadA)
         val alsoTheirs = held(otherStranger, 2, threadA)
         val messages = listOf(theirs, alsoTheirs)
@@ -77,7 +77,7 @@ class TierClassifierTest {
         assertEquals(Tier.GOSSIP, before[alsoTheirs.id])
 
         val after = classify(messages, setOf(stranger))
-        assertEquals(Tier.LISTEN, after[theirs.id])
+        assertEquals(Tier.FOLLOW, after[theirs.id])
         assertEquals(Tier.CONTEXT, after[alsoTheirs.id])
     }
 

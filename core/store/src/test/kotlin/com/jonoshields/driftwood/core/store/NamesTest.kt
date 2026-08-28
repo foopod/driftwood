@@ -67,11 +67,11 @@ class DirectoryPrunerTest {
 
     private fun plan(
         entries: List<DirectoryEntry>,
-        listen: Set<com.jonoshields.driftwood.core.model.AuthorId> = emptySet(),
+        follow: Set<com.jonoshields.driftwood.core.model.AuthorId> = emptySet(),
         contacts: Set<com.jonoshields.driftwood.core.model.AuthorId> = emptySet(),
         held: Set<com.jonoshields.driftwood.core.model.AuthorId> = emptySet(),
         blocked: Set<com.jonoshields.driftwood.core.model.AuthorId> = emptySet(),
-    ) = DirectoryPruner.plan(entries, listen, contacts, held, blocked, ttl, now)
+    ) = DirectoryPruner.plan(entries, follow, contacts, held, blocked, ttl, now)
 
     @Test
     fun `a stale unknown name ages out`() {
@@ -84,9 +84,9 @@ class DirectoryPrunerTest {
     }
 
     @Test
-    fun `a listened author is immune however stale`() {
+    fun `a followed author is immune however stale`() {
         val ancient = listOf(entry(1, 0))
-        assertTrue(plan(ancient, listen = setOf(author(1))).isEmpty())
+        assertTrue(plan(ancient, follow = setOf(author(1))).isEmpty())
     }
 
     @Test
@@ -100,11 +100,11 @@ class DirectoryPrunerTest {
     }
 
     @Test
-    fun `blocking drops the name even if you listen to them`() {
+    fun `blocking drops the name even if you follow them`() {
         // Blocked beats every reason to keep, exactly as it does for content.
         assertEquals(
             setOf(author(1)),
-            plan(listOf(entry(1, now)), listen = setOf(author(1)), blocked = setOf(author(1))),
+            plan(listOf(entry(1, now)), follow = setOf(author(1)), blocked = setOf(author(1))),
         )
     }
 

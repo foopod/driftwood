@@ -41,23 +41,47 @@ class HomeContentTest {
         rootText: String?,
         rootAuthor: AuthorId? = author(seed),
         rootTimestamp: Long? = if (rootAuthor != null) 1_000L else null,
-        latestListenedAuthor: AuthorId? = null,
-        latestListenedText: String? = null,
-        latestListenedTimestamp: Long? = if (latestListenedAuthor != null) 1_000L else null,
-        messageCount: Int = 1,
-        hasUnread: Boolean = false,
-        isFavourite: Boolean = false,
+        rootUnread: Boolean = false,
+        latestKnownReplyAuthor: AuthorId? = null,
+        latestKnownReplyText: String? = null,
+        latestKnownReplyTimestamp: Long? = if (latestKnownReplyAuthor != null) 1_000L else null,
+        secondKnownReplyAuthor: AuthorId? = null,
+        secondKnownReplyText: String? = null,
+        secondKnownReplyTimestamp: Long? = if (secondKnownReplyAuthor != null) 1_000L else null,
+        replyCount: Int = if (latestKnownReplyAuthor != null) 1 else 0,
+        unreadReplyCount: Int = 0,
+        knownReplyCount: Int = if (latestKnownReplyAuthor != null) 1 else 0,
+        knownUnreadReplyCount: Int = 0,
+        latestKnownUnreadReplyAuthor: AuthorId? = null,
+        latestKnownUnreadReplyText: String? = null,
+        latestKnownUnreadReplyTimestamp: Long? = if (latestKnownUnreadReplyAuthor != null) 1_000L else null,
+        secondKnownUnreadReplyAuthor: AuthorId? = null,
+        secondKnownUnreadReplyText: String? = null,
+        secondKnownUnreadReplyTimestamp: Long? = if (secondKnownUnreadReplyAuthor != null) 1_000L else null,
+        isPinned: Boolean = false,
     ) = ThreadSummary(
         rootId = MessageId.of(ByteArray(32) { seed.toByte() }),
         rootAuthor = rootAuthor,
         rootText = rootText,
         rootTimestamp = rootTimestamp,
-        latestListenedAuthor = latestListenedAuthor,
-        latestListenedText = latestListenedText,
-        latestListenedTimestamp = latestListenedTimestamp,
-        messageCount = messageCount,
-        hasUnread = hasUnread,
-        isFavourite = isFavourite,
+        rootUnread = rootUnread,
+        replyCount = replyCount,
+        unreadReplyCount = unreadReplyCount,
+        knownReplyCount = knownReplyCount,
+        knownUnreadReplyCount = knownUnreadReplyCount,
+        latestKnownReplyAuthor = latestKnownReplyAuthor,
+        latestKnownReplyText = latestKnownReplyText,
+        latestKnownReplyTimestamp = latestKnownReplyTimestamp,
+        secondKnownReplyAuthor = secondKnownReplyAuthor,
+        secondKnownReplyText = secondKnownReplyText,
+        secondKnownReplyTimestamp = secondKnownReplyTimestamp,
+        latestKnownUnreadReplyAuthor = latestKnownUnreadReplyAuthor,
+        latestKnownUnreadReplyText = latestKnownUnreadReplyText,
+        latestKnownUnreadReplyTimestamp = latestKnownUnreadReplyTimestamp,
+        secondKnownUnreadReplyAuthor = secondKnownUnreadReplyAuthor,
+        secondKnownUnreadReplyText = secondKnownUnreadReplyText,
+        secondKnownUnreadReplyTimestamp = secondKnownUnreadReplyTimestamp,
+        isPinned = isPinned,
     )
 
     private fun pageOf(vararg threads: ThreadSummary): Flow<PagingData<ThreadSummary>> =
@@ -72,6 +96,8 @@ class HomeContentTest {
         onSearchTextChanged: (String) -> Unit = {},
         onAuthorSelected: (AuthorId) -> Unit = {},
         onAuthorFilterCleared: () -> Unit = {},
+        onOpenContact: (AuthorId) -> Unit = {},
+        onSettings: () -> Unit = {},
     ) {
         compose.setContent {
             HomeContent(
@@ -84,8 +110,9 @@ class HomeContentTest {
                 onAuthorSelected = onAuthorSelected,
                 onAuthorFilterCleared = onAuthorFilterCleared,
                 onOpenThread = { openedThread = it },
+                onOpenContact = onOpenContact,
                 onCompose = {},
-                onSettings = {},
+                onSettings = onSettings,
                 onSync = {},
             )
         }
@@ -112,7 +139,7 @@ class HomeContentTest {
     fun `an empty tab says so rather than showing a blank list`() {
         show()
 
-        compose.onNodeWithText("Nobody you listen to has posted yet.").assertExists()
+        compose.onNodeWithText("Nobody you follow has posted yet.").assertExists()
     }
 
     @Test
@@ -130,7 +157,7 @@ class HomeContentTest {
         val thread = summary(1, rootText = null, rootAuthor = null)
         show(listening = listOf(thread))
 
-        compose.onNodeWithText("the start of this conversation isn't carried here").assertExists()
+        compose.onNodeWithText("the start of this thread isn't carried here").assertExists()
     }
 
     @Test
@@ -145,15 +172,72 @@ class HomeContentTest {
     }
 
     @Test
-    fun `a listened reply is shown alongside the root, not instead of it`() {
+    fun `tapping the root author opens their profile, not the thread`() {
+        val author = author(1)
+        val thread = summary(1, "hello", rootAuthor = author)
+        val names = mapOf(author to NameResolver.resolve(author, nickname = "Sam", username = null))
+        var openedContact: AuthorId? = null
+        show(state = HomeUiState.Threads(names = names), listening = listOf(thread), onOpenContact = { openedContact = it })
+
+        compose.onNodeWithText("Sam").performClick()
+
+        assertEquals(author, openedContact)
+        assertEquals(null, openedThread)
+    }
+
+    @Test
+    fun `tapping your own name in the root opens your own profile, not the thread`() {
+        val me = author(9)
+        val thread = summary(1, "hello", rootAuthor = me)
+        val names = mapOf(me to NameResolver.resolve(me, nickname = null, username = "Me"))
+        var openedContact: AuthorId? = null
+        var openedOwnProfile = false
+        show(
+            state = HomeUiState.Threads(names = names),
+            myAuthor = me,
+            listening = listOf(thread),
+            onOpenContact = { openedContact = it },
+            onSettings = { openedOwnProfile = true },
+        )
+
+        compose.onNodeWithText("Me").performClick()
+
+        assertEquals(null, openedContact)
+        assertEquals(null, openedThread)
+        assertEquals(true, openedOwnProfile)
+    }
+
+    @Test
+    fun `tapping a reply snippet's author opens their profile, not the thread`() {
         val root = author(1)
         val replier = author(2)
         val thread = summary(
             seed = 1,
             rootText = "the root",
             rootAuthor = root,
-            latestListenedAuthor = replier,
-            latestListenedText = "the reply",
+            latestKnownReplyAuthor = replier,
+            latestKnownReplyText = "the reply",
+        )
+        val names = mapOf(replier to NameResolver.resolve(replier, nickname = "Dad", username = null))
+        var openedContact: AuthorId? = null
+        show(state = HomeUiState.Threads(names = names), listening = listOf(thread), onOpenContact = { openedContact = it })
+
+        compose.onNodeWithText("Dad").performClick()
+
+        assertEquals(replier, openedContact)
+        assertEquals(null, openedThread)
+    }
+
+    @Test
+    fun `a known reply is shown alongside the root, not instead of it`() {
+        val root = author(1)
+        val replier = author(2)
+        val thread = summary(
+            seed = 1,
+            rootText = "the root",
+            rootAuthor = root,
+            latestKnownReplyAuthor = replier,
+            latestKnownReplyText = "the reply",
         )
         val names = mapOf(replier to NameResolver.resolve(replier, nickname = "Dad", username = null))
         show(state = HomeUiState.Threads(names = names), listening = listOf(thread))
@@ -164,8 +248,8 @@ class HomeContentTest {
     }
 
     @Test
-    fun `with no listened reply, only the root is shown`() {
-        val thread = summary(1, "just the root", latestListenedAuthor = null)
+    fun `with no known reply, only the root is shown`() {
+        val thread = summary(1, "just the root", latestKnownReplyAuthor = null)
         show(listening = listOf(thread))
 
         compose.onNodeWithText("just the root").assertExists()
@@ -173,38 +257,67 @@ class HomeContentTest {
     }
 
     @Test
-    fun `the count only names messages not already shown as text`() {
-        // Root plus the quoted reply are two of the five held messages already visible above
-        // this line — repeating that count here would just be noise.
-        val root = author(1)
+    fun `the reply count shows as a number with the comment icon, next to the root`() {
+        val thread = summary(1, "the root", replyCount = 5)
+        show(listening = listOf(thread))
+
+        compose.onNodeWithText("5").assertExists()
+        compose.onNodeWithContentDescription("5 replies").assertExists()
+    }
+
+    @Test
+    fun `no replies means no count or icon is shown at all`() {
+        val thread = summary(1, "the root", replyCount = 0)
+        show(listening = listOf(thread))
+
+        compose.onAllNodesWithContentDescription("replies", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun `a busy thread with a known replier shows the names summary, not the snippet`() {
         val replier = author(2)
         val thread = summary(
             seed = 1,
             rootText = "the root",
-            rootAuthor = root,
-            latestListenedAuthor = replier,
-            latestListenedText = "the reply",
-            messageCount = 5,
+            latestKnownReplyAuthor = replier,
+            latestKnownReplyText = "the reply",
+            replyCount = 5,
+            knownReplyCount = 1,
+        )
+        val names = mapOf(replier to NameResolver.resolve(replier, nickname = "Dad", username = null))
+        show(state = HomeUiState.Threads(names = names), listening = listOf(thread))
+
+        compose.onNodeWithText("5 replies from Dad").assertExists()
+        compose.onAllNodesWithText("replied:", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun `a busy thread with no known repliers shows a plain unnamed count`() {
+        val thread = summary(1, "the root", replyCount = 5, knownReplyCount = 0)
+        show(listening = listOf(thread))
+
+        compose.onNodeWithText("5 replies").assertExists()
+    }
+
+    @Test
+    fun `new replies since the root was read move the unread dot to the reply card`() {
+        val replier = author(2)
+        val thread = summary(
+            seed = 1,
+            rootText = "the root",
+            rootUnread = false,
+            replyCount = 1,
+            unreadReplyCount = 1,
+            knownReplyCount = 1,
+            knownUnreadReplyCount = 1,
+            latestKnownUnreadReplyAuthor = replier,
+            latestKnownUnreadReplyText = "brand new",
         )
         show(listening = listOf(thread))
 
-        compose.onNodeWithText("3 more messages", substring = true).assertExists()
-    }
-
-    @Test
-    fun `a single leftover message is singular`() {
-        val thread = summary(1, "the root", messageCount = 2)
-        show(listening = listOf(thread))
-
-        compose.onNodeWithText("1 more message", substring = true).assertExists()
-    }
-
-    @Test
-    fun `nothing left over means no count is shown at all`() {
-        val thread = summary(1, "the root", messageCount = 1)
-        show(listening = listOf(thread))
-
-        compose.onAllNodesWithText("more message", substring = true).assertCountEquals(0)
+        // No dot on the root itself...
+        compose.onAllNodesWithContentDescription("Unread").assertCountEquals(1)
+        compose.onNodeWithText("replied: brand new").assertExists()
     }
 
     @Test
@@ -232,9 +345,9 @@ class HomeContentTest {
             seed = 1,
             rootText = "the root",
             rootTimestamp = 1_000L,
-            latestListenedAuthor = replier,
-            latestListenedText = "the reply",
-            latestListenedTimestamp = System.currentTimeMillis(),
+            latestKnownReplyAuthor = replier,
+            latestKnownReplyText = "the reply",
+            latestKnownReplyTimestamp = System.currentTimeMillis(),
         )
         show(listening = listOf(thread))
 
@@ -244,29 +357,29 @@ class HomeContentTest {
 
     @Test
     fun `an unread thread shows the unread indicator, a read one does not`() {
-        val unread = summary(1, "unread", hasUnread = true)
-        val read = summary(2, "read", hasUnread = false)
+        val unread = summary(1, "unread", rootUnread = true)
+        val read = summary(2, "read", rootUnread = false)
         show(listening = listOf(unread, read))
 
         compose.onAllNodesWithContentDescription("Unread").assertCountEquals(1)
     }
 
     @Test
-    fun `a favourited thread shows a read-only star marker, on either tab`() {
-        val thread = summary(1, "hello", hasUnread = true, isFavourite = true)
+    fun `a pinned thread shows a read-only pin marker, on either tab`() {
+        val thread = summary(1, "hello", rootUnread = true, isPinned = true)
         show(gossip = listOf(thread))
         compose.onNodeWithText("Other").performClick()
 
         // Favouriting only happens from the thread itself; this marker isn't a click target, just a visibility check.
-        compose.onNodeWithContentDescription("Favourited").assertExists()
+        compose.onNodeWithContentDescription("Pinned").assertExists()
     }
 
     @Test
-    fun `an unfavourited thread shows no star marker at all`() {
-        val thread = summary(1, "hello", isFavourite = false)
+    fun `an unpinned thread shows no pin marker at all`() {
+        val thread = summary(1, "hello", isPinned = false)
         show(listening = listOf(thread))
 
-        compose.onNodeWithContentDescription("Favourited").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Pinned").assertDoesNotExist()
     }
 
     @Test
@@ -423,5 +536,58 @@ class HomeContentTest {
         // Exactly one "Unread only" control exists at all, regardless of which tab is showing
         // — proving it lives above the tabs rather than being duplicated per tab.
         compose.onAllNodesWithText("Unread only").assertCountEquals(1)
+    }
+
+    private fun enableUnreadOnly() {
+        compose.onNodeWithContentDescription("More options").performClick()
+        compose.onNodeWithText("Unread only").performClick()
+    }
+
+    @Test
+    fun `enabling unread-only shows a clearable chip top-left`() {
+        show()
+
+        enableUnreadOnly()
+
+        compose.onNodeWithText("Unread").assertExists()
+    }
+
+    @Test
+    fun `no chip is shown while unread-only is off`() {
+        show()
+
+        compose.onNodeWithText("Unread").assertDoesNotExist()
+    }
+
+    @Test
+    fun `tapping the unread chip's close icon clears the filter`() {
+        var reported: Boolean? = null
+        show(onUnreadOnlyChanged = { reported = it })
+
+        enableUnreadOnly()
+        compose.onNodeWithContentDescription("Clear").performClick()
+
+        assertEquals(false, reported)
+        compose.onNodeWithText("Unread").assertDoesNotExist()
+    }
+
+    @Test
+    fun `unread-only leaving a tab empty explains why, instead of the default message`() {
+        show()
+
+        enableUnreadOnly()
+
+        compose.onNodeWithText("You're all caught up.").assertExists()
+        compose.onNodeWithText("Nobody you follow has posted yet.").assertDoesNotExist()
+    }
+
+    @Test
+    fun `an active search leaving a tab empty explains why, instead of the default message`() {
+        show()
+        expandSearch()
+
+        compose.onNodeWithText("Search").performTextInput("nobody")
+
+        compose.onNodeWithText("Nothing matches your search.").assertExists()
     }
 }

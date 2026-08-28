@@ -5,7 +5,7 @@ import com.jonoshields.driftwood.core.model.MessageId
 import com.jonoshields.driftwood.core.model.OrderKey
 
 enum class EvictionReason {
-    /** Author or thread is on the local blocklist. Beats everything, including favourite. */
+    /** Author or thread is on the local blocklist. Beats everything, including pinned. */
     BLOCKED,
 
     /** `effective_time` fell outside the window. */
@@ -22,29 +22,29 @@ data class PruningPlan(
     val tiers: Map<MessageId, Tier>,
 )
 
-/** Fair-share pruning: budget split equally across authors present, applied in order (blocked, stale, favourited-exempt, classify, fair-share) since each stage changes what the next sees. */
+/** Fair-share pruning: budget split equally across authors present, applied in order (blocked, stale, pinned-exempt, classify, fair-share) since each stage changes what the next sees. */
 object Pruner {
 
     fun plan(
         held: List<HeldMessage>,
-        listen: Set<AuthorId>,
+        follow: Set<AuthorId>,
         blocklist: Blocklist,
-        favourites: Favourites,
+        pinnedRoots: PinnedRoots,
         budgets: PartitionBudgets,
         windowMillis: Long,
         nowMillis: Long,
     ): PruningPlan {
         val reasons = mutableMapOf<MessageId, EvictionReason>()
 
-        // Blocked, then stale — a star survives the window but never a block.
+        // Blocked, then stale — a pin survives the window but never a block.
         val surviving = held.filter { message ->
-            val starred = message.threadRoot in favourites
+            val pinned = message.threadRoot in pinnedRoots
             when {
                 message.author in blocklist.authors || message.threadRoot in blocklist.roots -> {
                     reasons[message.id] = EvictionReason.BLOCKED
                     false
                 }
-                !starred && message.effectiveTime < nowMillis - windowMillis -> {
+                !pinned && message.effectiveTime < nowMillis - windowMillis -> {
                     reasons[message.id] = EvictionReason.OUT_OF_WINDOW
                     false
                 }
@@ -52,12 +52,12 @@ object Pruner {
             }
         }
 
-        // 4. Classify everything still held, favourited threads included.
-        val tiers = TierClassifier.classify(surviving, listen)
+        // 4. Classify everything still held, pinned threads included.
+        val tiers = TierClassifier.classify(surviving, follow)
 
-        // 5. Fair share, per partition, ignoring favourited threads entirely.
+        // 5. Fair share, per partition, ignoring pinned threads entirely.
         surviving
-            .filterNot { it.threadRoot in favourites }
+            .filterNot { it.threadRoot in pinnedRoots }
             .groupBy { tiers.getValue(it.id) }
             .forEach { (tier, messages) ->
                 evictOverQuota(messages, budgets[tier]).forEach { id ->
