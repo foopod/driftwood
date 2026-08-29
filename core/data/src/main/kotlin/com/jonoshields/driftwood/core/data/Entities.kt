@@ -64,6 +64,8 @@ internal class MessageEntity(
     @ColumnInfo(name = "effective_time") val effectiveTime: Long,
     val read: Boolean,
     val tier: Tier,
+    /** True only while this device holds a message it authored that has never left it — cleared the moment it's actually served to a peer. The one thing local deletion is allowed to touch. */
+    @ColumnInfo(name = "unsent") val unsent: Boolean = false,
 )
 
 /** The projection every sync read returns — not a [MessageEntity], since a session only needs ids, not text and signatures. */

@@ -4,24 +4,27 @@ import com.jonoshields.driftwood.core.model.Message
 import com.jonoshields.driftwood.core.model.MessageId
 import com.jonoshields.driftwood.core.model.OrderKey
 
-/** One message in a thread; [detached] means its stated parent isn't held — never an error. */
+/** One message in a thread; [detached] means its stated parent isn't held — never an error. [unsent] means it's still eligible for local deletion — see `MessageEntity.unsent`. */
 data class ThreadNode(
     val message: Message,
     val children: List<ThreadNode>,
     val detached: Boolean,
+    val unsent: Boolean = false,
 )
 
-/** A thread as currently held; [root] is null when the root message itself isn't held (a normal state, not damage). */
+/** A thread as currently held; [root] is null when the root message itself isn't held (a normal state, not damage). [rootUnsent] mirrors [ThreadNode.unsent] for the root, which isn't wrapped in one. */
 data class ThreadView(
     val rootId: MessageId,
     val root: Message?,
     val replies: List<ThreadNode>,
+    val rootUnsent: Boolean = false,
 )
 
 /** Builds a thread's tree from whatever fragment is held; every gap has a defined rendering, nothing here fails. */
 object ThreadAssembler {
 
-    fun assemble(rootId: MessageId, messages: List<Message>): ThreadView {
+    /** [unsentIds] is local-only bookkeeping (never part of the signed [Message]/`MessageBody`), so it's passed in as a plain id set rather than any storage-specific type. */
+    fun assemble(rootId: MessageId, messages: List<Message>, unsentIds: Set<MessageId> = emptySet()): ThreadView {
         val inThread = messages.filter { it.threadRoot == rootId }
         val root = inThread.firstOrNull { it.isRoot && it.id == rootId }
 
@@ -54,7 +57,7 @@ object ThreadAssembler {
                 .filter { it.id !in visited }
                 .sortedBy { OrderKey(it.body.timestampMillis, it.id) }
                 .map(::build)
-            return ThreadNode(message, children, message.id in detached)
+            return ThreadNode(message, children, message.id in detached, unsent = message.id in unsentIds)
         }
 
         return ThreadView(
@@ -64,6 +67,7 @@ object ThreadAssembler {
                 .sortedBy { OrderKey(it.body.timestampMillis, it.id) }
                 .filter { it.id !in visited }
                 .map(::build),
+            rootUnsent = root != null && root.id in unsentIds,
         )
     }
 }

@@ -45,6 +45,21 @@ internal interface MessageDao {
     @Query("DELETE FROM messages WHERE id IN (:ids)")
     suspend fun deleteChunk(ids: List<MessageId>)
 
+    /** Every row in this thread, gone at once — only ever called once every row is confirmed unsent and yours. */
+    @Query("DELETE FROM messages WHERE thread_root = :root")
+    suspend fun deleteThreadRows(root: MessageId)
+
+    /** True if the invariant local deletion depends on doesn't hold — deleting a whole thread should refuse outright rather than guess which rows to skip. */
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM messages WHERE thread_root = :root " +
+            "AND (author != :myAuthor OR unsent = 0))"
+    )
+    suspend fun threadHasIneligibleRow(root: MessageId, myAuthor: AuthorId): Boolean
+
+    /** Clears [MessageEntity.unsent] the moment content is actually handed to a peer — see [SyncStore.readMessages]. A no-op for ids that were never unsent. */
+    @Query("UPDATE messages SET unsent = 0 WHERE id IN (:ids)")
+    suspend fun clearUnsent(ids: List<MessageId>)
+
     // ---- sync reads: metadata only, so a session can decide what to send without loading text.
 
     @Query("SELECT id, author, thread_root, effective_time FROM messages WHERE author IN (:authors)")
@@ -329,7 +344,7 @@ internal interface WantDao {
         ContactEntity::class,
     ],
     // Bump this and add a Migration(N, N+1) to Migrations.kt for every schema change — see that file.
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

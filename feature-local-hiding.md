@@ -1,10 +1,15 @@
 # Hiding posts locally
 
 Expands README item 6 ("Planned, not yet implemented"). A pure display-layer filter for curating
-your own feed. Deliberately the lightweight sibling of [[feature-local-deletion]]: hiding never
-touches storage, never affects what you relay to others, and — unlike deletion — carries no
-permanence claim and no author restriction. It's a personal view preference, not a lever over
-what the network carries or what you keep.
+your own feed. Deliberately the lightweight sibling of [[feature-local-deletion]], and the two are
+meant to be read together as one story: deletion is scoped to messages that have never been
+transmitted — "undo before it goes out" — and stops being offered the instant a message syncs
+even once. Hiding is what covers everything after that point: regretting a post that already
+reached other people, or just not wanting to see a stranger's gossip-tier thread again. Hiding
+never touches storage, never affects what you relay to others, and — unlike deletion — carries no
+permanence claim and no author restriction: you can hide anyone's thread, including your own,
+whether or not it ever synced. It's a personal view preference, not a lever over what the network
+carries or what you keep.
 
 ## Scope: thread-level, not message-level, for v1
 

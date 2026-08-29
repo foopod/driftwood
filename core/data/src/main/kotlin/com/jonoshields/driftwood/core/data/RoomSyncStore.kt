@@ -70,6 +70,9 @@ internal class RoomSyncStore(
 
     override suspend fun readMessages(ids: List<MessageId>): List<ByteArray> {
         val found = chunked(ids.toSet()) { messages.findChunk(it) }.associateBy { it.id }
+        // The one point content actually leaves this device — clears `unsent` for whatever's
+        // about to go out, a no-op for ids that were never unsent (see MessageEntity.unsent).
+        chunkedAction(ids.toSet()) { messages.clearUnsent(it) }
         // Re-encoded from stored fields; strict decoding guarantees this reproduces the exact preimage.
         return ids.mapNotNull { found[it] }.map { MessageCodec.encode(it.toMessage()) }
     }

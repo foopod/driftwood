@@ -53,6 +53,9 @@ class ThreadContentTest {
     private var unblocked: com.jonoshields.driftwood.core.model.AuthorId? = null
     private var pinToggled = false
     private var settingsOpened = false
+    private val deletedMessages = mutableListOf<MessageId>()
+    private val deletedThreads = mutableListOf<MessageId>()
+    private val restoredMessages = mutableListOf<MessageId>()
 
     private fun show(state: ThreadUiState, myAuthor: com.jonoshields.driftwood.core.model.AuthorId? = null) {
         compose.setContent {
@@ -67,6 +70,9 @@ class ThreadContentTest {
                 onToggleFollow = { author -> followToggled = author },
                 onBlock = { author -> blocked = author },
                 onUnblock = { author -> unblocked = author },
+                onDeleteMessage = { id -> deletedMessages += id },
+                onRestoreMessage = { message -> restoredMessages += message.id },
+                onDeleteThread = { root -> deletedThreads += root },
             )
         }
     }
@@ -78,8 +84,9 @@ class ThreadContentTest {
         followList: Set<com.jonoshields.driftwood.core.model.AuthorId> = emptySet(),
         blockedAuthors: Set<com.jonoshields.driftwood.core.model.AuthorId> = emptySet(),
         pinned: Boolean = false,
+        unsentIds: Set<MessageId> = emptySet(),
     ) = ThreadUiState.Loaded(
-        ThreadAssembler.assemble(rootId, messages),
+        ThreadAssembler.assemble(rootId, messages, unsentIds),
         pinned = pinned,
         names = names,
         followList = followList,
@@ -432,5 +439,130 @@ class ThreadContentTest {
 
         compose.onNodeWithContentDescription("Pin this thread").assertDoesNotExist()
         compose.onNodeWithContentDescription("Unpin this thread").assertDoesNotExist()
+    }
+
+    @Test
+    fun `delete is offered for your own unsent message`() {
+        val r = root("hello")
+        show(loaded(r.id, listOf(r), unsentIds = setOf(r.id)), myAuthor = me)
+
+        compose.onNodeWithText("hello").performTouchInput { longClick() }
+
+        compose.onNodeWithTag("message-context-delete").assertExists()
+    }
+
+    @Test
+    fun `delete is not offered once a message has synced`() {
+        val r = root("hello")
+        // No unsentIds — this message has already been served to a peer.
+        show(loaded(r.id, listOf(r)), myAuthor = me)
+
+        compose.onNodeWithText("hello").performTouchInput { longClick() }
+
+        compose.onNodeWithTag("message-context-delete").assertDoesNotExist()
+    }
+
+    @Test
+    fun `delete is never offered for someone else's message, even if it were somehow unsent`() {
+        val r = theirRoot("hello")
+        show(loaded(r.id, listOf(r), unsentIds = setOf(r.id)), myAuthor = me)
+
+        compose.onNodeWithText("hello").performTouchInput { longClick() }
+
+        compose.onNodeWithTag("message-context-delete").assertDoesNotExist()
+    }
+
+    @Test
+    fun `deleting a leaf message commits immediately, not delayed on the undo snackbar`() {
+        // A commit delayed until the snackbar resolves would silently vanish if the screen is
+        // left before then — this is the bug that shape caused, so it must fire right away.
+        val r = root("hello")
+        show(loaded(r.id, listOf(r), unsentIds = setOf(r.id)), myAuthor = me)
+        compose.onNodeWithText("hello").performTouchInput { longClick() }
+
+        compose.onNodeWithTag("message-context-delete").performClick()
+
+        assertEquals(listOf(r.id), deletedMessages)
+    }
+
+    @Test
+    fun `undo on the delete snackbar restores the message`() {
+        val r = root("hello")
+        show(loaded(r.id, listOf(r), unsentIds = setOf(r.id)), myAuthor = me)
+        compose.onNodeWithText("hello").performTouchInput { longClick() }
+        compose.onNodeWithTag("message-context-delete").performClick()
+        assertEquals(listOf(r.id), deletedMessages)
+
+        compose.onNodeWithText("Undo").performClick()
+
+        assertEquals(listOf(r.id), restoredMessages)
+    }
+
+    @Test
+    fun `deleting an unsent root with no replies is a plain leaf delete, no dialog`() {
+        val r = root("hello")
+        show(loaded(r.id, listOf(r), unsentIds = setOf(r.id)), myAuthor = me)
+        compose.onNodeWithText("hello").performTouchInput { longClick() }
+
+        compose.onNodeWithTag("message-context-delete").performClick()
+
+        compose.onNodeWithText("Delete this thread?").assertDoesNotExist()
+    }
+
+    @Test
+    fun `deleting an unsent root with local replies offers a choice`() {
+        val r = root("root")
+        val a = reply(r.id, r.id, "first")
+        show(loaded(r.id, listOf(r, a), unsentIds = setOf(r.id, a.id)), myAuthor = me)
+
+        compose.onNodeWithText("root").performTouchInput { longClick() }
+        compose.onNodeWithTag("message-context-delete").performClick()
+
+        compose.onNodeWithText("Delete this thread?").assertExists()
+        compose.onNodeWithText("Delete whole thread (2 messages)").assertExists()
+        compose.onNodeWithText("Delete just this message").assertExists()
+    }
+
+    @Test
+    fun `choosing to delete the whole thread commits immediately, no undo cushion`() {
+        val r = root("root")
+        val a = reply(r.id, r.id, "first")
+        show(loaded(r.id, listOf(r, a), unsentIds = setOf(r.id, a.id)), myAuthor = me)
+        compose.onNodeWithText("root").performTouchInput { longClick() }
+        compose.onNodeWithTag("message-context-delete").performClick()
+
+        compose.onNodeWithText("Delete whole thread (2 messages)").performClick()
+
+        assertEquals(listOf(r.id), deletedThreads)
+    }
+
+    @Test
+    fun `choosing just this message from the dialog commits immediately, no undo cushion`() {
+        val r = root("root")
+        val a = reply(r.id, r.id, "first")
+        show(loaded(r.id, listOf(r, a), unsentIds = setOf(r.id, a.id)), myAuthor = me)
+        compose.onNodeWithText("root").performTouchInput { longClick() }
+        compose.onNodeWithTag("message-context-delete").performClick()
+
+        compose.onNodeWithText("Delete just this message").performClick()
+
+        assertEquals(listOf(r.id), deletedMessages)
+        assertEquals(emptyList<MessageId>(), deletedThreads)
+    }
+
+    @Test
+    fun `a non-root unsent reply with local children still just offers a plain delete, no dialog`() {
+        // Only the literal thread root ever gets the whole-thread choice.
+        val r = root("root")
+        val a = reply(r.id, r.id, "first")
+        val b = reply(r.id, a.id, "nested")
+        show(loaded(r.id, listOf(r, a, b), unsentIds = setOf(r.id, a.id, b.id)), myAuthor = me)
+
+        compose.onNodeWithText("first").performTouchInput { longClick() }
+        compose.onNodeWithTag("message-context-delete").performClick()
+
+        // Same leaf-delete path as the root case: no dialog, immediate commit.
+        compose.onNodeWithText("Delete this thread?").assertDoesNotExist()
+        assertEquals(listOf(a.id), deletedMessages)
     }
 }

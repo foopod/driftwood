@@ -30,4 +30,13 @@ val MIGRATION_3_4: Migration = object : Migration(3, 4) {
     }
 }
 
-internal val DRIFTWOOD_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_3_4)
+// Every pre-existing row defaults to unsent = 0 — a message already on disk before this column
+// existed can't be assumed to have never left the device, so it's simply not eligible for local
+// deletion, which is the safe direction to default a column nobody can currently see.
+val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE messages ADD COLUMN unsent INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+internal val DRIFTWOOD_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_3_4, MIGRATION_4_5)

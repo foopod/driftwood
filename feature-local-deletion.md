@@ -1,170 +1,135 @@
 # Local deletion of your own posts
 
 Expands README item 5 ("Planned, not yet implemented"). Lets you remove one of your own past
-messages from your own device. Honest about its limit from the start: for a post that never
-synced to anyone, this is a true delete. For one that already propagated, it removes your copy
-only — nothing can recall a message from a device it already reached, the same limit the
-blocklist already states plainly (README, "How it works").
+messages from your own device — **scoped to messages that have never been transmitted to a
+peer.** Once a message has been sent even once, deletion is no longer offered for it at all.
 
-## Why a tombstone, not just a `DELETE`
+## Why scope to never-transmitted
 
-Deleting the row (`MessageEntity`, `core/data/.../Entities.kt:53`) isn't enough on its own.
-Reconciliation is symmetric: your next sync exchanges a hash-list of what you hold for a scope
-(`core/sync/.../Session.kt:153`), and a peer who still holds your deleted message — because
-they synced it before you deleted it, or because it's context in a thread they follow — will see
-it missing from your hash-list and offer it back. Without something to recognize and refuse that
-offer, a deleted post would quietly resurrect itself on the very next sync with anyone who kept
-a copy. This is exactly the "quietly reappear" failure the README item already calls out by name.
+The alternative — deleting content that already propagated, with a tombstone to stop it bouncing
+back on a future sync — was drafted first and rejected. Two reasons:
 
-So deletion needs two local, permanent facts, not one:
+1. **It can't be made honest.** "Deletes your copy; can't touch anyone else's" is true, but a
+   button that behaves identically whether the post reached zero people or a hundred, with the
+   real limit buried in a confirmation dialog's fine print, doesn't actually read as honest to
+   the person tapping it — it reads as delete. This app is otherwise careful to state limits
+   plainly rather than dress them up (the blocklist's own copy already does this: it says outright
+   that it can't reach a device it already synced to). Scoping to never-sent sidesteps the problem
+   entirely instead of disclosing around it: the option is simply *there* before your first sync
+   of that content and *gone* after — nothing to caveat, because there's nothing partial about
+   what it does.
+2. **It's a much bigger feature than it needs to be.** A permanent tombstone table means a new
+   `SyncStore` method (`core/sync/.../SyncStore.kt:29`), a new ingest-time drop path in
+   `Session.kt` next to the existing blocklist check, a new counter threaded through
+   `PhaseOutcome`/`SyncSummary`, and a lasting new surface for `core/sync` to reason about
+   forever. None of that is needed if deletion never has to interact with anything already
+   offered to or received from a peer.
 
-1. The message row is gone (frees storage, stops rendering it).
-2. A **tombstone** — just the id and when you deleted it — persists so a re-offered copy is
-   recognized and dropped, forever, without you having to notice or intervene again.
+The real, if unglamorous, trade-off: once you've synced even once, "delete" stops existing for
+that post — including for a typo you notice five minutes later if a sync happened to land in
+between. That's deliberate, not a gap: this feature is "undo before it goes out," not "delete my
+post." For everything after your first sync, [[feature-local-hiding]] is the fallback — hide
+covers "I don't want to see this anymore," which is a claim this app can actually keep.
 
-## Data model
+## Data model: one boolean column, no new table
 
 ```kotlin
-/** An id you deliberately deleted locally — kept so a peer who still holds it can't hand it back. */
-@Entity(tableName = "tombstones")
-internal class TombstoneEntity(
-    @PrimaryKey val id: MessageId,
-    @ColumnInfo(name = "deleted_at") val deletedAt: Long,
-)
+// on MessageEntity, Entities.kt:53
+@ColumnInfo(name = "unsent") val unsent: Boolean?,
 ```
 
-Scoped to `MessageId` only, not per-author — you can only ever tombstone your own messages (see
-Scope below), so there's no need to key on author too.
+- Set `true` when a message you author is first written locally (`ComposeViewModel`'s send path).
+- Set to `null` the moment it's actually served to a peer — see below.
+- Anything that arrives via sync ingest (not authored on this device just now) is never `true`;
+  it's simply not a candidate for this feature at all, so the column is `null` for it by default.
 
-**No TTL.** Unlike `WantEntity` (`WANT_TTL = 10` fruitless syncs) or the directory
-(`DIRECTORY_TTL_MILLIS`, 180 days), a tombstone never expires. It's bounded by how many messages
-you personally author and later delete — a human-scale count, not an unbounded one — so keeping
-every one indefinitely is cheap and correct. Expiring a tombstone would just re-open the exact
-resurrection window this feature exists to close. Same permanence rationale as the blocklist,
-which also never ages out an entry on its own.
+No timestamp, no separate table, nothing to prune or age out. A per-message boolean is the entire
+mechanism: `unsent = true` means "eligible," `null` means "not eligible," and eligibility only
+ever moves one direction, exactly once, per message.
+
+**Where it flips:** `RoomSyncStore.readMessages(ids)` (`RoomSyncStore.kt:71`) is the one place
+that already hands wire bytes to a peer — the natural, single hook point. The moment an id is
+served there, `UPDATE messages SET unsent = NULL WHERE id IN (...)`. No `core/sync` change at
+all: `SyncStore`'s interface is untouched, `Session.kt` is untouched, nothing crosses the
+`core/data`/`core/sync` boundary that doesn't already cross it today.
+
+One deliberately conservative call: flip `unsent` to `null` as soon as `readMessages()` returns
+the bytes for writing, not once delivery is somehow confirmed. If a connection dies mid-flush,
+this errs toward "probably sent, so no longer deletable" rather than the reverse — consistent
+with the same "can never guarantee once sent" framing that justifies scoping the whole feature
+this way in the first place.
+
+## The thread case: your own insight, and why it's provably safe
+
+Ids are content hashes. A reply can only name a real message's id as its `parent` if whoever wrote
+that reply has actually seen it. So if a root you authored has `unsent = true` — meaning it has
+never left this device — **nobody else has ever seen its id**, which means nobody else could
+possibly have replied to it. Every message anywhere in that thread, if the root is still unsent,
+must therefore be something *you* wrote locally yourself (replying to your own draft before
+syncing — the normal shape of a continuation chain, README item 1, before it's ever sent).
+
+That's not a heuristic, it's a guarantee from the id scheme itself: deleting a whole still-unsent
+subtree is exactly as complete and side-effect-free as deleting its single root message would be.
+This is what makes it safe to offer as a real choice rather than something the UI quietly does or
+doesn't allow depending on unclear internal state.
 
 ## Repository surface
 
-Mirrors the existing `block`/`unblock` shape in `MessageRepository`
-(`core/data/.../MessageRepository.kt:94`):
-
 ```kotlin
-/** Deletes a message you authored: removes your copy and tombstones the id so no peer can hand it back. */
-suspend fun deleteOwnMessage(id: MessageId): Result<Unit>
+/** A leaf, or a root with no local-only replies under it. Fails if [id]'s author isn't you, or unsent != true. */
+suspend fun deleteMessage(id: MessageId): Result<Unit>
 
-fun observeTombstones(): Flow<Set<MessageId>>  // for the (unlikely-needed) UI listing below
+/** A root plus every reply beneath it — only ever offered when every one of those replies is also unsent. */
+suspend fun deleteThread(root: MessageId): Result<Unit>
 ```
 
-`deleteOwnMessage` in one transaction:
-
-- Insert the `TombstoneEntity`.
-- Delete the `MessageEntity` row.
-- No pruning-plan side effect needed — this isn't a budget change, just one fewer row.
-
-Rejected alternative: a boolean `deleted` column on `MessageEntity` instead of a separate table.
-Rejected because the row needs to actually disappear (frees the tier's fair-share slot, matches
-"a true delete" for the never-synced case) while the *fact of having deleted it* needs to outlive
-the row — two different lifetimes, so two different places to keep them.
-
-## Wiring into sync: the new `SyncStore` method
-
-`core/sync` is a plain JVM module that talks to storage only through the `SyncStore` port
-(`core/sync/.../SyncStore.kt:29`) — it never touches Room directly, and a tombstone is exactly
-the kind of "local policy, never disclosed to a peer" the interface already has a section for
-(`blocklist()`, line 66). Add a sibling:
-
-```kotlin
-/** Ids you deliberately deleted locally — checked on ingest so a peer can't hand one back. */
-suspend fun tombstones(): Set<MessageId>
-```
-
-`RoomSyncStore` implements it as a straight read of the `tombstones` table.
-
-**Ingest check.** `Session.kt`'s per-item classifier already has exactly one drop-path that isn't
-a `RejectionReason` — the blocklist check (`blockedDropped`, `Session.kt:463,480`), deliberately
-separate from verification failures because it's local policy, not a protocol violation. A
-tombstone check belongs right next to it, same shape:
-
-```kotlin
-var tombstonedDropped = 0; private set
-...
-if (id in tombstones) { tombstonedDropped++; return }
-```
-
-Threaded through `PhaseOutcome`/`IngestSummary` the same way `blockedDropped` already is
-(`Session.kt:41-53, 237-238, 362-363`), and surfaced on `SyncSummary` next to it — this session's
-earlier `[[protocol-criticism]]`-style finding about `wants` applies here too: don't ship a silent
-drop path with zero visibility. A counter costs nothing and answers "did that actually work?" the
-first time someone wonders whether their deleted post really stopped bouncing back.
-
-**Outbound side needs no change.** You never disclose a tombstone to anyone, and you never offer
-a tombstoned id yourself — it's not in your `heldWithIds`/`heldBy` results once the row is gone,
-so it simply doesn't come up when you're asked what you have. The only place a tombstoned id can
-enter your device again is inbound, which is the one path patched above.
-
-## Scope: only ever your own messages
-
-`deleteOwnMessage` should refuse (return a failure `Result`, not silently no-op) for any id whose
-`author != myAuthor`. This isn't a UI-only restriction — enforcing it in the repository means a
-future call site can't accidentally offer it as "hide someone else's post" (that's
-[[feature-local-hiding]], a completely different, non-destructive mechanism). Deleting someone
-else's content is not a capability this app has or should gain; the tombstone table only ever
-grows from messages you signed.
-
-## Interaction with existing mechanisms
-
-- **Pins.** `PinnedRootEntity` already "survives its root message being pruned" by design
-  (`Entities.kt:104`, comment). Deleting a pinned root you authored falls out of that same
-  behaviour for free: the thread reference survives, the row (and its text) doesn't, and the
-  thread view already knows how to render a root that's absent — same as "the start of this
-  thread isn't carried here" (`ThreadScreen.kt` / `HomeScreen.kt:487`), the exact copy already
-  used for a pruned or never-received root. No new UI state needed there.
-- **Replies to a deleted message.** Parent links are optional context, never a validity
-  requirement (README: "A missing parent costs context, never integrity"). Deleting a message
-  that has replies leaves those replies exactly as well-formed as they already are when a parent
-  is missing for any other reason (pruned, never synced). No cascading delete of other authors'
-  replies — that content isn't yours to remove, and the immutability/no-recall design explicitly
-  doesn't pretend otherwise.
-- **Want-list.** Nothing to do here: a tombstoned id is never something *you* want (you deleted
-  it on purpose), and it stops being something you'll accept if offered, per the ingest check
-  above.
-- **Storage/pruning.** No interaction — one row removed, no tier accounting change.
+Both are a straight `DELETE FROM messages WHERE id = :id` (or `WHERE thread_root = :root` for the
+thread form) guarded by `author = :myAuthor AND unsent = 1` — no transaction spanning any other
+table, no pruning-plan interaction, nothing left behind. `deleteThread` additionally asserts every
+row under the root is itself unsent before deleting anything, as a belt-and-braces check against
+the invariant above rather than trusting it blindly.
 
 ## UI
 
-- **Entry point:** a "Delete" item on the existing per-message long-press menu in
-  `ThreadScreen.kt` (`message-context-reply`/`-profile`/`-copy`/`-pin`, `ThreadScreen.kt:340-361`)
-  — visible only when `message.author == myAuthor`, i.e. exactly the same condition already used
-  to route own-name taps to Settings instead of contact actions.
-- **Confirmation:** reuse the in-place expand-to-confirm pattern already used for blocking
-  (`ContactActionsContent.kt`'s `confirmingBlock` state), not a system `AlertDialog` — stay
-  consistent with how this codebase already handles "explain the consequence, then a red
-  confirm button" for another one-way local action. Copy should state the real limit plainly:
-  *"Deletes your copy from this device. If this already reached other people, their copies
-  aren't affected — nothing can recall a message once it's synced elsewhere."*
-- **No "recently deleted" recovery list.** The whole point is the row is gone; a trash/undo
-  buffer would just be a second place to store text you asked to remove, and cuts against the
-  "permanent-ish local tombstone" framing in the README item itself. If undo is wanted later,
-  it's a distinct, smaller feature (a few seconds of `Snackbar`-based undo before the delete
-  actually commits), not a persisted archive.
+- **Entry point:** "Delete" on the per-message long-press menu in `ThreadScreen.kt`
+  (`ThreadScreen.kt:340-361`), visible only when `message.author == myAuthor && message.unsent`.
+  It simply isn't in the menu at all once a message has synced — no disabled state, no tooltip
+  explaining why; it's absent, the same way `blockedDropped` content is absent rather than shown
+  greyed-out.
+- **Single message, no local replies under it:** delete immediately, no dialog — this is a
+  genuinely low-stakes, fully local action with zero external effect, so a heavyweight confirm
+  (the block-style "explain the consequence" pattern in `ContactActionsContent.kt`) is the wrong
+  weight for it. Follow with a short-lived `Snackbar` "Undo" instead, same as
+  [[feature-local-hiding]]'s hide action — cheap insurance against a stray long-press, without
+  treating an unsent draft like a destructive network action.
+- **A root with local-only replies under it:** the one case that needs an explicit choice —
+  "Delete just this message" vs. "Delete this whole thread (N messages)" — because the two
+  options genuinely diverge (orphaning the local replies vs. removing everything). A plain
+  two-button dialog, no red/destructive styling needed given neither option touches anything
+  outside this device.
+- **Orphaned-reply rendering, if "just this message" is chosen:** falls out of existing behavior
+  for free — a reply whose parent is missing already renders as "replying to a message not
+  carried here" (`ThreadScreen.kt:317-321`), the same copy already used for a pruned or
+  never-received parent. No new empty-state needed.
 
 ## Non-goals
 
-- No delete-request gossip message, no "please also delete this" signal sent to peers. Explicitly
-  a local-only mechanism, matching the README's own framing.
-- No bulk "delete everything I've posted" — out of scope for v1; the per-message entry point is
-  enough to validate the mechanism, and a bulk action is a thin wrapper over the same primitive
-  once it exists.
-- No admin/moderation angle — this was never on the table given `deleteOwnMessage`'s author check.
+- No interaction with already-synced content, ever. Not "delete your copy, note the limit" — the
+  option doesn't exist past that point. If that changes later it's a distinct, separate feature
+  (the original tombstone design, kept here in history rather than the doc, if it's ever revisited
+  with a clearer case for the complexity).
+- No bulk "delete everything I've drafted but not sent" — the per-message/per-thread entry point
+  covers the real cases; a bulk action is a thin wrapper over the same primitive if ever wanted.
+- No delete-request gossip message — never applicable here, since nothing eligible for this
+  feature has ever been sent to gossip about in the first place.
 
 ## Open questions
 
-- Should a tombstoned id also block re-*sending* it to you as thread **context** (not just
-  gossip)? The ingest check above is scope-agnostic (checked once, regardless of which phase/tier
-  the item arrived through), so this should already be covered — worth a specific test case
-  (`SessionTest`-style) rather than trusting that by inspection alone.
-- Deleting the root of a thread you started removes your only claim to having a `rootAuthor` in
-  `ThreadSummaryRow` for that thread from your own device's perspective. Worth confirming the
-  paginated thread-list query degrades exactly like the "root not carried here" case rather than
-  dropping the thread row entirely — a thread with replies but a locally-tombstoned root should
-  stay visible and openable, not vanish from the feed.
+- Should `deleteThread`'s "every row under the root is unsent" assertion fail loudly (surfaced to
+  the user as "can't delete — part of this thread already synced") or silently fall back to
+  single-message delete? Failing loudly seems right — a silent downgrade could look like the
+  bigger action succeeded when it didn't.
+- Worth a specific `SessionTest`/`RoomSyncStoreTest` case asserting `unsent` flips to `null`
+  exactly once, on the first `readMessages()` call that includes an id, and never again — the
+  column only being writable one direction is a correctness property worth pinning down in a test,
+  not just in the doc.

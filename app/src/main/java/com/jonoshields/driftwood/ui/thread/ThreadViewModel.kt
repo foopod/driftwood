@@ -6,6 +6,7 @@ import com.jonoshields.driftwood.core.data.DirectoryRepository
 import com.jonoshields.driftwood.core.data.MessageRepository
 import com.jonoshields.driftwood.core.identity.IdentityStore
 import com.jonoshields.driftwood.core.model.AuthorId
+import com.jonoshields.driftwood.core.model.Message
 import com.jonoshields.driftwood.core.store.DisplayName
 import com.jonoshields.driftwood.core.store.NameResolver
 import com.jonoshields.driftwood.core.model.MessageId
@@ -106,4 +107,17 @@ class ThreadViewModel @Inject constructor(
     fun unblock(author: AuthorId) {
         viewModelScope.launch { repository.unblock(author) }
     }
+
+    /** Fire-and-forget — the caller doesn't need to know when this lands, just that it will. Committed immediately, not on some later condition: a delete delayed until an on-screen timer or snackbar resolves would silently vanish if the screen is left first. */
+    fun deleteMessage(id: MessageId) {
+        viewModelScope.launch { repository.deleteMessage(id) }
+    }
+
+    /** "Undo" on a delete's snackbar — re-inserts the exact message that was just removed. */
+    fun restoreMessage(message: Message) {
+        viewModelScope.launch { repository.restoreMessage(message) }
+    }
+
+    /** Unlike [deleteMessage], the caller needs the result — the whole thread is gone on success, so the screen showing it has to leave. */
+    suspend fun deleteThread(root: MessageId): Result<Unit> = repository.deleteThread(root)
 }

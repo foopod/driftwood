@@ -90,6 +90,15 @@ interface MessageRepository {
     /** Marks every message in a thread read. Opening a thread is what calls this. */
     suspend fun markThreadRead(rootId: MessageId): Result<Unit>
 
+    /** Removes one message you authored, orphaning any local replies under it — only ever offered while it's still unsent. See feature-local-deletion.md. */
+    suspend fun deleteMessage(id: MessageId): Result<Unit>
+
+    /** Removes an entire thread you started, root and every reply beneath it — only possible while the whole thread is still unsent, which (since ids are content hashes) guarantees every reply in it is also yours. */
+    suspend fun deleteThread(root: MessageId): Result<Unit>
+
+    /** Reverses a same-session [deleteMessage] — "Undo" on its snackbar, nothing else. Re-inserting is safe and exact: ids are content hashes, so this is always precisely the row that was just removed. */
+    suspend fun restoreMessage(message: Message): Result<Unit>
+
     /** Drops their messages and the threads they started, immediately. */
     suspend fun block(author: AuthorId): Result<Unit>
 
@@ -131,7 +140,8 @@ class RoomMessageRepository internal constructor(
 
     override fun observeThread(rootId: MessageId): Flow<ThreadView> =
         messages.observeThread(rootId).map { entities ->
-            ThreadAssembler.assemble(rootId, entities.map { it.toMessage() })
+            val unsentIds = entities.filter { it.unsent }.mapTo(mutableSetOf()) { it.id }
+            ThreadAssembler.assemble(rootId, entities.map { it.toMessage() }, unsentIds)
         }
 
     override suspend fun post(text: String): Result<Message> =
@@ -177,6 +187,40 @@ class RoomMessageRepository internal constructor(
 
     override suspend fun markThreadRead(rootId: MessageId): Result<Unit> =
         runCatching { messages.markThreadRead(rootId) }.mapLocalErrors()
+
+    override suspend fun deleteMessage(id: MessageId): Result<Unit> = runCatching {
+        val myAuthor = myAuthorOrThrow()
+        val entity = messages.find(id) ?: throw DataError.Local(IllegalStateException("message not found"))
+        check(entity.author == myAuthor && entity.unsent) { "not eligible for local deletion" }
+        messages.deleteChunk(listOf(id))
+    }.mapLocalErrors()
+
+    override suspend fun deleteThread(root: MessageId): Result<Unit> = runCatching {
+        val myAuthor = myAuthorOrThrow()
+        val entity = messages.find(root) ?: throw DataError.Local(IllegalStateException("thread root not found"))
+        check(entity.author == myAuthor && entity.unsent) { "not eligible for local deletion" }
+        // Should never trip — an unsent root's whole subtree can only be authored locally, since
+        // nobody else could have replied to an id they've never seen. Refuse outright rather than
+        // silently deleting a subset if it somehow does.
+        check(!messages.threadHasIneligibleRow(root, myAuthor)) {
+            "thread has a row that isn't mine/unsent — invariant violated, refusing rather than partial-delete"
+        }
+        messages.deleteThreadRows(root)
+    }.mapLocalErrors()
+
+    override suspend fun restoreMessage(message: Message): Result<Unit> = runCatching {
+        val myAuthor = myAuthorOrThrow()
+        check(message.body.author == myAuthor) { "can only restore your own message" }
+        // Same as the moment it was first composed: authored here, so its own timestamp is
+        // effective_time, and it's unsent again since deleting it never sent it anywhere.
+        insert(message, firstReceivedTime = message.body.timestampMillis)
+    }.mapLocalErrors()
+
+    private fun myAuthorOrThrow(): AuthorId = try {
+        identity.publicKey()
+    } catch (e: IllegalStateException) {
+        throw DataError.NoIdentity()
+    }
 
     override suspend fun block(author: AuthorId): Result<Unit> = runCatching {
         val now = clock.nowMillis()
@@ -230,8 +274,9 @@ class RoomMessageRepository internal constructor(
         val tier = TierClassifier
             .classify(listOf(message.toHeldMessage(firstReceivedTime)), follow)
             .getValue(message.id)
-        // Composed here, on this device — you have obviously already read your own message.
-        messages.insert(message.toEntity(firstReceivedTime, tier, read = true))
+        // Composed here, on this device — you have obviously already read your own message, and
+        // it hasn't left the device yet, so it's eligible for local deletion until a sync serves it.
+        messages.insert(message.toEntity(firstReceivedTime, tier, read = true, unsent = true))
     }
 }
 
@@ -289,7 +334,7 @@ internal fun Message.toHeldMessage(firstReceivedTime: Long) = HeldMessage(
     effectiveTime = EffectiveTime.of(body.timestampMillis, firstReceivedTime),
 )
 
-internal fun Message.toEntity(firstReceivedTime: Long, tier: Tier, read: Boolean) = MessageEntity(
+internal fun Message.toEntity(firstReceivedTime: Long, tier: Tier, read: Boolean, unsent: Boolean = false) = MessageEntity(
     id = id,
     version = body.version,
     author = body.author,
@@ -303,6 +348,7 @@ internal fun Message.toEntity(firstReceivedTime: Long, tier: Tier, read: Boolean
     effectiveTime = EffectiveTime.of(body.timestampMillis, firstReceivedTime),
     read = read,
     tier = tier,
+    unsent = unsent,
 )
 
 private const val THREAD_PAGE_SIZE = 30

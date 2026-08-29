@@ -163,3 +163,14 @@ mechanism.
    correctness proof that it converges to exactly the same delta as the full diff, since a
    bucketing bug would mean silent message loss rather than a slower sync. Deferred until field
    test shows the naive approach is actually a bottleneck, not before.
+
+9. **A guided tutorial for first-time users.** First-run today only covers writing and backing up
+   your identity, then drops you into a guided first post (`ComposeScreen`'s `introMode`) — it
+   never explains the mechanics that make this app behave differently from anything else on a
+   new user's phone: that nothing moves until you deliberately sync with someone nearby, what the
+   three tiers mean for what you'll actually see, or that verifying a contact's fingerprint is a
+   real trust decision and not a formality. Without that, a new user's first real session is
+   likely to look broken — an empty feed, a "Sync" button that requires someone else physically
+   present to do anything — rather than working as designed. A short, skippable walkthrough
+   covering those points, not just the compose flow, is worth doing before the app is handed to
+   anyone who didn't help build it.

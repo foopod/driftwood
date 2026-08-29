@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -29,6 +30,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -37,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,6 +63,7 @@ import com.jonoshields.driftwood.core.store.ThreadNode
 import com.jonoshields.driftwood.ui.common.AuthorName
 import com.jonoshields.driftwood.ui.common.ContactActionsContent
 import com.jonoshields.driftwood.core.store.ThreadView
+import kotlinx.coroutines.launch
 
 @Composable
 fun ThreadScreen(
@@ -69,6 +76,7 @@ fun ThreadScreen(
 ) {
     LaunchedEffect(rootId) { viewModel.bind(rootId) }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
 
     ThreadContent(
         state = state,
@@ -81,6 +89,10 @@ fun ThreadScreen(
         onToggleFollow = viewModel::toggleFollow,
         onBlock = viewModel::block,
         onUnblock = viewModel::unblock,
+        onDeleteMessage = viewModel::deleteMessage,
+        onRestoreMessage = viewModel::restoreMessage,
+        // Nothing left to look at once the whole thread's gone — leave the screen on success.
+        onDeleteThread = { root -> scope.launch { if (viewModel.deleteThread(root).isSuccess) onBack() } },
         modifier = modifier,
     )
 }
@@ -98,13 +110,19 @@ internal fun ThreadContent(
     onToggleFollow: (AuthorId) -> Unit,
     onBlock: (AuthorId) -> Unit,
     onUnblock: (AuthorId) -> Unit,
+    onDeleteMessage: (MessageId) -> Unit,
+    onRestoreMessage: (Message) -> Unit,
+    onDeleteThread: (MessageId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // Not rememberSaveable: AuthorId isn't a saveable type; losing this on rotation is a fine trade.
     var selectedAuthor by remember { mutableStateOf<AuthorId?>(null) }
+    // Hosted here so it renders above the FAB via Scaffold's own slot, not floated ad hoc by a child.
+    val snackbarHostState = remember { SnackbarHostState() }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             // Swapping in the contact panel below swaps this bar's identity too.
             TopAppBar(
@@ -178,6 +196,10 @@ internal fun ThreadContent(
                         // else's opens the in-place contact actions instead.
                         onAuthorClick = { a -> if (a == myAuthor) onSettings() else selectedAuthor = a },
                         onTogglePin = onTogglePin,
+                        onDeleteMessage = onDeleteMessage,
+                        onRestoreMessage = onRestoreMessage,
+                        onDeleteThread = onDeleteThread,
+                        snackbarHostState = snackbarHostState,
                         modifier = Modifier.padding(padding),
                     )
                 }
@@ -195,8 +217,42 @@ private fun ThreadBody(
     onReply: (MessageId, MessageId?) -> Unit,
     onAuthorClick: (AuthorId) -> Unit,
     onTogglePin: () -> Unit,
+    onDeleteMessage: (MessageId) -> Unit,
+    onRestoreMessage: (Message) -> Unit,
+    onDeleteThread: (MessageId) -> Unit,
+    snackbarHostState: SnackbarHostState,
     modifier: Modifier = Modifier,
 ) {
+    val scope = rememberCoroutineScope()
+    var showRootDeleteDialog by remember { mutableStateOf(false) }
+
+    // A tap on a leaf (or a non-root message, which never gets the whole-thread choice) deletes
+    // it right away — never delayed on anything screen-scoped, since a coroutine waiting on this
+    // composable's own snackbar dies the instant the screen is left, silently losing the delete
+    // along with it. "Undo" is a real restore afterward, not a late commit.
+    fun requestSingleDelete(message: Message) {
+        onDeleteMessage(message.id)
+        scope.launch {
+            val result = snackbarHostState.showSnackbar(
+                message = "Message deleted",
+                actionLabel = "Undo",
+                duration = SnackbarDuration.Short,
+            )
+            if (result == SnackbarResult.ActionPerformed) onRestoreMessage(message)
+        }
+    }
+
+    if (showRootDeleteDialog) {
+        // Explicit two-choice confirm already, so both options commit immediately — no separate
+        // undo cushion stacked on top of a choice that was itself already the confirmation.
+        RootDeleteDialog(
+            messageCount = 1 + countNodes(thread.replies),
+            onDismiss = { showRootDeleteDialog = false },
+            onDeleteJustThisMessage = { showRootDeleteDialog = false; onDeleteMessage(thread.rootId) },
+            onDeleteWholeThread = { showRootDeleteDialog = false; onDeleteThread(thread.rootId) },
+        )
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         // Extra bottom clearance so the reply FAB never sits over the last message.
@@ -238,9 +294,16 @@ private fun ThreadBody(
                     depth = 0,
                     detached = false,
                     pinned = pinned,
+                    canDelete = thread.rootUnsent && root.body.author == myAuthor,
                     onReply = { onReply(thread.rootId, root.id) },
                     onAuthorClick = { onAuthorClick(root.body.author) },
                     onTogglePin = onTogglePin,
+                    // Only the root ever offers the whole-thread choice, and only when there's
+                    // something under it — a bare root just deletes itself, cushioned like any leaf.
+                    onDeleteRequested = {
+                        if (thread.replies.isNotEmpty()) showRootDeleteDialog = true
+                        else requestSingleDelete(root)
+                    },
                 )
             }
         }
@@ -255,8 +318,37 @@ private fun ThreadBody(
             onReply = onReply,
             onAuthorClick = onAuthorClick,
             onTogglePin = onTogglePin,
+            onDeleteRequested = ::requestSingleDelete,
         )
     }
+}
+
+/** Total node count in a subtree, root not included — used only for the whole-thread delete dialog's copy. */
+private fun countNodes(nodes: List<ThreadNode>): Int = nodes.sumOf { 1 + countNodes(it.children) }
+
+@Composable
+private fun RootDeleteDialog(
+    messageCount: Int,
+    onDismiss: () -> Unit,
+    onDeleteJustThisMessage: () -> Unit,
+    onDeleteWholeThread: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete this thread?") },
+        text = {
+            Text(
+                "This hasn't synced to anyone yet, so deleting it only affects this device — " +
+                    "nothing to undo elsewhere.",
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDeleteWholeThread) { Text("Delete whole thread ($messageCount messages)") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDeleteJustThisMessage) { Text("Delete just this message") }
+        },
+    )
 }
 
 /** Flattens the tree into list items, carrying depth through as an indent. */
@@ -270,6 +362,7 @@ private fun LazyListScope.renderNodes(
     onReply: (MessageId, MessageId?) -> Unit,
     onAuthorClick: (AuthorId) -> Unit,
     onTogglePin: () -> Unit,
+    onDeleteRequested: (Message) -> Unit,
 ) {
     nodes.forEach { node ->
         item(key = node.message.id.toHex()) {
@@ -280,13 +373,17 @@ private fun LazyListScope.renderNodes(
                 depth = depth,
                 detached = node.detached,
                 pinned = pinned,
+                canDelete = node.unsent && node.message.body.author == myAuthor,
                 // Every message is a reply target, carrying both the root id and this message.
                 onReply = { onReply(rootId, node.message.id) },
                 onAuthorClick = { onAuthorClick(node.message.body.author) },
                 onTogglePin = onTogglePin,
+                // Non-root messages never get the whole-thread choice, even with local
+                // replies under them — just this message, same as any other leaf delete.
+                onDeleteRequested = { onDeleteRequested(node.message) },
             )
         }
-        renderNodes(node.children, depth + 1, rootId, nameOf, myAuthor, pinned, onReply, onAuthorClick, onTogglePin)
+        renderNodes(node.children, depth + 1, rootId, nameOf, myAuthor, pinned, onReply, onAuthorClick, onTogglePin, onDeleteRequested)
     }
 }
 
@@ -299,9 +396,11 @@ private fun MessageCard(
     depth: Int,
     detached: Boolean,
     pinned: Boolean,
+    canDelete: Boolean,
     onReply: () -> Unit,
     onAuthorClick: () -> Unit,
     onTogglePin: () -> Unit,
+    onDeleteRequested: () -> Unit,
 ) {
     // Read once per card — a relative time drifting a few seconds stale isn't worth a ticker.
     val now = remember { System.currentTimeMillis() }
@@ -359,6 +458,14 @@ private fun MessageCard(
                     onClick = { showMenu = false; onTogglePin() },
                     modifier = Modifier.testTag("message-context-pin"),
                 )
+                // Only ever present while this message is still unsent — see MessageEntity.unsent.
+                if (canDelete) {
+                    DropdownMenuItem(
+                        text = { Text("Delete") },
+                        onClick = { showMenu = false; onDeleteRequested() },
+                        modifier = Modifier.testTag("message-context-delete"),
+                    )
+                }
             }
         }
     }

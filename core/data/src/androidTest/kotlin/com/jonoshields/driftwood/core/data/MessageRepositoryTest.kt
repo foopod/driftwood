@@ -6,6 +6,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.jonoshields.driftwood.core.identity.IdentityStore
 import com.jonoshields.driftwood.core.identity.SeedCipher
 import com.jonoshields.driftwood.core.identity.SeedStorage
+import com.jonoshields.driftwood.core.model.AuthorId
+import com.jonoshields.driftwood.core.model.Message
+import com.jonoshields.driftwood.core.model.MessageId
 import com.jonoshields.driftwood.core.store.Clock
 import com.jonoshields.driftwood.core.store.PartitionSplit
 import com.jonoshields.driftwood.core.store.StorageConfig
@@ -271,4 +274,132 @@ class MessageRepositoryTest {
         val error = repository.post("x".repeat(321)).exceptionOrNull()
         assertTrue("got $error", error is DataError.InvalidMessage)
     }
+
+    @Test
+    fun postedMessagesAreUnsentUntilServedToAPeer() = runTest {
+        val repository = repository()
+        val posted = repository.post("draft").getOrThrow()
+
+        assertTrue(requireNotNull(database.messages().find(posted.id)).unsent)
+    }
+
+    @Test
+    fun deletingAnUnsentMessageYouAuthoredRemovesIt() = runTest {
+        val repository = repository()
+        val posted = repository.post("oops").getOrThrow()
+
+        repository.deleteMessage(posted.id).getOrThrow()
+
+        assertNull(database.messages().find(posted.id))
+    }
+
+    @Test
+    fun deletingAMessageThatHasAlreadySyncedFails() = runTest {
+        // Mirrors what RoomSyncStore.readMessages() does the moment content is actually served.
+        val repository = repository()
+        val posted = repository.post("already out").getOrThrow()
+        database.messages().clearUnsent(listOf(posted.id))
+
+        val error = repository.deleteMessage(posted.id).exceptionOrNull()
+
+        assertTrue("got $error", error is DataError.Local)
+        assertNotNull("refused, so it must still be there", database.messages().find(posted.id))
+    }
+
+    @Test
+    fun deletingSomeoneElsesMessageFails() = runTest {
+        // The repository itself never writes a row like this — the guard has to hold
+        // regardless of how one got there.
+        val repository = repository()
+        val foreignId = MessageId.of(ByteArray(32) { 9 })
+        database.messages().insert(foreignUnsentMessage(foreignId))
+
+        val error = repository.deleteMessage(foreignId).exceptionOrNull()
+
+        assertTrue("got $error", error is DataError.Local)
+        assertNotNull(database.messages().find(foreignId))
+    }
+
+    @Test
+    fun restoringADeletedMessageBringsItBackExactlyAsUnsent() = runTest {
+        // "Undo" on the delete snackbar — re-insertion, not a delayed commit, since a commit
+        // delayed until the snackbar resolves would silently vanish if the screen is left first.
+        val repository = repository()
+        val posted = repository.post("oops").getOrThrow()
+        repository.deleteMessage(posted.id).getOrThrow()
+        assertNull(database.messages().find(posted.id))
+
+        repository.restoreMessage(posted).getOrThrow()
+
+        val restored = requireNotNull(database.messages().find(posted.id))
+        assertTrue("restored exactly as it was — still eligible to delete again", restored.unsent)
+        assertEquals(posted.body.text, restored.text)
+    }
+
+    @Test
+    fun restoringSomeoneElsesMessageFails() = runTest {
+        val repository = repository()
+        val foreign = Message.unverified(
+            id = MessageId.of(ByteArray(32) { 5 }),
+            signature = ByteArray(64),
+            body = com.jonoshields.driftwood.core.model.MessageBody(
+                version = 1,
+                author = AuthorId.of(ByteArray(32) { 6 }),
+                root = null,
+                parent = null,
+                timestampMillis = now,
+                text = "not mine",
+            ),
+        )
+
+        val error = repository.restoreMessage(foreign).exceptionOrNull()
+
+        assertTrue("got $error", error is DataError.Local)
+        assertNull(database.messages().find(foreign.id))
+    }
+
+    @Test
+    fun deletingAWholeUnsentThreadRemovesEveryRowUnderIt() = runTest {
+        val repository = repository()
+        val root = repository.post("root").getOrThrow()
+        now += 1000
+        val reply = repository.reply(root.id, root.id, "reply").getOrThrow()
+
+        repository.deleteThread(root.id).getOrThrow()
+
+        assertNull(database.messages().find(root.id))
+        assertNull(database.messages().find(reply.id))
+    }
+
+    @Test
+    fun deletingAWholeThreadRefusesIfAnyRowIsIneligible() = runTest {
+        // Shouldn't be reachable in practice — an unsent root's whole subtree can only ever
+        // be authored locally — but the guard must refuse outright rather than partial-delete
+        // if it somehow is.
+        val repository = repository()
+        val root = repository.post("root").getOrThrow()
+        database.messages().insert(foreignUnsentMessage(MessageId.of(ByteArray(32) { 7 }), threadRoot = root.id))
+
+        val error = repository.deleteThread(root.id).exceptionOrNull()
+
+        assertTrue("got $error", error is DataError.Local)
+        assertNotNull("refused, so nothing should have been deleted", database.messages().find(root.id))
+    }
+
+    private fun foreignUnsentMessage(id: MessageId, threadRoot: MessageId = id) = MessageEntity(
+        id = id,
+        version = 1,
+        author = AuthorId.of(ByteArray(32) { 8 }),
+        root = if (threadRoot == id) null else threadRoot,
+        parent = if (threadRoot == id) null else threadRoot,
+        threadRoot = threadRoot,
+        timestampMillis = now,
+        text = "not mine",
+        signature = ByteArray(64),
+        firstReceivedTime = now,
+        effectiveTime = now,
+        read = false,
+        tier = Tier.GOSSIP,
+        unsent = true,
+    )
 }

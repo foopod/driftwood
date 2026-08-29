@@ -14,6 +14,7 @@ import com.jonoshields.driftwood.core.model.ProfileCodec
 import com.jonoshields.driftwood.core.model.VerifyResult
 import com.jonoshields.driftwood.core.store.Clock
 import com.jonoshields.driftwood.core.store.StorageConfig
+import com.jonoshields.driftwood.core.store.Tier
 import com.jonoshields.driftwood.core.store.TierClassifier
 import com.jonoshields.driftwood.core.sync.PhaseOutcome
 import com.jonoshields.driftwood.core.sync.WANT_TTL
@@ -289,5 +290,44 @@ class RoomSyncStoreTest {
 
         assertEquals(1, database.messages().all().size)
         assertTrue(store.wants().isEmpty())
+    }
+
+    // ---- unsent, cleared the moment content is actually served -----------------------
+
+    @Test
+    fun readMessagesClearsUnsentForTheIdsItServes() = runTest {
+        // A message received via sync is never unsent — this simulates one composed locally,
+        // which is the only way `unsent = true` ever gets written for real.
+        val draft = alice.root("draft", now - 1_000)
+        database.messages().insert(draft.toEntity(now, Tier.GOSSIP, read = true, unsent = true))
+        assertTrue(database.messages().find(draft.id)!!.unsent)
+
+        store.readMessages(listOf(draft.id))
+
+        assertFalse(database.messages().find(draft.id)!!.unsent)
+    }
+
+    @Test
+    fun readMessagesOnlyClearsUnsentForIdsItActuallyServed() = runTest {
+        val served = alice.root("served", now - 1_000)
+        val untouched = alice.root("untouched", now - 900)
+        database.messages().insert(served.toEntity(now, Tier.GOSSIP, read = true, unsent = true))
+        database.messages().insert(untouched.toEntity(now, Tier.GOSSIP, read = true, unsent = true))
+
+        store.readMessages(listOf(served.id))
+
+        assertFalse(database.messages().find(served.id)!!.unsent)
+        assertTrue("nothing asked for this one", database.messages().find(untouched.id)!!.unsent)
+    }
+
+    @Test
+    fun readMessagesTwiceIsIdempotent() = runTest {
+        val draft = alice.root("draft", now - 1_000)
+        database.messages().insert(draft.toEntity(now, Tier.GOSSIP, read = true, unsent = true))
+
+        store.readMessages(listOf(draft.id))
+        store.readMessages(listOf(draft.id))
+
+        assertFalse(database.messages().find(draft.id)!!.unsent)
     }
 }
