@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import com.jonoshields.driftwood.core.data.DirectoryRepository
+import com.jonoshields.driftwood.core.data.FeedTab
 import com.jonoshields.driftwood.core.data.MessageRepository
 import com.jonoshields.driftwood.core.data.ThreadSummary
 import com.jonoshields.driftwood.core.identity.IdentityStore
@@ -65,8 +66,12 @@ class HomeViewModel @Inject constructor(
         ThreadListParams(unreadOnly = unread, authorFilter = author, textQuery = text.ifBlank { null })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ThreadListParams())
 
-    val listeningThreads: Flow<PagingData<ThreadSummary>> = pagedThreadsFor(wantFollowing = true)
-    val gossipThreads: Flow<PagingData<ThreadSummary>> = pagedThreadsFor(wantFollowing = false)
+    val followingThreads: Flow<PagingData<ThreadSummary>> = pagedThreadsFor(FeedTab.FOLLOWING)
+    val contextThreads: Flow<PagingData<ThreadSummary>> = pagedThreadsFor(FeedTab.CONTEXT)
+    val otherThreads: Flow<PagingData<ThreadSummary>> = pagedThreadsFor(FeedTab.OTHER)
+
+    val unreadCountsByTab: StateFlow<Map<FeedTab, Int>> = repository.observeUnreadCountsByTab()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     fun setUnreadOnly(value: Boolean) {
         unreadOnly.value = value
@@ -89,9 +94,9 @@ class HomeViewModel @Inject constructor(
         authorFilter.value = null
     }
 
-    private fun pagedThreadsFor(wantFollowing: Boolean) =
+    private fun pagedThreadsFor(tab: FeedTab) =
         params
-            .flatMapLatest { p -> repository.pagedThreads(wantFollowing, p.unreadOnly, p.authorFilter, p.textQuery) }
+            .flatMapLatest { p -> repository.pagedThreads(tab, p.unreadOnly, p.authorFilter, p.textQuery) }
             .cachedIn(viewModelScope)
 }
 

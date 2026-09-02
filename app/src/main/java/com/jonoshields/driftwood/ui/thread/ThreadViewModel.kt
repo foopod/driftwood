@@ -17,6 +17,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
@@ -72,10 +73,25 @@ class ThreadViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ThreadUiState.Loading)
 
+    private val unreadIdsFlow = MutableStateFlow<Set<MessageId>>(emptySet())
+
+    /**
+     * A one-time snapshot of what was unread when this thread was opened, for scrolling straight
+     * to it — not a live view. Deliberately not re-derived from [uiState]'s reactive `ThreadView`:
+     * that stream's first emission can already reflect everything marked read below, since
+     * `observeThread` and `markThreadRead` race. Reading this snapshot first, before marking read,
+     * sidesteps that race entirely.
+     */
+    val unreadIds: StateFlow<Set<MessageId>> = unreadIdsFlow.asStateFlow()
+
     fun bind(id: MessageId) {
         rootId.value = id
-        // Opening a thread is what marks it read — not viewing the home list.
-        viewModelScope.launch { repository.markThreadRead(id) }
+        unreadIdsFlow.value = emptySet()
+        viewModelScope.launch {
+            unreadIdsFlow.value = repository.unreadMessageIds(id)
+            // Opening a thread is what marks it read — not viewing the home list.
+            repository.markThreadRead(id)
+        }
     }
 
     /** Keys on the thread's root id, which exists even if the root message itself was pruned. */

@@ -1,6 +1,8 @@
 package com.jonoshields.driftwood.ui.contacts
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,17 +14,23 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -45,6 +53,7 @@ fun ContactsScreen(
         onBack = onBack,
         onOpenContact = onOpenContact,
         onAddContact = onAddContact,
+        onSetNickname = viewModel::setNickname,
         modifier = modifier,
     )
 }
@@ -56,8 +65,10 @@ internal fun ContactsContent(
     onBack: () -> Unit,
     onOpenContact: (AuthorId) -> Unit,
     onAddContact: () -> Unit,
+    onSetNickname: (AuthorId, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
+    var searchText by remember { mutableStateOf("") }
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
@@ -88,8 +99,25 @@ internal fun ContactsContent(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
+                if (entries.size > 1) {
+                    TextField(
+                        value = searchText,
+                        onValueChange = { searchText = it },
+                        label = { Text("Search") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                val filtered = if (searchText.isBlank()) {
+                    entries
+                } else {
+                    entries.filter { entry ->
+                        entry.displayName.label?.contains(searchText, ignoreCase = true) == true ||
+                            entry.displayName.fingerprint.contains(searchText, ignoreCase = true)
+                    }
+                }
                 // Already sorted verified/followed-first (sortContactEntries) — partition keeps that order per group.
-                val (following, everyoneElse) = entries.partition { it.isFollowing }
+                val (following, everyoneElse) = filtered.partition { it.isFollowing }
                 LazyColumn(
                     // Extra bottom clearance so the add-contact FAB never sits over the last entry.
                     contentPadding = PaddingValues(bottom = 96.dp),
@@ -98,13 +126,13 @@ internal fun ContactsContent(
                     if (following.isNotEmpty()) {
                         item(key = "header-following") { SectionHeader("Following") }
                         items(following, key = { it.author.toHex() }) { entry ->
-                            ContactRow(entry, onOpenContact)
+                            ContactRow(entry, onOpenContact, onSetNickname)
                         }
                     }
                     if (everyoneElse.isNotEmpty()) {
                         item(key = "header-everyone-else") { SectionHeader("Everyone else") }
                         items(everyoneElse, key = { it.author.toHex() }) { entry ->
-                            ContactRow(entry, onOpenContact)
+                            ContactRow(entry, onOpenContact, onSetNickname)
                         }
                     }
                 }
@@ -122,14 +150,60 @@ private fun SectionHeader(title: String) {
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ContactRow(entry: ContactEntry, onOpenContact: (AuthorId) -> Unit) {
-    // Same destination as tapping a name in a thread: nickname, follow, or block.
+private fun ContactRow(
+    entry: ContactEntry,
+    onOpenContact: (AuthorId) -> Unit,
+    onSetNickname: (AuthorId, String) -> Unit,
+) {
+    var showRenameDialog by remember { mutableStateOf(false) }
+
+    if (showRenameDialog) {
+        RenameDialog(
+            initialNickname = entry.displayName.nickname.orEmpty(),
+            onDismiss = { showRenameDialog = false },
+            onConfirm = { nickname ->
+                showRenameDialog = false
+                onSetNickname(entry.author, nickname)
+            },
+        )
+    }
+
+    // Tap opens the same destination as tapping a name in a thread: nickname, follow, or block.
+    // Long-press jumps straight to renaming, since that's the single most common contact action.
     Row(
-        Modifier.fillMaxWidth().clickable { onOpenContact(entry.author) },
+        Modifier.fillMaxWidth()
+            .combinedClickable(
+                onClick = { onOpenContact(entry.author) },
+                onLongClick = { showRenameDialog = true },
+            ),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AuthorNameExpanded(entry.displayName, entry.author.toHex())
     }
+}
+
+@Composable
+private fun RenameDialog(initialNickname: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var nickname by remember { mutableStateOf(initialNickname) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename") },
+        text = {
+            OutlinedTextField(
+                value = nickname,
+                onValueChange = { nickname = it },
+                label = { Text("Nickname") },
+                singleLine = true,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(nickname) }, enabled = nickname.isNotBlank()) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }

@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jonoshields.driftwood.core.model.AuthorId
 import com.jonoshields.driftwood.core.store.DisplayName
+import com.jonoshields.driftwood.core.store.RelativeTime
 
 /** What you can privately do about one identity: change their nickname, follow or not, block or not. */
 @Composable
@@ -33,6 +34,9 @@ fun ContactActionsContent(
     onBlock: () -> Unit,
     onUnblock: () -> Unit,
     modifier: Modifier = Modifier,
+    // Not every caller knows this — ThreadScreen's in-place contact panel doesn't track it, only
+    // the dedicated Contact screen does — so it's optional rather than plumbed everywhere.
+    lastHeardFromMillis: Long? = null,
 ) {
     var confirmingBlock by remember { mutableStateOf(false) }
 
@@ -42,6 +46,14 @@ fun ContactActionsContent(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         ContactIdentityHeader(displayName, author.toHex())
+
+        lastHeardFromMillis?.let {
+            Text(
+                "Last heard from ${RelativeTime.describe(it, System.currentTimeMillis())}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         if (confirmingBlock) {
             Text(

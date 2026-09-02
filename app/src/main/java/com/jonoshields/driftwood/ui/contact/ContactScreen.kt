@@ -72,6 +72,7 @@ internal fun ContactContent(
                     onBlock = onBlock,
                     onUnblock = onUnblock,
                     modifier = Modifier.padding(padding),
+                    lastHeardFromMillis = state.lastHeardFromMillis,
                 )
             }
         }

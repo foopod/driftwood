@@ -25,6 +25,14 @@ import com.jonoshields.driftwood.core.store.TierClassifier
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
+/**
+ * Which of the three feed tabs a thread belongs in, decided by its root: [FOLLOWING] (you or
+ * someone you follow started it), [CONTEXT] (someone else started it, but you or someone you
+ * follow replied), [OTHER] (neither). A thread whose root isn't held falls back to the best tab
+ * among whatever of it remains, same priority order — see `MessageDao.pagedThreads`.
+ */
+enum class FeedTab { FOLLOWING, CONTEXT, OTHER }
+
 /** One thread as it appears in the paginated list: the root, plus up to two "known" (verified/followed/self) reply previews, plus per-thread counts. */
 data class ThreadSummary(
     val rootId: MessageId,
@@ -65,15 +73,27 @@ interface MessageRepository {
     /** Cheap existence check behind the first-run empty state. */
     fun observeHasAnyMessage(): Flow<Boolean>
 
-    /** The paginated thread list for one tab; [wantFollowing] selects "My Circle" vs "Other", [authorFilter]/[textQuery] are the search box. */
+    /** The paginated thread list for one [tab]; [authorFilter]/[textQuery] are the search box. */
     fun pagedThreads(
-        wantFollowing: Boolean,
+        tab: FeedTab,
         unreadOnly: Boolean,
         authorFilter: AuthorId? = null,
         textQuery: String? = null,
     ): Flow<PagingData<ThreadSummary>>
 
     fun observeThread(rootId: MessageId): Flow<ThreadView>
+
+    /** Snapshot of a thread's still-unread message ids, taken once — call before [markThreadRead], not after. */
+    suspend fun unreadMessageIds(rootId: MessageId): Set<MessageId>
+
+    /** Current occupancy per tier, for Settings' storage breakdown. */
+    fun observeTierCounts(): Flow<Map<Tier, Int>>
+
+    /** Count of threads with an unread message, per feed tab, for Home's tab badges. */
+    fun observeUnreadCountsByTab(): Flow<Map<FeedTab, Int>>
+
+    /** Most recent message timestamp from this author — a "last heard from" reachability signal. */
+    fun observeLastMessageFrom(author: AuthorId): Flow<Long?>
 
     suspend fun post(text: String): Result<Message>
 
@@ -127,14 +147,14 @@ class RoomMessageRepository internal constructor(
     override fun observeHasAnyMessage(): Flow<Boolean> = messages.observeHasAnyMessage()
 
     override fun pagedThreads(
-        wantFollowing: Boolean,
+        tab: FeedTab,
         unreadOnly: Boolean,
         authorFilter: AuthorId?,
         textQuery: String?,
     ): Flow<PagingData<ThreadSummary>> {
         val myAuthor = runCatching { identity.publicKey() }.getOrNull()
         return Pager(PagingConfig(pageSize = THREAD_PAGE_SIZE, prefetchDistance = THREAD_PREFETCH, enablePlaceholders = false)) {
-            messages.pagedThreads(myAuthor, wantFollowing, unreadOnly, authorFilter, textQuery)
+            messages.pagedThreads(myAuthor, tab.name, unreadOnly, authorFilter, textQuery)
         }.flow.map { page -> page.map { it.toThreadSummary() } }
     }
 
@@ -143,6 +163,22 @@ class RoomMessageRepository internal constructor(
             val unsentIds = entities.filter { it.unsent }.mapTo(mutableSetOf()) { it.id }
             ThreadAssembler.assemble(rootId, entities.map { it.toMessage() }, unsentIds)
         }
+
+    override suspend fun unreadMessageIds(rootId: MessageId): Set<MessageId> =
+        messages.unreadMessageIds(rootId).toSet()
+
+    override fun observeTierCounts(): Flow<Map<Tier, Int>> =
+        messages.observeTierCounts().map { rows -> rows.associate { it.tier to it.count } }
+
+    override fun observeUnreadCountsByTab(): Flow<Map<FeedTab, Int>> {
+        val myAuthor = runCatching { identity.publicKey() }.getOrNull()
+        return messages.observeUnreadCountsByTab(myAuthor).map { rows ->
+            rows.associate { FeedTab.valueOf(it.tab) to it.count }
+        }
+    }
+
+    override fun observeLastMessageFrom(author: AuthorId): Flow<Long?> =
+        messages.observeLastMessageTimestamp(author)
 
     override suspend fun post(text: String): Result<Message> =
         create { signer, author -> MessageFactory.createRoot(author, text, clock.nowMillis(), signer) }

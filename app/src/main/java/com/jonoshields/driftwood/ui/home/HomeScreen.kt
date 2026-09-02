@@ -31,8 +31,11 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -72,6 +75,7 @@ import androidx.paging.PagingData
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
+import com.jonoshields.driftwood.core.data.FeedTab
 import com.jonoshields.driftwood.core.data.ThreadSummary
 import com.jonoshields.driftwood.core.model.AuthorId
 import com.jonoshields.driftwood.core.model.MessageId
@@ -80,6 +84,7 @@ import com.jonoshields.driftwood.core.store.NameResolver
 import com.jonoshields.driftwood.core.store.RelativeTime
 import com.jonoshields.driftwood.theme.DriftwoodTheme
 import com.jonoshields.driftwood.ui.common.AuthorName
+import com.jonoshields.driftwood.ui.common.LinkifiedText
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 
@@ -95,11 +100,14 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val unreadCountsByTab by viewModel.unreadCountsByTab.collectAsStateWithLifecycle()
     HomeContent(
         state = state,
         myAuthor = viewModel.myAuthor,
-        listeningThreads = viewModel.listeningThreads,
-        gossipThreads = viewModel.gossipThreads,
+        followingThreads = viewModel.followingThreads,
+        contextThreads = viewModel.contextThreads,
+        otherThreads = viewModel.otherThreads,
+        unreadCountsByTab = unreadCountsByTab,
         onUnreadOnlyChanged = viewModel::setUnreadOnly,
         onSearchTextChanged = viewModel::setSearchText,
         onAuthorSelected = viewModel::selectAuthor,
@@ -119,8 +127,10 @@ fun HomeScreen(
 internal fun HomeContent(
     state: HomeUiState,
     myAuthor: AuthorId? = null,
-    listeningThreads: Flow<PagingData<ThreadSummary>> = emptyPagingFlow(),
-    gossipThreads: Flow<PagingData<ThreadSummary>> = emptyPagingFlow(),
+    followingThreads: Flow<PagingData<ThreadSummary>> = emptyPagingFlow(),
+    contextThreads: Flow<PagingData<ThreadSummary>> = emptyPagingFlow(),
+    otherThreads: Flow<PagingData<ThreadSummary>> = emptyPagingFlow(),
+    unreadCountsByTab: Map<FeedTab, Int> = emptyMap(),
     onUnreadOnlyChanged: (Boolean) -> Unit = {},
     onSearchTextChanged: (String) -> Unit = {},
     onAuthorSelected: (AuthorId) -> Unit = {},
@@ -133,7 +143,7 @@ internal fun HomeContent(
     onAddContact: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    // 0 = My Circle, 1 = Other. Not tied to HomeUiState, so it survives the list reloading.
+    // 0 = Following, 1 = Context, 2 = Other. Not tied to HomeUiState, so it survives the list reloading.
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     // Search uses plain `remember`, not `rememberSaveable` — resetting on rotation is accepted.
@@ -150,9 +160,10 @@ internal fun HomeContent(
         onAuthorFilterCleared()
     }
 
-    // Both tabs collected always — cheap, since Paging only loads pages actually requested.
-    val listeningItems = listeningThreads.collectAsLazyPagingItems()
-    val gossipItems = gossipThreads.collectAsLazyPagingItems()
+    // All three tabs collected always — cheap, since Paging only loads pages actually requested.
+    val followingItems = followingThreads.collectAsLazyPagingItems()
+    val contextItems = contextThreads.collectAsLazyPagingItems()
+    val otherItems = otherThreads.collectAsLazyPagingItems()
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -240,7 +251,11 @@ internal fun HomeContent(
         },
     ) { padding ->
         when (state) {
-            HomeUiState.Loading -> Unit
+            HomeUiState.Loading -> {
+                Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
             HomeUiState.Empty -> EmptyState(Modifier.padding(padding))
             is HomeUiState.Threads -> Column(Modifier.padding(padding).fillMaxSize()) {
                 AnimatedVisibility(
@@ -276,12 +291,17 @@ internal fun HomeContent(
                     Tab(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
-                        text = { Text("My Circle") },
+                        text = { TabLabel("Following", unreadCountsByTab[FeedTab.FOLLOWING]) },
                     )
                     Tab(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
-                        text = { Text("Other") },
+                        text = { TabLabel("Context", unreadCountsByTab[FeedTab.CONTEXT]) },
+                    )
+                    Tab(
+                        selected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
+                        text = { TabLabel("Other", unreadCountsByTab[FeedTab.OTHER]) },
                     )
                 }
                 // Kept out of the repository layer, which stays name-agnostic.
@@ -295,9 +315,9 @@ internal fun HomeContent(
                     unreadOnly -> "You're all caught up."
                     else -> null
                 }
-                if (selectedTab == 0) {
-                    ThreadTab(
-                        threads = listeningItems,
+                when (selectedTab) {
+                    0 -> ThreadTab(
+                        threads = followingItems,
                         emptyMessage = emptyReason ?: "Nobody you follow has posted yet.",
                         nameOf = nameOf,
                         myAuthor = myAuthor,
@@ -306,9 +326,18 @@ internal fun HomeContent(
                         onOpenOwnProfile = onSettings,
                         onRefresh = onSync,
                     )
-                } else {
-                    ThreadTab(
-                        threads = gossipItems,
+                    1 -> ThreadTab(
+                        threads = contextItems,
+                        emptyMessage = emptyReason ?: "Nobody you follow has joined a stranger's thread yet.",
+                        nameOf = nameOf,
+                        myAuthor = myAuthor,
+                        onOpenThread = onOpenThread,
+                        onOpenContact = onOpenContact,
+                        onOpenOwnProfile = onSettings,
+                        onRefresh = onSync,
+                    )
+                    else -> ThreadTab(
+                        threads = otherItems,
                         emptyMessage = emptyReason ?: "Nothing incidental has turned up yet.",
                         nameOf = nameOf,
                         myAuthor = myAuthor,
@@ -357,7 +386,10 @@ private fun HomeSearchField(
             emptyList()
         } else {
             names.entries
-                .filter { (_, name) -> name.label?.contains(searchText, ignoreCase = true) == true }
+                .filter { (_, name) ->
+                    name.label?.contains(searchText, ignoreCase = true) == true ||
+                        name.fingerprint.contains(searchText, ignoreCase = true)
+                }
                 .sortedWith(
                     compareBy(
                         { !it.value.label.orEmpty().startsWith(searchText, ignoreCase = true) },
@@ -452,6 +484,17 @@ private fun ThreadTab(
 }
 
 @Composable
+private fun TabLabel(label: String, unreadCount: Int?) {
+    if (unreadCount != null && unreadCount > 0) {
+        BadgedBox(badge = { Badge { Text(unreadCount.toString()) } }) {
+            Text(label)
+        }
+    } else {
+        Text(label)
+    }
+}
+
+@Composable
 private fun EmptyState(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier.fillMaxSize().padding(32.dp),
@@ -525,8 +568,8 @@ private fun ThreadRow(
                                 )
                             }
                         }
-                        Text(
-                            thread.rootText.orEmpty(),
+                        LinkifiedText(
+                            truncateForPreview(thread.rootText.orEmpty()),
                             style = MaterialTheme.typography.bodyLarge,
                             maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
@@ -596,8 +639,8 @@ private fun ThreadRow(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            Text(
-                                "replied: ${snippet.text}",
+                            LinkifiedText(
+                                "replied: ${truncateForPreview(snippet.text)}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
@@ -725,8 +768,8 @@ private fun ThreadsPreview() {
     DriftwoodTheme {
         HomeContent(
             state = HomeUiState.Threads(),
-            listeningThreads = flowOf(PagingData.from(listOf(listening))),
-            gossipThreads = flowOf(PagingData.from(listOf(gossip))),
+            followingThreads = flowOf(PagingData.from(listOf(listening))),
+            otherThreads = flowOf(PagingData.from(listOf(gossip))),
             onOpenThread = {},
             onCompose = {},
             onSettings = {},

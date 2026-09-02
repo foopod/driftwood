@@ -8,6 +8,7 @@ import com.jonoshields.driftwood.core.identity.IdentityState
 import com.jonoshields.driftwood.core.identity.IdentityStore
 import com.jonoshields.driftwood.core.store.EvictionReason
 import com.jonoshields.driftwood.core.store.StorageConfig
+import com.jonoshields.driftwood.core.store.Tier
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,8 +26,9 @@ data class SettingsUiState(
     val messageCount: Int = 0,
     val windowDays: Long = 0,
     val budgetMegabytes: Long = 0,
-    val budgetSplit: String = "",
     val lastPruneSummary: String? = null,
+    val tierCounts: Map<Tier, Int> = emptyMap(),
+    val tierBudgets: Map<Tier, Int> = emptyMap(),
 )
 
 @HiltViewModel
@@ -46,7 +48,9 @@ class SettingsViewModel @Inject constructor(
             },
             windowDays = config.windowMillis / (24 * 60 * 60 * 1000),
             budgetMegabytes = config.totalBudgetBytes / (1024 * 1024),
-            budgetSplit = config.budgets().let { "${it.follow} / ${it.context} / ${it.gossip}" },
+            tierBudgets = config.budgets().let {
+                mapOf(Tier.FOLLOW to it.follow, Tier.CONTEXT to it.context, Tier.GOSSIP to it.gossip)
+            },
         )
     )
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -55,6 +59,11 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             repository.observeAll().collect { messages ->
                 _uiState.update { it.copy(messageCount = messages.size) }
+            }
+        }
+        viewModelScope.launch {
+            repository.observeTierCounts().collect { counts ->
+                _uiState.update { it.copy(tierCounts = counts) }
             }
         }
         viewModelScope.launch {

@@ -43,7 +43,7 @@ interface DirectoryRepository {
     /** Identities you currently follow. */
     fun observeFollowList(): Flow<Set<AuthorId>>
 
-    /** Also re-tiers everything already held, so existing threads jump between "My Circle" and gossip immediately rather than waiting for the next sync. */
+    /** Also re-tiers everything already held, so existing threads jump between follow and gossip tier immediately rather than waiting for the next sync. */
     suspend fun follow(author: AuthorId): Result<Unit>
 
     /** Also re-tiers everything already held, same as [follow]. */

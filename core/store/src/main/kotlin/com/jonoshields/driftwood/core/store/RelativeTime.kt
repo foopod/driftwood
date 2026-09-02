@@ -1,9 +1,18 @@
 package com.jonoshields.driftwood.core.store
 
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 /** Human-scale "how long ago" for a message timestamp, shared by every screen instead of each reinventing it. */
 object RelativeTime {
+
+    private val absoluteFormatter = DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm")
+
+    /** The plain wall-clock reading behind [describe] — for a tap-to-reveal toggle, not a default display. */
+    fun absolute(timestampMillis: Long): String =
+        absoluteFormatter.format(Instant.ofEpochMilli(timestampMillis).atZone(ZoneId.systemDefault()))
 
     fun describe(timestampMillis: Long, nowMillis: Long): String {
         // Clock skew or a future-dated fixture reads as "just now", not a negative duration.

@@ -1,7 +1,27 @@
 package com.jonoshields.driftwood.ui.home
 
+import android.util.Patterns
 import com.jonoshields.driftwood.core.data.ThreadSummary
 import com.jonoshields.driftwood.core.model.AuthorId
+
+/** Comfortably past what 2-3 lines of preview text ever show — a backstop, not the visible cutoff. */
+private const val PREVIEW_TRUNCATE_CHARS = 200
+
+/**
+ * Truncates to the last word boundary at or before [maxChars], backing off further if that cut
+ * would otherwise land inside a URL — Compose's own `maxLines`+`Ellipsis` already breaks at word
+ * boundaries when text wraps normally, but a single "word" wider than the line (a long URL) can
+ * still get sliced mid-string, leaving a preview with a broken, unopenable link.
+ */
+internal fun truncateForPreview(text: String, maxChars: Int = PREVIEW_TRUNCATE_CHARS): String {
+    if (text.length <= maxChars) return text
+    var cut = text.lastIndexOf(' ', maxChars).let { if (it <= 0) maxChars else it }
+    val matcher = Patterns.WEB_URL.matcher(text)
+    while (matcher.find()) {
+        if (cut > matcher.start() && cut < matcher.end()) cut = matcher.start()
+    }
+    return text.take(cut).trimEnd() + "…"
+}
 
 /** One reply shown verbatim in a snippet card. */
 data class ReplySnippet(val author: AuthorId, val text: String, val timestamp: Long)

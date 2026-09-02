@@ -7,7 +7,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -22,14 +25,25 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jonoshields.driftwood.core.model.MessageId
 import com.jonoshields.driftwood.theme.DriftwoodTheme
+import com.jonoshields.driftwood.ui.common.LinkifiedText
 
 @Composable
 fun ComposeScreen(
@@ -62,12 +76,29 @@ internal fun ComposeContent(
     modifier: Modifier = Modifier,
     introMode: Boolean = false,
 ) {
+    var showDiscardConfirm by remember { mutableStateOf(false) }
+    val requestCancel = { if (state.text.isBlank()) onCancel() else showDiscardConfirm = true }
+
+    if (showDiscardConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDiscardConfirm = false },
+            title = { Text("Discard this draft?") },
+            text = { Text("What you've written so far will be lost.") },
+            confirmButton = {
+                TextButton(onClick = { showDiscardConfirm = false; onCancel() }) { Text("Discard") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardConfirm = false }) { Text("Keep writing") }
+            },
+        )
+    }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
                 title = { Text(if (state.isReply) "Reply" else "New post") },
-                navigationIcon = { TextButton(onClick = onCancel) { Text("Cancel") } },
+                navigationIcon = { TextButton(onClick = requestCancel) { Text("Cancel") } },
             )
         },
     ) { padding ->
@@ -88,12 +119,17 @@ internal fun ComposeContent(
                 )
             }
 
+            val focusRequester = remember { FocusRequester() }
+            LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
             OutlinedTextField(
                 value = state.text,
                 onValueChange = onTextChange,
                 label = { Text(if (state.isReply) "Your reply" else "What's on your mind?") },
                 minLines = 5,
-                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { if (state.canSend) onSend() }),
+                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
             )
 
             Row(
@@ -108,6 +144,10 @@ internal fun ComposeContent(
                         MaterialTheme.colorScheme.error
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.semantics {
+                        liveRegion = LiveRegionMode.Polite
+                        contentDescription = "${state.remaining} characters remaining"
                     },
                 )
                 Button(onClick = onSend, enabled = state.canSend) {
@@ -138,7 +178,7 @@ private fun ReplyContext(target: ReplyTarget) {
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Text(
+                LinkifiedText(
                     target.text,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 3,

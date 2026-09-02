@@ -14,8 +14,8 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
             defaultConfig {
                 minSdk = ProjectConfig.MIN_SDK
                 targetSdk = ProjectConfig.TARGET_SDK
-                versionCode = 5
-                versionName = "0.0.5"
+                versionCode = 6
+                versionName = "0.1.0"
             }
 
             compileOptions {
@@ -25,7 +25,7 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
 
             buildFeatures {
                 aidl = false
-                buildConfig = false
+                buildConfig = true
                 shaders = false
             }
 

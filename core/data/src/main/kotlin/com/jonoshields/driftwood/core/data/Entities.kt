@@ -76,6 +76,18 @@ internal class HeldRow(
     @ColumnInfo(name = "effective_time") val effectiveTime: Long,
 )
 
+/** One row of the per-tier occupancy count — how many held messages currently sit in each [Tier]. */
+internal class TierCountRow(
+    val tier: Tier,
+    val count: Int,
+)
+
+/** One row of the per-tab unread-thread count — how many threads with an unread message fall in each [FeedTab]. */
+internal class TabUnreadCountRow(
+    val tab: String,
+    val count: Int,
+)
+
 /** One row of the paginated thread list — the root, up to two "known" (verified/followed/self) reply previews, and small per-thread counts, computed by a `GROUP BY thread_root` query rather than stored. */
 internal class ThreadSummaryRow(
     @ColumnInfo(name = "thread_root") val rootId: MessageId,

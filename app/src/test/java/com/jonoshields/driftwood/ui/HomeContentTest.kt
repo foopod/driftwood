@@ -90,8 +90,9 @@ class HomeContentTest {
     private fun show(
         state: HomeUiState = HomeUiState.Threads(),
         myAuthor: AuthorId? = null,
-        listening: List<ThreadSummary> = emptyList(),
-        gossip: List<ThreadSummary> = emptyList(),
+        following: List<ThreadSummary> = emptyList(),
+        context: List<ThreadSummary> = emptyList(),
+        other: List<ThreadSummary> = emptyList(),
         onUnreadOnlyChanged: (Boolean) -> Unit = {},
         onSearchTextChanged: (String) -> Unit = {},
         onAuthorSelected: (AuthorId) -> Unit = {},
@@ -103,8 +104,9 @@ class HomeContentTest {
             HomeContent(
                 state = state,
                 myAuthor = myAuthor,
-                listeningThreads = pageOf(*listening.toTypedArray()),
-                gossipThreads = pageOf(*gossip.toTypedArray()),
+                followingThreads = pageOf(*following.toTypedArray()),
+                contextThreads = pageOf(*context.toTypedArray()),
+                otherThreads = pageOf(*other.toTypedArray()),
                 onUnreadOnlyChanged = onUnreadOnlyChanged,
                 onSearchTextChanged = onSearchTextChanged,
                 onAuthorSelected = onAuthorSelected,
@@ -119,20 +121,49 @@ class HomeContentTest {
     }
 
     @Test
-    fun `the my circle tab is shown first, by default`() {
-        show(listening = listOf(summary(1, "listening thread")), gossip = listOf(summary(2, "gossip thread")))
+    fun `the following tab is shown first, by default`() {
+        show(following = listOf(summary(1, "following thread")), other = listOf(summary(2, "gossip thread")))
 
-        compose.onNodeWithText("listening thread").assertExists()
+        compose.onNodeWithText("following thread").assertExists()
     }
 
     @Test
-    fun `switching tabs shows that tab's threads and not the other`() {
-        show(listening = listOf(summary(1, "listening thread")), gossip = listOf(summary(2, "gossip thread")))
+    fun `switching to other shows only that tab's threads`() {
+        show(
+            following = listOf(summary(1, "following thread")),
+            context = listOf(summary(2, "context thread")),
+            other = listOf(summary(3, "gossip thread")),
+        )
 
         compose.onNodeWithText("Other").performClick()
 
         compose.onNodeWithText("gossip thread").assertExists()
-        compose.onNodeWithText("listening thread").assertDoesNotExist()
+        compose.onNodeWithText("following thread").assertDoesNotExist()
+        compose.onNodeWithText("context thread").assertDoesNotExist()
+    }
+
+    @Test
+    fun `switching to context shows only that tab's threads`() {
+        show(
+            following = listOf(summary(1, "following thread")),
+            context = listOf(summary(2, "context thread")),
+            other = listOf(summary(3, "gossip thread")),
+        )
+
+        compose.onNodeWithText("Context").performClick()
+
+        compose.onNodeWithText("context thread").assertExists()
+        compose.onNodeWithText("following thread").assertDoesNotExist()
+        compose.onNodeWithText("gossip thread").assertDoesNotExist()
+    }
+
+    @Test
+    fun `an empty context tab explains why a stranger's thread would show up here`() {
+        show()
+
+        compose.onNodeWithText("Context").performClick()
+
+        compose.onNodeWithText("Nobody you follow has joined a stranger's thread yet.").assertExists()
     }
 
     @Test
@@ -145,7 +176,7 @@ class HomeContentTest {
     @Test
     fun `tapping a thread opens it by root id`() {
         val thread = summary(7, "tap me")
-        show(listening = listOf(thread))
+        show(following = listOf(thread))
 
         compose.onNodeWithText("tap me").performClick()
 
@@ -155,7 +186,7 @@ class HomeContentTest {
     @Test
     fun `a missing root is explained rather than shown blank`() {
         val thread = summary(1, rootText = null, rootAuthor = null)
-        show(listening = listOf(thread))
+        show(following = listOf(thread))
 
         compose.onNodeWithText("the start of this thread isn't carried here").assertExists()
     }
@@ -165,7 +196,7 @@ class HomeContentTest {
         val author = author(1)
         val thread = summary(1, "hello", rootAuthor = author)
         val names = mapOf(author to NameResolver.resolve(author, nickname = "Sam", username = null))
-        show(state = HomeUiState.Threads(names = names), listening = listOf(thread))
+        show(state = HomeUiState.Threads(names = names), following = listOf(thread))
 
         compose.onNodeWithText("Sam").assertExists()
         compose.onNodeWithText("hello").assertExists()
@@ -177,7 +208,7 @@ class HomeContentTest {
         val thread = summary(1, "hello", rootAuthor = author)
         val names = mapOf(author to NameResolver.resolve(author, nickname = "Sam", username = null))
         var openedContact: AuthorId? = null
-        show(state = HomeUiState.Threads(names = names), listening = listOf(thread), onOpenContact = { openedContact = it })
+        show(state = HomeUiState.Threads(names = names), following = listOf(thread), onOpenContact = { openedContact = it })
 
         compose.onNodeWithText("Sam").performClick()
 
@@ -195,7 +226,7 @@ class HomeContentTest {
         show(
             state = HomeUiState.Threads(names = names),
             myAuthor = me,
-            listening = listOf(thread),
+            following = listOf(thread),
             onOpenContact = { openedContact = it },
             onSettings = { openedOwnProfile = true },
         )
@@ -220,7 +251,7 @@ class HomeContentTest {
         )
         val names = mapOf(replier to NameResolver.resolve(replier, nickname = "Dad", username = null))
         var openedContact: AuthorId? = null
-        show(state = HomeUiState.Threads(names = names), listening = listOf(thread), onOpenContact = { openedContact = it })
+        show(state = HomeUiState.Threads(names = names), following = listOf(thread), onOpenContact = { openedContact = it })
 
         compose.onNodeWithText("Dad").performClick()
 
@@ -240,7 +271,7 @@ class HomeContentTest {
             latestKnownReplyText = "the reply",
         )
         val names = mapOf(replier to NameResolver.resolve(replier, nickname = "Dad", username = null))
-        show(state = HomeUiState.Threads(names = names), listening = listOf(thread))
+        show(state = HomeUiState.Threads(names = names), following = listOf(thread))
 
         compose.onNodeWithText("the root").assertExists()
         compose.onNodeWithText("Dad").assertExists()
@@ -250,7 +281,7 @@ class HomeContentTest {
     @Test
     fun `with no known reply, only the root is shown`() {
         val thread = summary(1, "just the root", latestKnownReplyAuthor = null)
-        show(listening = listOf(thread))
+        show(following = listOf(thread))
 
         compose.onNodeWithText("just the root").assertExists()
         compose.onAllNodesWithText("replied:", substring = true).assertCountEquals(0)
@@ -259,7 +290,7 @@ class HomeContentTest {
     @Test
     fun `the reply count shows as a number with the comment icon, next to the root`() {
         val thread = summary(1, "the root", replyCount = 5)
-        show(listening = listOf(thread))
+        show(following = listOf(thread))
 
         compose.onNodeWithText("5").assertExists()
         compose.onNodeWithContentDescription("5 replies").assertExists()
@@ -268,7 +299,7 @@ class HomeContentTest {
     @Test
     fun `no replies means no count or icon is shown at all`() {
         val thread = summary(1, "the root", replyCount = 0)
-        show(listening = listOf(thread))
+        show(following = listOf(thread))
 
         compose.onAllNodesWithContentDescription("replies", substring = true).assertCountEquals(0)
     }
@@ -285,7 +316,7 @@ class HomeContentTest {
             knownReplyCount = 1,
         )
         val names = mapOf(replier to NameResolver.resolve(replier, nickname = "Dad", username = null))
-        show(state = HomeUiState.Threads(names = names), listening = listOf(thread))
+        show(state = HomeUiState.Threads(names = names), following = listOf(thread))
 
         compose.onNodeWithText("5 replies from Dad").assertExists()
         compose.onAllNodesWithText("replied:", substring = true).assertCountEquals(0)
@@ -294,7 +325,7 @@ class HomeContentTest {
     @Test
     fun `a busy thread with no known repliers shows a plain unnamed count`() {
         val thread = summary(1, "the root", replyCount = 5, knownReplyCount = 0)
-        show(listening = listOf(thread))
+        show(following = listOf(thread))
 
         compose.onNodeWithText("5 replies").assertExists()
     }
@@ -313,7 +344,7 @@ class HomeContentTest {
             latestKnownUnreadReplyAuthor = replier,
             latestKnownUnreadReplyText = "brand new",
         )
-        show(listening = listOf(thread))
+        show(following = listOf(thread))
 
         // No dot on the root itself...
         compose.onAllNodesWithContentDescription("Unread").assertCountEquals(1)
@@ -323,7 +354,7 @@ class HomeContentTest {
     @Test
     fun `a message posted moments ago reads as just now`() {
         val thread = summary(1, "hello", rootTimestamp = System.currentTimeMillis())
-        show(listening = listOf(thread))
+        show(following = listOf(thread))
 
         compose.onNodeWithText("just now").assertExists()
     }
@@ -331,7 +362,7 @@ class HomeContentTest {
     @Test
     fun `a long-past root shows a relative time`() {
         val thread = summary(1, "hello", rootTimestamp = 1_000L)
-        show(listening = listOf(thread))
+        show(following = listOf(thread))
 
         compose.onNodeWithText("years ago", substring = true).assertExists()
     }
@@ -349,7 +380,7 @@ class HomeContentTest {
             latestKnownReplyText = "the reply",
             latestKnownReplyTimestamp = System.currentTimeMillis(),
         )
-        show(listening = listOf(thread))
+        show(following = listOf(thread))
 
         compose.onNodeWithText("years ago", substring = true).assertExists()
         compose.onNodeWithText("just now").assertExists()
@@ -359,7 +390,7 @@ class HomeContentTest {
     fun `an unread thread shows the unread indicator, a read one does not`() {
         val unread = summary(1, "unread", rootUnread = true)
         val read = summary(2, "read", rootUnread = false)
-        show(listening = listOf(unread, read))
+        show(following = listOf(unread, read))
 
         compose.onAllNodesWithContentDescription("Unread").assertCountEquals(1)
     }
@@ -367,7 +398,7 @@ class HomeContentTest {
     @Test
     fun `a pinned thread shows a read-only pin marker, on either tab`() {
         val thread = summary(1, "hello", rootUnread = true, isPinned = true)
-        show(gossip = listOf(thread))
+        show(other = listOf(thread))
         compose.onNodeWithText("Other").performClick()
 
         // Favouriting only happens from the thread itself; this marker isn't a click target, just a visibility check.
@@ -377,7 +408,7 @@ class HomeContentTest {
     @Test
     fun `an unpinned thread shows no pin marker at all`() {
         val thread = summary(1, "hello", isPinned = false)
-        show(listening = listOf(thread))
+        show(following = listOf(thread))
 
         compose.onNodeWithContentDescription("Pinned").assertDoesNotExist()
     }
@@ -392,7 +423,7 @@ class HomeContentTest {
             me to NameResolver.resolve(me, nickname = null, username = "Me"),
             someoneElse to NameResolver.resolve(someoneElse, nickname = null, username = "Them"),
         )
-        show(state = HomeUiState.Threads(names = names), myAuthor = me, listening = listOf(mine, theirs))
+        show(state = HomeUiState.Threads(names = names), myAuthor = me, following = listOf(mine, theirs))
 
         // Asserting both labels render proves the "mine" chip path didn't crash with no fingerprint shown.
         compose.onNodeWithText("Me").assertExists()
@@ -408,7 +439,7 @@ class HomeContentTest {
 
     @Test
     fun `the search field is collapsed by default`() {
-        show(listening = listOf(summary(1, "hello")))
+        show(following = listOf(summary(1, "hello")))
 
         compose.onNodeWithContentDescription("Cancel search").assertDoesNotExist()
     }
@@ -528,7 +559,7 @@ class HomeContentTest {
 
     @Test
     fun `the unread-only control is one shared control, not per tab`() {
-        show(listening = listOf(summary(1, "hello")), gossip = listOf(summary(2, "world")))
+        show(following = listOf(summary(1, "hello")), other = listOf(summary(2, "world")))
 
         compose.onNodeWithText("Other").performClick()
         compose.onNodeWithContentDescription("More options").performClick()

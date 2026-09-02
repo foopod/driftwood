@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -54,9 +55,13 @@ import com.jonoshields.driftwood.sync.SyncUiState
 import com.jonoshields.driftwood.ui.common.AuthorName
 import com.jonoshields.driftwood.ui.common.ContactControls
 import com.jonoshields.driftwood.ui.common.OrDivider
+import com.jonoshields.driftwood.ui.common.copyToClipboard
 
 /** How long a connection attempt runs before offering to send a diagnostic log instead of just waiting. */
 private const val SLOW_CONNECTION_TIMEOUT_MILLIS = 10_000L
+
+/** How long idle discovery runs with no peers found before admitting it might be stuck, not just slow. */
+private const val IDLE_STUCK_TIMEOUT_MILLIS = 15_000L
 
 @Composable
 fun SyncScreen(
@@ -102,6 +107,7 @@ fun SyncScreen(
         onSetNickname = viewModel::setNickname,
         onToggleFollow = viewModel::toggleFollow,
         onSendLog = { SyncLogReport.send(context, viewModel.logSnapshot()) },
+        logSnapshot = viewModel::logSnapshot,
         modifier = modifier,
     )
 }
@@ -127,6 +133,7 @@ internal fun SyncContent(
     onSetNickname: (AuthorId, String) -> Unit,
     onToggleFollow: (AuthorId) -> Unit,
     onSendLog: () -> Unit = {},
+    logSnapshot: () -> String = { "" },
     modifier: Modifier = Modifier,
 ) {
     // Mid-session states offer only Cancel — a plain Back would silently leave a session running.
@@ -142,6 +149,21 @@ internal fun SyncContent(
         }
     }
     val showSendLog = state is SyncUiState.Failed || stuck
+
+    // Same idea as `stuck`, but for discovery — no peers found yet isn't a failure, just slow.
+    var idleStuck by remember { mutableStateOf(false) }
+    LaunchedEffect(state) {
+        idleStuck = false
+        if (state is SyncUiState.Idle) {
+            delay(IDLE_STUCK_TIMEOUT_MILLIS)
+            idleStuck = true
+        }
+    }
+
+    var showLogDialog by remember { mutableStateOf(false) }
+    if (showLogDialog) {
+        LogDialog(logText = logSnapshot(), onDismiss = { showLogDialog = false })
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -168,6 +190,7 @@ internal fun SyncContent(
                 SyncUiState.Idle -> IdleContent(
                     discoveredPeers = discoveredPeers,
                     wifiDirectPermissionDenied = wifiDirectPermissionDenied,
+                    stuck = idleStuck,
                     onStartListening = onStartListening,
                     onConnectPeer = onConnectPeer,
                     onConnectManual = onConnectManual,
@@ -192,7 +215,7 @@ internal fun SyncContent(
             }
 
             if (showSendLog) {
-                SendLogButton(onSendLog)
+                SendLogButton(onSendLog, onViewLog = { showLogDialog = true })
             }
         }
     }
@@ -202,6 +225,7 @@ internal fun SyncContent(
 private fun IdleContent(
     discoveredPeers: List<NearbyPeer>,
     wifiDirectPermissionDenied: Boolean,
+    stuck: Boolean = false,
     onStartListening: () -> Unit,
     onConnectPeer: (NearbyPeer) -> Unit,
     onConnectManual: (String, Int) -> Unit,
@@ -210,7 +234,7 @@ private fun IdleContent(
     Text("Nearby", style = MaterialTheme.typography.titleMedium)
     if (discoveredPeers.isEmpty()) {
         Text(
-            "Looking for peers nearby…",
+            if (stuck) "Still looking — make sure Wi-Fi/Bluetooth are on" else "Looking for peers nearby…",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -420,10 +444,37 @@ private fun FailedContent(state: SyncUiState.Failed, onDone: () -> Unit) {
 }
 
 @Composable
-private fun SendLogButton(onSendLog: () -> Unit) {
-    TextButton(onClick = onSendLog, modifier = Modifier.fillMaxWidth()) {
-        Text("Send log")
+private fun SendLogButton(onSendLog: () -> Unit, onViewLog: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TextButton(onClick = onViewLog, modifier = Modifier.weight(1f)) {
+            Text("View log")
+        }
+        TextButton(onClick = onSendLog, modifier = Modifier.weight(1f)) {
+            Text("Send log")
+        }
     }
+}
+
+@Composable
+private fun LogDialog(logText: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Sync log") },
+        text = {
+            Text(
+                logText,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { copyToClipboard(context, "Sync log", logText) }) { Text("Copy") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        },
+    )
 }
 
 @Composable

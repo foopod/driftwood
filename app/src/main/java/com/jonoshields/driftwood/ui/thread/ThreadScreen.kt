@@ -1,8 +1,8 @@
 package com.jonoshields.driftwood.ui.thread
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -16,16 +16,21 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +44,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,12 +62,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jonoshields.driftwood.core.model.AuthorId
 import com.jonoshields.driftwood.core.model.Message
 import com.jonoshields.driftwood.core.model.MessageId
+import com.jonoshields.driftwood.ui.common.LinkifiedText
 import com.jonoshields.driftwood.core.store.DisplayName
 import com.jonoshields.driftwood.core.store.NameResolver
 import com.jonoshields.driftwood.core.store.RelativeTime
 import com.jonoshields.driftwood.core.store.ThreadNode
 import com.jonoshields.driftwood.ui.common.AuthorName
 import com.jonoshields.driftwood.ui.common.ContactActionsContent
+import com.jonoshields.driftwood.ui.common.copyToClipboard
 import com.jonoshields.driftwood.core.store.ThreadView
 import kotlinx.coroutines.launch
 
@@ -76,10 +84,12 @@ fun ThreadScreen(
 ) {
     LaunchedEffect(rootId) { viewModel.bind(rootId) }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val unreadIds by viewModel.unreadIds.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     ThreadContent(
         state = state,
+        unreadIds = unreadIds,
         myAuthor = viewModel.myAuthor,
         onReply = onReply,
         onBack = onBack,
@@ -101,6 +111,7 @@ fun ThreadScreen(
 @Composable
 internal fun ThreadContent(
     state: ThreadUiState,
+    unreadIds: Set<MessageId> = emptySet(),
     myAuthor: AuthorId?,
     onReply: (MessageId, MessageId?) -> Unit,
     onBack: () -> Unit,
@@ -119,6 +130,23 @@ internal fun ThreadContent(
     var selectedAuthor by remember { mutableStateOf<AuthorId?>(null) }
     // Hosted here so it renders above the FAB via Scaffold's own slot, not floated ad hoc by a child.
     val snackbarHostState = remember { SnackbarHostState() }
+    // Hoisted so both the message list and the back-to-top FAB (in Scaffold's own slot) share it.
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val scrolledDown by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }
+
+    // unreadIds starts empty and is set once, shortly after bind() — this fires a second time
+    // once the real snapshot lands, and is a no-op on every emission after that (already scrolled,
+    // and the index computed against a since-changed set of blocked authors etc. is deliberately
+    // not re-derived once the thread is open — this is "jump to what was new", not a live tracker).
+    if (state is ThreadUiState.Loaded) {
+        LaunchedEffect(state.thread.rootId, unreadIds) {
+            if (unreadIds.isNotEmpty()) {
+                findFirstUnreadIndex(state.thread, state.pinned, state.blockedAuthors, unreadIds)
+                    ?.let { index -> listState.scrollToItem(index) }
+            }
+        }
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -152,21 +180,36 @@ internal fun ThreadContent(
             )
         },
         floatingActionButton = {
-            // Always replies to the thread itself — parent is the root when held, else null.
             if (state is ThreadUiState.Loaded && selectedAuthor == null) {
-                ExtendedFloatingActionButton(
-                    onClick = { onReply(state.thread.rootId, state.thread.root?.id) },
-                    containerColor = MaterialTheme.colorScheme.secondary,
-                    contentColor = MaterialTheme.colorScheme.onSecondary,
-                    modifier = Modifier.testTag("thread-reply-fab"),
-                ) {
-                    Text("Reply")
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AnimatedVisibility(visible = scrolledDown) {
+                        FloatingActionButton(
+                            onClick = { scope.launch { listState.scrollToItem(0) } },
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            modifier = Modifier.testTag("thread-back-to-top-fab"),
+                        ) {
+                            Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Back to top")
+                        }
+                    }
+                    // Always replies to the thread itself — parent is the root when held, else null.
+                    ExtendedFloatingActionButton(
+                        onClick = { onReply(state.thread.rootId, state.thread.root?.id) },
+                        containerColor = MaterialTheme.colorScheme.secondary,
+                        contentColor = MaterialTheme.colorScheme.onSecondary,
+                        modifier = Modifier.testTag("thread-reply-fab"),
+                    ) {
+                        Text("Reply")
+                    }
                 }
             }
         },
     ) { padding ->
         when (state) {
-            ThreadUiState.Loading -> Unit
+            ThreadUiState.Loading -> {
+                Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
             is ThreadUiState.Loaded -> {
                 val author = selectedAuthor
                 if (author != null) {
@@ -189,6 +232,7 @@ internal fun ThreadContent(
                     ThreadBody(
                         thread = state.thread,
                         pinned = state.pinned,
+                        blockedAuthors = state.blockedAuthors,
                         nameOf = state::nameOf,
                         myAuthor = myAuthor,
                         onReply = onReply,
@@ -200,6 +244,7 @@ internal fun ThreadContent(
                         onRestoreMessage = onRestoreMessage,
                         onDeleteThread = onDeleteThread,
                         snackbarHostState = snackbarHostState,
+                        listState = listState,
                         modifier = Modifier.padding(padding),
                     )
                 }
@@ -212,6 +257,7 @@ internal fun ThreadContent(
 private fun ThreadBody(
     thread: ThreadView,
     pinned: Boolean,
+    blockedAuthors: Set<AuthorId>,
     nameOf: (AuthorId) -> DisplayName,
     myAuthor: AuthorId?,
     onReply: (MessageId, MessageId?) -> Unit,
@@ -221,6 +267,7 @@ private fun ThreadBody(
     onRestoreMessage: (Message) -> Unit,
     onDeleteThread: (MessageId) -> Unit,
     snackbarHostState: SnackbarHostState,
+    listState: LazyListState,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
@@ -254,6 +301,7 @@ private fun ThreadBody(
     }
 
     LazyColumn(
+        state = listState,
         modifier = modifier.fillMaxSize(),
         // Extra bottom clearance so the reply FAB never sits over the last message.
         contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
@@ -312,6 +360,7 @@ private fun ThreadBody(
             thread.replies,
             depth = 1,
             rootId = thread.rootId,
+            blockedAuthors = blockedAuthors,
             nameOf = nameOf,
             myAuthor = myAuthor,
             pinned = pinned,
@@ -325,6 +374,40 @@ private fun ThreadBody(
 
 /** Total node count in a subtree, root not included — used only for the whole-thread delete dialog's copy. */
 private fun countNodes(nodes: List<ThreadNode>): Int = nodes.sumOf { 1 + countNodes(it.children) }
+
+/**
+ * The flattened `LazyColumn` index of the first unread message, mirroring exactly what
+ * [renderNodes] actually emits: one optional leading "pinned" banner item, one item for the root
+ * slot (held or not), then a depth-first walk of the reply tree that skips blocked-author nodes
+ * entirely, same as the real render does. Returns null if nothing in [unreadIds] is rendered.
+ */
+private fun findFirstUnreadIndex(
+    thread: ThreadView,
+    pinned: Boolean,
+    blockedAuthors: Set<AuthorId>,
+    unreadIds: Set<MessageId>,
+): Int? {
+    var index = if (pinned) 1 else 0
+    var found: Int? = null
+
+    val rootId = thread.root?.id
+    if (rootId != null && rootId in unreadIds) found = index
+    index++
+
+    fun walk(nodes: List<ThreadNode>) {
+        for (node in nodes) {
+            if (found != null) return
+            if (node.message.body.author !in blockedAuthors) {
+                if (node.message.id in unreadIds) found = index
+                index++
+            }
+            walk(node.children)
+            if (found != null) return
+        }
+    }
+    walk(thread.replies)
+    return found
+}
 
 @Composable
 private fun RootDeleteDialog(
@@ -356,6 +439,7 @@ private fun LazyListScope.renderNodes(
     nodes: List<ThreadNode>,
     depth: Int,
     rootId: MessageId,
+    blockedAuthors: Set<AuthorId>,
     nameOf: (AuthorId) -> DisplayName,
     myAuthor: AuthorId?,
     pinned: Boolean,
@@ -365,25 +449,29 @@ private fun LazyListScope.renderNodes(
     onDeleteRequested: (Message) -> Unit,
 ) {
     nodes.forEach { node ->
-        item(key = node.message.id.toHex()) {
-            MessageCard(
-                message = node.message,
-                name = nameOf(node.message.body.author),
-                isMine = node.message.body.author == myAuthor,
-                depth = depth,
-                detached = node.detached,
-                pinned = pinned,
-                canDelete = node.unsent && node.message.body.author == myAuthor,
-                // Every message is a reply target, carrying both the root id and this message.
-                onReply = { onReply(rootId, node.message.id) },
-                onAuthorClick = { onAuthorClick(node.message.body.author) },
-                onTogglePin = onTogglePin,
-                // Non-root messages never get the whole-thread choice, even with local
-                // replies under them — just this message, same as any other leaf delete.
-                onDeleteRequested = { onDeleteRequested(node.message) },
-            )
+        // A blocked author's message is skipped entirely — not shown, not even marked — but its
+        // children still render (same "context missing, replies carry on" idiom as `detached`).
+        if (node.message.body.author !in blockedAuthors) {
+            item(key = node.message.id.toHex()) {
+                MessageCard(
+                    message = node.message,
+                    name = nameOf(node.message.body.author),
+                    isMine = node.message.body.author == myAuthor,
+                    depth = depth,
+                    detached = node.detached,
+                    pinned = pinned,
+                    canDelete = node.unsent && node.message.body.author == myAuthor,
+                    // Every message is a reply target, carrying both the root id and this message.
+                    onReply = { onReply(rootId, node.message.id) },
+                    onAuthorClick = { onAuthorClick(node.message.body.author) },
+                    onTogglePin = onTogglePin,
+                    // Non-root messages never get the whole-thread choice, even with local
+                    // replies under them — just this message, same as any other leaf delete.
+                    onDeleteRequested = { onDeleteRequested(node.message) },
+                )
+            }
         }
-        renderNodes(node.children, depth + 1, rootId, nameOf, myAuthor, pinned, onReply, onAuthorClick, onTogglePin, onDeleteRequested)
+        renderNodes(node.children, depth + 1, rootId, blockedAuthors, nameOf, myAuthor, pinned, onReply, onAuthorClick, onTogglePin, onDeleteRequested)
     }
 }
 
@@ -407,6 +495,7 @@ private fun MessageCard(
 
     // Not rememberSaveable — losing an open menu on rotation is a fine trade.
     var showMenu by remember { mutableStateOf(false) }
+    var showAbsoluteTime by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     Row(Modifier.fillMaxWidth().padding(start = (depth.coerceAtMost(5) * 14).dp)) {
@@ -428,12 +517,17 @@ private fun MessageCard(
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         AuthorName(name, isMine = isMine, modifier = Modifier.clickable(onClick = onAuthorClick))
                         Text(
-                            RelativeTime.describe(message.body.timestampMillis, now),
+                            if (showAbsoluteTime) {
+                                RelativeTime.absolute(message.body.timestampMillis)
+                            } else {
+                                RelativeTime.describe(message.body.timestampMillis, now)
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.clickable { showAbsoluteTime = !showAbsoluteTime },
                         )
                     }
-                    Text(message.body.text, style = MaterialTheme.typography.bodyLarge)
+                    LinkifiedText(message.body.text, style = MaterialTheme.typography.bodyLarge)
                 }
             }
             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
@@ -451,6 +545,11 @@ private fun MessageCard(
                     text = { Text("Copy text") },
                     onClick = { showMenu = false; copyToClipboard(context, "Message", message.body.text) },
                     modifier = Modifier.testTag("message-context-copy"),
+                )
+                DropdownMenuItem(
+                    text = { Text("Share") },
+                    onClick = { showMenu = false; shareText(context, message.body.text) },
+                    modifier = Modifier.testTag("message-context-share"),
                 )
                 // Pins the whole thread, same as the top-bar pin, offered from any message.
                 DropdownMenuItem(
@@ -471,7 +570,10 @@ private fun MessageCard(
     }
 }
 
-private fun copyToClipboard(context: Context, label: String, text: String) {
-    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
+private fun shareText(context: Context, text: String) {
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, text)
+    }
+    context.startActivity(Intent.createChooser(intent, null))
 }

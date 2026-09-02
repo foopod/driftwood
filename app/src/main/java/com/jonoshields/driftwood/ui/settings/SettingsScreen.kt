@@ -1,5 +1,7 @@
 package com.jonoshields.driftwood.ui.settings
 
+import com.jonoshields.driftwood.BuildConfig
+import com.jonoshields.driftwood.core.store.Tier
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -72,7 +74,7 @@ internal fun SettingsContent(
             Modifier.padding(padding).padding(16.dp).fillMaxSize().verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            ProjectHeader(Modifier.padding(bottom = 24.dp))
+            ProjectHeader(subtitle = "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
 
             Section("Your identity") {
                 OutlinedTextField(
@@ -145,7 +147,18 @@ internal fun SettingsContent(
                 Row("Held messages", state.messageCount.toString())
                 Row("Window", "${state.windowDays} days")
                 Row("Budget", "${state.budgetMegabytes} MB")
-                Row("Follow / Context / Gossip", state.budgetSplit)
+                Row(
+                    "Follow",
+                    "${state.tierCounts[Tier.FOLLOW] ?: 0} / ${state.tierBudgets[Tier.FOLLOW] ?: 0}",
+                )
+                Row(
+                    "Context",
+                    "${state.tierCounts[Tier.CONTEXT] ?: 0} / ${state.tierBudgets[Tier.CONTEXT] ?: 0}",
+                )
+                Row(
+                    "Gossip",
+                    "${state.tierCounts[Tier.GOSSIP] ?: 0} / ${state.tierBudgets[Tier.GOSSIP] ?: 0}",
+                )
             }
 
             Section("Maintenance") {

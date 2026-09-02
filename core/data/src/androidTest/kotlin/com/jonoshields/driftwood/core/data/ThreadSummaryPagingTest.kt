@@ -14,6 +14,7 @@ import com.jonoshields.driftwood.core.model.MessageId
 import com.jonoshields.driftwood.core.store.Clock
 import com.jonoshields.driftwood.core.store.StorageConfig
 import com.jonoshields.driftwood.core.sync.PhaseOutcome
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -67,22 +68,25 @@ class ThreadSummaryPagingTest {
     }
 
     private suspend fun refresh(
-        wantFollowing: Boolean = true,
+        tab: FeedTab = FeedTab.FOLLOWING,
         unreadOnly: Boolean = false,
         authorFilter: AuthorId? = null,
         textQuery: String? = null,
     ): List<ThreadSummaryRow> {
         val source: PagingSource<Int, ThreadSummaryRow> =
-            database.messages().pagedThreads(me.key, wantFollowing, unreadOnly, authorFilter, textQuery)
+            database.messages().pagedThreads(me.key, tab.name, unreadOnly, authorFilter, textQuery)
         val page = TestPager(config, source).refresh() as PagingSource.LoadResult.Page
         return page.data
     }
 
+    private suspend fun contextTab(unreadOnly: Boolean = false): List<ThreadSummaryRow> =
+        refresh(tab = FeedTab.CONTEXT, unreadOnly = unreadOnly)
+
     private suspend fun otherTab(unreadOnly: Boolean = false): List<ThreadSummaryRow> =
-        refresh(wantFollowing = false, unreadOnly = unreadOnly)
+        refresh(tab = FeedTab.OTHER, unreadOnly = unreadOnly)
 
     @Test
-    fun aRootFromSomeoneListenedToLandsInMyCircle() = runTest {
+    fun aRootFromSomeoneListenedToLandsInFollowing() = runTest {
         follow(alice.key)
         val root = alice.root("hello", now - 1_000)
         given(root)
@@ -94,7 +98,7 @@ class ThreadSummaryPagingTest {
     }
 
     @Test
-    fun aRootFromMyselfLandsInMyCircleEvenThoughSelfIsNeverInTheListenList() = runTest {
+    fun aRootFromMyselfLandsInFollowingEvenThoughSelfIsNeverInTheListenList() = runTest {
         val root = me.root("my own post", now - 1_000)
         given(root)
 
@@ -105,18 +109,70 @@ class ThreadSummaryPagingTest {
     }
 
     @Test
-    fun aRootFromAStrangerLandsOnTheOtherTabOnly() = runTest {
+    fun aRootFromAStrangerWithNoInvolvementLandsOnTheOtherTabOnly() = runTest {
         val root = carol.root("stranger's post", now - 1_000)
         given(root)
 
         assertTrue(refresh().isEmpty())
+        assertTrue(contextTab().isEmpty())
         assertEquals(listOf(root.id), otherTab().map { it.rootId })
     }
 
     @Test
+    fun aStrangersThreadAFollowedPersonRepliedToLandsInContextNotFollowing() = runTest {
+        // The behaviour change Option A is actually for: today "My Circle" would have shown
+        // this thread since Alice's reply is in it; tab membership now follows the root alone.
+        follow(alice.key)
+        val root = carol.root("stranger's post", now - 2_000)
+        val aliceReplies = alice.reply(root.id, root.id, "joining in", now - 1_000)
+        given(root, aliceReplies)
+
+        assertTrue("no longer in Following, since the root itself is a stranger's", refresh().isEmpty())
+        assertEquals(listOf(root.id), contextTab().map { it.rootId })
+        assertTrue(otherTab().isEmpty())
+    }
+
+    @Test
+    fun myOwnReplyToAStrangersThreadCountsTheSameAsAFollowedPersonsReply() = runTest {
+        val root = carol.root("stranger's post", now - 2_000)
+        val myReply = me.reply(root.id, root.id, "just me chiming in", now - 1_000)
+        given(root, myReply)
+
+        assertTrue(refresh().isEmpty())
+        assertEquals(listOf(root.id), contextTab().map { it.rootId })
+        assertTrue(otherTab().isEmpty())
+    }
+
+    @Test
+    fun aStrangersThreadWithNoFollowedOrSelfReplyStaysOnOther() = runTest {
+        follow(alice.key)
+        val root = carol.root("stranger's post", now - 2_000)
+        val strangerReply = bob.reply(root.id, root.id, "another stranger", now - 1_000) // bob unfollowed here
+        given(root, strangerReply)
+
+        assertTrue(refresh().isEmpty())
+        assertTrue(contextTab().isEmpty())
+        assertEquals(listOf(root.id), otherTab().map { it.rootId })
+    }
+
+    @Test
+    fun aMissingRootFallsBackToTheBestTierAmongWhatRemains() = runTest {
+        // The root itself was never held; the surviving reply is by a followed author, so the
+        // thread still bucket into Following via the fallback, not Other by default.
+        follow(alice.key)
+        val root = carol.root("never held", now - 2_000)
+        val aliceReply = alice.reply(root.id, root.id, "the part that remains", now - 1_000)
+        given(aliceReply) // root itself never given
+
+        assertEquals(listOf(root.id), refresh().map { it.rootId })
+        assertTrue(contextTab().isEmpty())
+        assertTrue(otherTab().isEmpty())
+    }
+
+    @Test
     fun aStrangerReplyInAListenedThreadNeverBecomesTheHighlightedReply() = runTest {
-        // Context, not a listened reply: the thread qualifies for My Circle because Alice's
-        // root is in it, but Carol replying doesn't make Carol "in scope".
+        // Not a "known" reply: the thread lands in Following because Alice's own root is in
+        // it, but Carol replying doesn't make Carol "known" for preview purposes.
         follow(alice.key)
         val root = alice.root("what do you think?", now - 3_000)
         val strangerReply = carol.reply(root.id, root.id, "I have thoughts", now - 2_000)
@@ -345,5 +401,46 @@ class ThreadSummaryPagingTest {
         database.messages().markThreadRead(root.id)
 
         assertFalse(refresh().single().rootUnread)
+    }
+
+    private suspend fun unreadCountsByTab(): Map<String, Int> =
+        database.messages().observeUnreadCountsByTab(me.key).first().associate { it.tab to it.count }
+
+    @Test
+    fun unreadCountsByTabGroupsByFeedTabAndCountsDistinctThreads() = runTest {
+        follow(alice.key)
+        // FOLLOWING: alice's own root, unread by default via given().
+        given(alice.root("alice's post", now - 3_000))
+        // CONTEXT: a stranger's root that I replied to, still unread.
+        val strangersRoot = carol.root("stranger's post", now - 2_000)
+        given(strangersRoot, me.reply(strangersRoot.id, strangersRoot.id, "joining in", now - 1_500))
+        // OTHER: a stranger's root with no involvement from me or alice.
+        given(carol.root("unrelated stranger post", now - 1_000))
+
+        val counts = unreadCountsByTab()
+
+        assertEquals(1, counts["FOLLOWING"])
+        assertEquals(1, counts["CONTEXT"])
+        assertEquals(1, counts["OTHER"])
+    }
+
+    @Test
+    fun unreadCountsByTabExcludesThreadsWithNothingUnread() = runTest {
+        val root = me.root("read this", now - 1_000)
+        given(root)
+        database.messages().markThreadRead(root.id)
+
+        assertTrue(unreadCountsByTab().isEmpty())
+    }
+
+    @Test
+    fun unreadCountsByTabCountsAThreadOnceEvenWithMultipleUnreadReplies() = runTest {
+        follow(alice.key)
+        val root = alice.root("alice's post", now - 3_000)
+        val reply1 = alice.reply(root.id, root.id, "reply one", now - 2_000)
+        val reply2 = alice.reply(root.id, root.id, "reply two", now - 1_000)
+        given(root, reply1, reply2)
+
+        assertEquals(1, unreadCountsByTab()["FOLLOWING"])
     }
 }

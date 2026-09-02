@@ -22,9 +22,9 @@ import com.jonoshields.driftwood.R
 /** Playwrite US Traditional, bundled locally rather than via Android's Downloadable Fonts API. */
 private val PlaywriteFontFamily = FontFamily(Font(R.font.playwrite_us_trad))
 
-/** The mark and the name, centered — shared branding for Settings and first-run. */
+/** The mark and the name, centered — shared branding for Settings and first-run. [subtitle], if given, sits directly under the name (Settings' version line; first-run leaves it unset). */
 @Composable
-fun ProjectHeader(modifier: Modifier = Modifier) {
+fun ProjectHeader(modifier: Modifier = Modifier, subtitle: String? = null) {
     Column(
         modifier.fillMaxWidth().padding(top = 40.dp, bottom = 48.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -41,5 +41,12 @@ fun ProjectHeader(modifier: Modifier = Modifier) {
             fontFamily = PlaywriteFontFamily,
             style = MaterialTheme.typography.headlineLarge,
         )
+        subtitle?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }

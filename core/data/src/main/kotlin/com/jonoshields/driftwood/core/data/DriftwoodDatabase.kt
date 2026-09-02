@@ -99,9 +99,25 @@ internal interface MessageDao {
     @Query("UPDATE messages SET tier = :tier WHERE id = :id")
     suspend fun setTier(id: MessageId, tier: Tier)
 
+    /** Current occupancy per tier — for Settings' storage breakdown, not the pruning path (which classifies transiently in memory). */
+    @Query("SELECT tier, COUNT(*) as count FROM messages GROUP BY tier")
+    fun observeTierCounts(): Flow<List<TierCountRow>>
+
+    /** How many messages the given author has, for a "last heard from" reachability signal. */
+    @Query("SELECT MAX(effective_time) FROM messages WHERE author = :author")
+    fun observeLastMessageTimestamp(author: AuthorId): Flow<Long?>
+
+    /** All still-unread ids in a thread, snapshotted once — see `ThreadViewModel.bind` for why this must run before `markThreadRead`. */
+    @Query("SELECT id FROM messages WHERE thread_root = :root AND read = 0")
+    suspend fun unreadMessageIds(root: MessageId): List<MessageId>
+
     // ---- the paginated thread list, one row per thread.
-    // "in scope" (tab membership) means tier = :followTier OR author = :myAuthor.
-    // "known" (naming/preview eligibility) is broader: in scope, OR a verified contact.
+    // Tab membership is decided by the ROOT's own tier — "Following" (you or someone you
+    // follow started it), "Context" (someone else started it, but you or someone you follow
+    // replied), "Other" (neither). A root that isn't held falls back to the best tier among
+    // whatever of the thread remains, same priority order.
+    // "known" (naming/preview eligibility) is a separate, broader concept: in scope, OR a
+    // verified contact — untouched by the tab bucketing above.
     @Query(
         """
         SELECT
@@ -178,10 +194,39 @@ internal interface MessageDao {
             ORDER BY r4.effective_time DESC, r4.id ASC
             LIMIT 1
         )
-        WHERE EXISTS(
-            SELECT 1 FROM messages s
-            WHERE s.thread_root = m.thread_root AND (s.tier = :followTier OR s.author = :myAuthor)
-        ) = :wantFollowing
+        WHERE (
+            CASE
+                WHEN root.author = :myAuthor THEN 'FOLLOWING'
+                WHEN root.id IS NOT NULL AND root.tier = 'LISTEN' THEN 'FOLLOWING'
+                WHEN root.id IS NOT NULL AND root.tier = 'CONTEXT' THEN 'CONTEXT'
+                WHEN root.id IS NOT NULL AND EXISTS(
+                    SELECT 1 FROM messages p WHERE p.thread_root = m.thread_root AND p.author = :myAuthor
+                ) THEN 'CONTEXT'
+                WHEN root.id IS NOT NULL THEN 'OTHER'
+                ELSE (
+                    -- Root not held: fall back to the best tier among what remains, same
+                    -- priority order and the same "I count too" treatment as above.
+                    SELECT
+                        CASE
+                            WHEN best.author = :myAuthor OR best.tier = 'LISTEN' THEN 'FOLLOWING'
+                            WHEN best.tier = 'CONTEXT' THEN 'CONTEXT'
+                            WHEN EXISTS(
+                                SELECT 1 FROM messages p2 WHERE p2.thread_root = m.thread_root AND p2.author = :myAuthor
+                            ) THEN 'CONTEXT'
+                            ELSE 'OTHER'
+                        END
+                    FROM messages best
+                    WHERE best.thread_root = m.thread_root
+                    ORDER BY
+                        CASE
+                            WHEN best.author = :myAuthor OR best.tier = 'LISTEN' THEN 0
+                            WHEN best.tier = 'CONTEXT' THEN 1
+                            ELSE 2
+                        END
+                    LIMIT 1
+                )
+            END
+        ) = :tab
         AND (:unreadOnly = 0 OR EXISTS(
             SELECT 1 FROM messages u2 WHERE u2.thread_root = m.thread_root AND u2.read = 0
         ))
@@ -201,12 +246,62 @@ internal interface MessageDao {
     )
     fun pagedThreads(
         myAuthor: AuthorId?,
-        wantFollowing: Boolean,
+        /** One of [FeedTab]'s names — `Room` binds a `String` here, not the enum itself. */
+        tab: String,
         unreadOnly: Boolean,
         authorFilter: AuthorId?,
         textQuery: String?,
         followTier: Tier = Tier.FOLLOW,
     ): PagingSource<Int, ThreadSummaryRow>
+
+    /**
+     * Count of threads with at least one unread message, grouped by feed tab — same
+     * tab-classification `CASE` and unread condition as [pagedThreads], but aggregated rather
+     * than projected per-thread, for the Home tab badges.
+     */
+    @Query(
+        """
+        SELECT tab, COUNT(*) AS count FROM (
+            SELECT DISTINCT m.thread_root,
+                (
+                    CASE
+                        WHEN root.author = :myAuthor THEN 'FOLLOWING'
+                        WHEN root.id IS NOT NULL AND root.tier = 'LISTEN' THEN 'FOLLOWING'
+                        WHEN root.id IS NOT NULL AND root.tier = 'CONTEXT' THEN 'CONTEXT'
+                        WHEN root.id IS NOT NULL AND EXISTS(
+                            SELECT 1 FROM messages p WHERE p.thread_root = m.thread_root AND p.author = :myAuthor
+                        ) THEN 'CONTEXT'
+                        WHEN root.id IS NOT NULL THEN 'OTHER'
+                        ELSE (
+                            SELECT
+                                CASE
+                                    WHEN best.author = :myAuthor OR best.tier = 'LISTEN' THEN 'FOLLOWING'
+                                    WHEN best.tier = 'CONTEXT' THEN 'CONTEXT'
+                                    WHEN EXISTS(
+                                        SELECT 1 FROM messages p2 WHERE p2.thread_root = m.thread_root AND p2.author = :myAuthor
+                                    ) THEN 'CONTEXT'
+                                    ELSE 'OTHER'
+                                END
+                            FROM messages best
+                            WHERE best.thread_root = m.thread_root
+                            ORDER BY
+                                CASE
+                                    WHEN best.author = :myAuthor OR best.tier = 'LISTEN' THEN 0
+                                    WHEN best.tier = 'CONTEXT' THEN 1
+                                    ELSE 2
+                                END
+                            LIMIT 1
+                        )
+                    END
+                ) AS tab
+            FROM messages m
+            LEFT JOIN messages root ON root.id = m.thread_root
+            WHERE EXISTS(SELECT 1 FROM messages u WHERE u.thread_root = m.thread_root AND u.read = 0)
+        )
+        GROUP BY tab
+        """
+    )
+    fun observeUnreadCountsByTab(myAuthor: AuthorId?): Flow<List<TabUnreadCountRow>>
 }
 
 @Dao

@@ -57,9 +57,9 @@ trust/security — is the source of truth at [`site/undertow.html`](site/underto
 **Built and shipping:** local keypair identity with export/backup and recovery; signed text
 messages (roots and replies); the windowed, three-tier, fair-share-pruned local store; sync
 over both LAN TCP and Wi-Fi Direct, with hash-list reconciliation, priority + gossip phases,
-and an ambient want-list for opportunistic gap backfill; a local, never-shared blocklist; and
-the core UI — feed (circle / everything else), thread view, compose, contacts, listen,
-favourite, block.
+and an ambient want-list for opportunistic gap backfill; a local, never-shared blocklist; local
+deletion of your own messages while they're still unsent; and the core UI — feed (circle /
+everything else), thread view, compose, contacts, listen, favourite, block.
 
 **Not yet implemented** — see below.
 
@@ -116,19 +116,12 @@ mechanism.
    implement. Each one trades range, speed, and power differently; none of them require a
    protocol change to add.
 
-5. **Local deletion of your own posts.** A modified client could let you remove your own past
-   messages from your own device, with a permanent-ish local tombstone so a copy someone else
-   still holds doesn't quietly reappear on a future sync. For a post that was never synced to
-   anyone, this is a true delete — the only copy that ever existed is gone. For one that has
-   already propagated, it removes your copy only, honestly — the same limit the blocklist
-   already states plainly, since nothing can recall a message from a device it already reached.
-
-6. **Hiding posts locally.** A pure display-layer filter for curating your own feed — never
+5. **Hiding posts locally.** A pure display-layer filter for curating your own feed — never
    touches storage, never affects what you relay to others. Deliberately distinct from both
    deletion and blocking: it's a personal view preference, not a lever over what the network
    carries.
 
-7. **Sybil-resistant fair-share.** Identity is free — a keypair costs nothing to generate — so
+6. **Sybil-resistant fair-share.** Identity is free — a keypair costs nothing to generate — so
    equal per-author storage shares are gameable: one attacker minting hundreds of keys can
    squeeze real authors toward zero, most visibly in the gossip tier, where authors are
    strangers by definition. A graph-weighted or graph-restricted fix was considered and
@@ -148,7 +141,7 @@ mechanism.
    through anyone's graph. To be validated against real sybil behaviour in field test before
    being treated as settled.
 
-8. **Improved (efficient) set reconciliation.** Reconciliation today exchanges a full hash-list
+7. **Improved (efficient) set reconciliation.** Reconciliation today exchanges a full hash-list
    of ids per session — simple, and fast enough at current scale (a worst-case full listen
    partition is 2 MiB, under 2ms over Wi-Fi Direct), but its cost is proportional to total
    holdings, not to how much two devices actually differ by. A bucketed/range-based digest
@@ -164,7 +157,7 @@ mechanism.
    bucketing bug would mean silent message loss rather than a slower sync. Deferred until field
    test shows the naive approach is actually a bottleneck, not before.
 
-9. **A guided tutorial for first-time users.** First-run today only covers writing and backing up
+8. **A guided tutorial for first-time users.** First-run today only covers writing and backing up
    your identity, then drops you into a guided first post (`ComposeScreen`'s `introMode`) — it
    never explains the mechanics that make this app behave differently from anything else on a
    new user's phone: that nothing moves until you deliberately sync with someone nearby, what the

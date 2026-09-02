@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 /** One row on the Contacts screen — everyone with a claimed name, verified/following annotated. */
 data class ContactEntry(val author: AuthorId, val displayName: DisplayName, val isFollowing: Boolean)
@@ -40,6 +41,10 @@ class ContactsViewModel @Inject constructor(
         }
         sortContactEntries(unsorted)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun setNickname(author: AuthorId, nickname: String) {
+        viewModelScope.launch { directory.setNickname(author, nickname) }
+    }
 }
 
 /** Verified first, then followed, alphabetical within each group. */

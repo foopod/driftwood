@@ -49,6 +49,7 @@ class ContactContentTest {
         displayName = NameResolver.resolve(them, nickname = null, username = "sam"),
         isFollowing = isFollowing,
         isBlocked = isBlocked,
+        lastHeardFromMillis = null,
     )
 
     @Test

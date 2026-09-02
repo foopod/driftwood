@@ -26,6 +26,7 @@ sealed interface ContactUiState {
         val displayName: DisplayName,
         val isFollowing: Boolean,
         val isBlocked: Boolean,
+        val lastHeardFromMillis: Long?,
     ) : ContactUiState
 }
 
@@ -47,11 +48,13 @@ class ContactViewModel @Inject constructor(
                 directory.observeNames(),
                 directory.observeFollowList(),
                 repository.observeBlockedAuthors(),
-            ) { names, followList, blockedAuthors ->
+                repository.observeLastMessageFrom(a),
+            ) { names, followList, blockedAuthors, lastHeardFromMillis ->
                 ContactUiState.Loaded(
                     displayName = names[a] ?: NameResolver.resolve(a, nickname = null, username = null),
                     isFollowing = a in followList,
                     isBlocked = a in blockedAuthors,
+                    lastHeardFromMillis = lastHeardFromMillis,
                 )
             }
         }
