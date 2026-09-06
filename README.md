@@ -58,10 +58,11 @@ trust/security — is the source of truth at [`site/undertow.html`](site/underto
 messages (roots and replies); the windowed, three-tier, fair-share-pruned local store; sync
 over both LAN TCP and Wi-Fi Direct, with hash-list reconciliation, priority + gossip phases,
 and an ambient want-list for opportunistic gap backfill; a local, never-shared blocklist; local
-deletion of your own messages while they're still unsent; and the core UI — feed (circle /
-everything else), thread view, compose, contacts, listen, favourite, block.
+deletion of your own messages while they're still unsent; and the core UI — a **Feed** of what's
+relevant to you, an **Activity** list of replies to your posts, a **Discover** stream for the
+gossip tier, plus thread view, compose, contacts, listen, favourite, block.
 
-**Not yet implemented** — see below.
+**Not yet implemented** — see below, and `NEXT.md` for what's queued.
 
 ## Project layout
 
