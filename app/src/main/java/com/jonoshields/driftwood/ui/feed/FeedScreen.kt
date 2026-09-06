@@ -1,4 +1,4 @@
-package com.jonoshields.driftwood.ui.home
+package com.jonoshields.driftwood.ui.feed
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -6,14 +6,12 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -22,60 +20,36 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Comment
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.shape.CircleShape
-import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.PagingData
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
-import com.jonoshields.driftwood.core.data.FeedTab
 import com.jonoshields.driftwood.core.data.ThreadSummary
 import com.jonoshields.driftwood.core.model.AuthorId
 import com.jonoshields.driftwood.core.model.MessageId
@@ -88,176 +62,39 @@ import com.jonoshields.driftwood.ui.common.LinkifiedText
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 
-@Composable
-fun HomeScreen(
-    onOpenThread: (MessageId) -> Unit,
-    onOpenContact: (AuthorId) -> Unit,
-    onCompose: () -> Unit,
-    onSettings: () -> Unit,
-    onSync: () -> Unit,
-    onAddContact: () -> Unit,
-    modifier: Modifier = Modifier,
-    viewModel: HomeViewModel = hiltViewModel(),
-) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val unreadCountsByTab by viewModel.unreadCountsByTab.collectAsStateWithLifecycle()
-    HomeContent(
-        state = state,
-        myAuthor = viewModel.myAuthor,
-        followingThreads = viewModel.followingThreads,
-        contextThreads = viewModel.contextThreads,
-        otherThreads = viewModel.otherThreads,
-        unreadCountsByTab = unreadCountsByTab,
-        onUnreadOnlyChanged = viewModel::setUnreadOnly,
-        onSearchTextChanged = viewModel::setSearchText,
-        onAuthorSelected = viewModel::selectAuthor,
-        onAuthorFilterCleared = viewModel::clearAuthorFilter,
-        onOpenThread = onOpenThread,
-        onOpenContact = onOpenContact,
-        onCompose = onCompose,
-        onSettings = onSettings,
-        onSync = onSync,
-        onAddContact = onAddContact,
-        modifier = modifier,
-    )
-}
-
+/**
+ * One thread list — Feed or Discover, chosen by the caller's [threads] flow. No scaffold of its
+ * own: [com.jonoshields.driftwood.ui.shell.MainShell] owns the top bar, FAB and bottom nav.
+ * Search state is hoisted to the shell so it's shared across the Feed and Discover panes.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun HomeContent(
-    state: HomeUiState,
+internal fun FeedPane(
+    state: FeedUiState,
+    threads: Flow<PagingData<ThreadSummary>> = emptyPagingFlow(),
+    emptyDefault: String = "Nothing here yet.",
     myAuthor: AuthorId? = null,
-    followingThreads: Flow<PagingData<ThreadSummary>> = emptyPagingFlow(),
-    contextThreads: Flow<PagingData<ThreadSummary>> = emptyPagingFlow(),
-    otherThreads: Flow<PagingData<ThreadSummary>> = emptyPagingFlow(),
-    unreadCountsByTab: Map<FeedTab, Int> = emptyMap(),
-    onUnreadOnlyChanged: (Boolean) -> Unit = {},
+    searchExpanded: Boolean = false,
+    searchText: String = "",
+    selectedAuthor: AuthorId? = null,
     onSearchTextChanged: (String) -> Unit = {},
     onAuthorSelected: (AuthorId) -> Unit = {},
     onAuthorFilterCleared: () -> Unit = {},
+    onSearchCollapsed: () -> Unit = {},
     onOpenThread: (MessageId) -> Unit,
     onOpenContact: (AuthorId) -> Unit = {},
-    onCompose: () -> Unit,
-    onSettings: () -> Unit,
-    onSync: () -> Unit,
-    onAddContact: () -> Unit = {},
+    onOpenOwnProfile: () -> Unit = {},
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    // 0 = Following, 1 = Context, 2 = Other. Not tied to HomeUiState, so it survives the list reloading.
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-
-    // Search uses plain `remember`, not `rememberSaveable` — resetting on rotation is accepted.
-    var unreadOnly by rememberSaveable { mutableStateOf(false) }
-    var searchText by remember { mutableStateOf("") }
-    var selectedAuthor by remember { mutableStateOf<AuthorId?>(null) }
-    var searchExpanded by remember { mutableStateOf(false) }
-
-    fun collapseSearch() {
-        searchExpanded = false
-        searchText = ""
-        selectedAuthor = null
-        onSearchTextChanged("")
-        onAuthorFilterCleared()
-    }
-
-    // All three tabs collected always — cheap, since Paging only loads pages actually requested.
-    val followingItems = followingThreads.collectAsLazyPagingItems()
-    val contextItems = contextThreads.collectAsLazyPagingItems()
-    val otherItems = otherThreads.collectAsLazyPagingItems()
-
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        topBar = {
-            TopAppBar(
-                title = {},
-                navigationIcon = {
-                    if (unreadOnly) {
-                        InputChip(
-                            selected = true,
-                            onClick = {
-                                unreadOnly = false
-                                onUnreadOnlyChanged(false)
-                            },
-                            label = { Text("Unread") },
-                            trailingIcon = {
-                                Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(18.dp))
-                            },
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
-                    }
-                },
-                actions = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // The one thing worth a permanent, always-visible slot; everything else is one tap further away.
-                    Button(
-                        onClick = onSync,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                        ),
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.size(8.dp))
-                        Text("Sync")
-                    }
-                    // Boxed together so DropdownMenu anchors to the button, not the whole Row.
-                    Box {
-                        var menuOpen by remember { mutableStateOf(false) }
-                        IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More options")
-                        }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Search") },
-                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                                onClick = { menuOpen = false; searchExpanded = true },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Unread only") },
-                                leadingIcon = if (unreadOnly) {
-                                    { Icon(Icons.Default.Check, contentDescription = null) }
-                                } else {
-                                    null
-                                },
-                                // Stays open so flipping it shows the checkmark land before dismissing.
-                                onClick = {
-                                    val new = !unreadOnly
-                                    unreadOnly = new
-                                    onUnreadOnlyChanged(new)
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Quick verify") },
-                                onClick = { menuOpen = false; onAddContact() },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Settings") },
-                                onClick = { menuOpen = false; onSettings() },
-                            )
-                        }
-                    }
-                    }
-                },
-            )
-        },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onCompose,
-                containerColor = MaterialTheme.colorScheme.secondary,
-                contentColor = MaterialTheme.colorScheme.onSecondary,
-                icon = { Icon(Icons.Default.Edit, contentDescription = null) },
-                text = { Text("Compose") },
-            )
-        },
-    ) { padding ->
-        when (state) {
-            HomeUiState.Loading -> {
-                Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            }
-            HomeUiState.Empty -> EmptyState(Modifier.padding(padding))
-            is HomeUiState.Threads -> Column(Modifier.padding(padding).fillMaxSize()) {
+    when (state) {
+        FeedUiState.Loading -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        FeedUiState.Empty -> EmptyState(modifier)
+        is FeedUiState.Threads -> {
+            val items = threads.collectAsLazyPagingItems()
+            Column(modifier.fillMaxSize()) {
                 AnimatedVisibility(
                     visible = searchExpanded,
                     enter = expandVertically(tween(SEARCH_ANIMATION_MILLIS), expandFrom = Alignment.Top) +
@@ -265,88 +102,32 @@ internal fun HomeContent(
                     exit = shrinkVertically(tween(SEARCH_ANIMATION_MILLIS), shrinkTowards = Alignment.Top) +
                         fadeOut(tween(SEARCH_ANIMATION_MILLIS)),
                 ) {
-                    HomeSearchField(
+                    FeedSearchField(
                         names = state.names,
                         searchText = searchText,
                         selectedAuthor = selectedAuthor,
-                        onSearchTextChanged = {
-                            searchText = it
-                            selectedAuthor = null
-                            onSearchTextChanged(it)
-                        },
-                        onAuthorSelected = { author ->
-                            selectedAuthor = author
-                            searchText = ""
-                            onAuthorSelected(author)
-                        },
-                        onClearAuthor = {
-                            selectedAuthor = null
-                            onAuthorFilterCleared()
-                        },
-                        onCollapse = { collapseSearch() },
+                        onSearchTextChanged = onSearchTextChanged,
+                        onAuthorSelected = onAuthorSelected,
+                        onClearAuthor = onAuthorFilterCleared,
+                        onCollapse = onSearchCollapsed,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
-                    )
-                }
-                TabRow(selectedTabIndex = selectedTab) {
-                    Tab(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        text = { TabLabel("Following", unreadCountsByTab[FeedTab.FOLLOWING]) },
-                    )
-                    Tab(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        text = { TabLabel("Context", unreadCountsByTab[FeedTab.CONTEXT]) },
-                    )
-                    Tab(
-                        selected = selectedTab == 2,
-                        onClick = { selectedTab = 2 },
-                        text = { TabLabel("Other", unreadCountsByTab[FeedTab.OTHER]) },
                     )
                 }
                 // Kept out of the repository layer, which stays name-agnostic.
                 val nameOf: (AuthorId) -> DisplayName = { author ->
                     state.names[author] ?: NameResolver.resolve(author, nickname = null, username = null)
                 }
-                // An active search explains an empty tab more precisely than unread-only does,
-                // on the rare occasion both are on at once.
-                val emptyReason = when {
-                    searchText.isNotBlank() || selectedAuthor != null -> "Nothing matches your search."
-                    unreadOnly -> "You're all caught up."
-                    else -> null
-                }
-                when (selectedTab) {
-                    0 -> ThreadTab(
-                        threads = followingItems,
-                        emptyMessage = emptyReason ?: "Nobody you follow has posted yet.",
-                        nameOf = nameOf,
-                        myAuthor = myAuthor,
-                        onOpenThread = onOpenThread,
-                        onOpenContact = onOpenContact,
-                        onOpenOwnProfile = onSettings,
-                        onRefresh = onSync,
-                    )
-                    1 -> ThreadTab(
-                        threads = contextItems,
-                        emptyMessage = emptyReason ?: "Nobody you follow has joined a stranger's thread yet.",
-                        nameOf = nameOf,
-                        myAuthor = myAuthor,
-                        onOpenThread = onOpenThread,
-                        onOpenContact = onOpenContact,
-                        onOpenOwnProfile = onSettings,
-                        onRefresh = onSync,
-                    )
-                    else -> ThreadTab(
-                        threads = otherItems,
-                        emptyMessage = emptyReason ?: "Nothing incidental has turned up yet.",
-                        nameOf = nameOf,
-                        myAuthor = myAuthor,
-                        onOpenThread = onOpenThread,
-                        onOpenContact = onOpenContact,
-                        onOpenOwnProfile = onSettings,
-                        onRefresh = onSync,
-                    )
-                }
+                val searching = searchText.isNotBlank() || selectedAuthor != null
+                ThreadList(
+                    threads = items,
+                    emptyMessage = if (searching) "Nothing matches your search." else emptyDefault,
+                    nameOf = nameOf,
+                    myAuthor = myAuthor,
+                    onOpenThread = onOpenThread,
+                    onOpenContact = onOpenContact,
+                    onOpenOwnProfile = onOpenOwnProfile,
+                    onRefresh = onRefresh,
+                )
             }
         }
     }
@@ -355,7 +136,7 @@ internal fun HomeContent(
 /** Free text with a name type-ahead, or — once picked — a removable chip; the two are mutually exclusive. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HomeSearchField(
+private fun FeedSearchField(
     names: Map<AuthorId, DisplayName>,
     searchText: String,
     selectedAuthor: AuthorId?,
@@ -438,7 +219,7 @@ private fun HomeSearchField(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ThreadTab(
+private fun ThreadList(
     threads: LazyPagingItems<ThreadSummary>,
     emptyMessage: String,
     nameOf: (AuthorId) -> DisplayName,
@@ -480,17 +261,6 @@ private fun ThreadTab(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun TabLabel(label: String, unreadCount: Int?) {
-    if (unreadCount != null && unreadCount > 0) {
-        BadgedBox(badge = { Badge { Text(unreadCount.toString()) } }) {
-            Text(label)
-        }
-    } else {
-        Text(label)
     }
 }
 
@@ -543,14 +313,6 @@ private fun ThreadRow(
                         )
                     } else {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            // Unread is a colour, not a position — a dot, not a badge count.
-                            if (preview.rootUnread) {
-                                Box(
-                                    Modifier.size(8.dp).clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary)
-                                        .semantics { contentDescription = "Unread" },
-                                )
-                            }
                             AuthorName(
                                 nameOf(rootAuthor),
                                 isMine = rootAuthor == myAuthor,
@@ -607,9 +369,7 @@ private fun ThreadRow(
             ReplyPreview.None -> Unit
             is ReplyPreview.Snippets -> {
                 // Root plus each reply, not the reply alone — indented/muted so it reads as an answer.
-                // Shown oldest-first, like the conversation happened; the dot only ever marks the
-                // newest one — it's one unread signal, not one per card.
-                val newestTimestamp = replyPreview.replies.maxOf { it.timestamp }
+                // Shown oldest-first, like the conversation happened.
                 replyPreview.replies.forEach { snippet ->
                     Card(
                         Modifier.fillMaxWidth().padding(start = 24.dp),
@@ -617,13 +377,6 @@ private fun ThreadRow(
                     ) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                if (preview.previewUnread && snippet.timestamp == newestTimestamp) {
-                                    Box(
-                                        Modifier.size(8.dp).clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.primary)
-                                            .semantics { contentDescription = "Unread" },
-                                    )
-                                }
                                 AuthorName(
                                     nameOf(snippet.author),
                                     isMine = snippet.author == myAuthor,
@@ -659,15 +412,8 @@ private fun ThreadRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (preview.previewUnread) {
-                            Box(
-                                Modifier.size(8.dp).clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary)
-                                    .semantics { contentDescription = "Unread" },
-                            )
-                        }
                         Text(
-                            replySummaryText(replyPreview, preview.previewUnread, nameOf),
+                            replySummaryText(replyPreview, unread = false, nameOf),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -699,7 +445,7 @@ private fun replySummaryText(
     return "$count from $named$suffix"
 }
 
-/** Default for the preview/test-friendly [HomeContent] parameters — an always-empty page. */
+/** Default for the preview/test-friendly [FeedPane] parameters — an always-empty page. */
 private fun emptyPagingFlow(): Flow<PagingData<ThreadSummary>> = flowOf(PagingData.empty())
 
 /** Quicker than Compose's defaults — the search expand/collapse should feel snappy, not floaty. */
@@ -709,7 +455,7 @@ private const val SEARCH_ANIMATION_MILLIS = 120
 @Composable
 private fun EmptyPreview() {
     DriftwoodTheme {
-        HomeContent(state = HomeUiState.Empty, onOpenThread = {}, onCompose = {}, onSettings = {}, onSync = {})
+        FeedPane(state = FeedUiState.Empty, onOpenThread = {})
     }
 }
 
@@ -766,14 +512,10 @@ private fun ThreadsPreview() {
         isPinned = false,
     )
     DriftwoodTheme {
-        HomeContent(
-            state = HomeUiState.Threads(),
-            followingThreads = flowOf(PagingData.from(listOf(listening))),
-            otherThreads = flowOf(PagingData.from(listOf(gossip))),
+        FeedPane(
+            state = FeedUiState.Threads(),
+            threads = flowOf(PagingData.from(listOf(listening, gossip))),
             onOpenThread = {},
-            onCompose = {},
-            onSettings = {},
-            onSync = {},
         )
     }
 }

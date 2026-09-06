@@ -48,6 +48,9 @@ internal class Converters {
         // Covers the paginated thread-list query's `thread_root = ? AND <column> = ?` EXISTS checks.
         Index(value = ["thread_root", "tier"]),
         Index(value = ["thread_root", "read"]),
+        // Activity: the `par.id = r.parent` self-join and the `first_received_time` ordering.
+        Index("parent"),
+        Index("first_received_time"),
     ],
 )
 internal class MessageEntity(
@@ -82,10 +85,18 @@ internal class TierCountRow(
     val count: Int,
 )
 
-/** One row of the per-tab unread-thread count — how many threads with an unread message fall in each [FeedTab]. */
-internal class TabUnreadCountRow(
-    val tab: String,
-    val count: Int,
+/** One reply to a message the user authored, for the Activity list — see `MessageDao.pagedActivity`. */
+internal class ActivityRow(
+    @ColumnInfo(name = "reply_id") val replyId: MessageId,
+    @ColumnInfo(name = "reply_author") val replyAuthor: AuthorId,
+    @ColumnInfo(name = "reply_text") val replyText: String,
+    @ColumnInfo(name = "reply_timestamp") val replyTimestamp: Long,
+    val read: Boolean,
+    @ColumnInfo(name = "thread_root") val threadRoot: MessageId,
+    /** True when the replied-to message is the thread root ("replied to your post" vs "…to your reply"). */
+    @ColumnInfo(name = "parent_is_root") val parentIsRoot: Boolean,
+    /** The thread root's text for context; null when the root isn't held here. */
+    @ColumnInfo(name = "root_text") val rootText: String?,
 )
 
 /** One row of the paginated thread list — the root, up to two "known" (verified/followed/self) reply previews, and small per-thread counts, computed by a `GROUP BY thread_root` query rather than stored. */

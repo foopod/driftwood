@@ -14,8 +14,9 @@ data class Compose(
     val introMode: Boolean = false,
 ) : NavKey
 
-/** One thread, addressed by its root id in hex. */
-@Serializable data class Thread(val rootId: String) : NavKey
+/** One thread, addressed by its root id in hex. [focusMessageId] (hex) scrolls straight to a
+ * specific reply when set — used when opening from the Activity list. */
+@Serializable data class Thread(val rootId: String, val focusMessageId: String? = null) : NavKey
 
 @Serializable data object Settings : NavKey
 

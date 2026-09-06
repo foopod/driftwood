@@ -26,12 +26,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 /**
- * Which of the three feed tabs a thread belongs in, decided by its root: [FOLLOWING] (you or
- * someone you follow started it), [CONTEXT] (someone else started it, but you or someone you
- * follow replied), [OTHER] (neither). A thread whose root isn't held falls back to the best tab
- * among whatever of it remains, same priority order — see `MessageDao.pagedThreads`.
+ * How a thread is classified by its root, for splitting the feed: [FOLLOWING] (you or someone you
+ * follow started it), [CONTEXT] (someone else started it, but you or someone you follow replied),
+ * [OTHER] (neither). A thread whose root isn't held falls back to the best class among whatever of
+ * it remains, same priority order — see `MessageDao.pagedThreads`.
+ *
+ * Internal plumbing, not a UI concept: the Feed screen shows [FOLLOWING] + [CONTEXT] merged, the
+ * Discover screen shows [OTHER].
  */
-enum class FeedTab { FOLLOWING, CONTEXT, OTHER }
+internal enum class ThreadClass { FOLLOWING, CONTEXT, OTHER }
 
 /** One thread as it appears in the paginated list: the root, plus up to two "known" (verified/followed/self) reply previews, plus per-thread counts. */
 data class ThreadSummary(
@@ -59,6 +62,20 @@ data class ThreadSummary(
     val isPinned: Boolean,
 )
 
+/** One "someone replied to you" entry in the Activity list — a single reply to a message you wrote. */
+data class ActivityItem(
+    val replyId: MessageId,
+    val replyAuthor: AuthorId,
+    val replyText: String,
+    val timestamp: Long,
+    val isUnread: Boolean,
+    val threadRoot: MessageId,
+    /** True when they replied to your thread root ("replied to your post" vs "…to your reply"). */
+    val repliedToRoot: Boolean,
+    /** The thread root's text, for context; null when the root isn't held here. */
+    val rootText: String?,
+)
+
 /** Errors that cross the repository boundary. Platform exceptions never do. */
 sealed class DataError(message: String, cause: Throwable? = null) : Exception(message, cause) {
     class Local(cause: Throwable) : DataError("Local storage error", cause)
@@ -73,13 +90,24 @@ interface MessageRepository {
     /** Cheap existence check behind the first-run empty state. */
     fun observeHasAnyMessage(): Flow<Boolean>
 
-    /** The paginated thread list for one [tab]; [authorFilter]/[textQuery] are the search box. */
-    fun pagedThreads(
-        tab: FeedTab,
-        unreadOnly: Boolean,
+    /** The main feed: threads started by you or someone you follow, or joined by them.
+     * [authorFilter]/[textQuery] are the search box. */
+    fun pagedFeed(
         authorFilter: AuthorId? = null,
         textQuery: String? = null,
     ): Flow<PagingData<ThreadSummary>>
+
+    /** Discover: incidental threads from strangers — the gossip tier. Same search params. */
+    fun pagedDiscover(
+        authorFilter: AuthorId? = null,
+        textQuery: String? = null,
+    ): Flow<PagingData<ThreadSummary>>
+
+    /** The Activity list: replies to messages you wrote, newest-arrived first. */
+    fun pagedActivity(): Flow<PagingData<ActivityItem>>
+
+    /** Count of unread replies to your messages — the Activity nav badge. */
+    fun observeActivityUnreadCount(): Flow<Int>
 
     fun observeThread(rootId: MessageId): Flow<ThreadView>
 
@@ -88,9 +116,6 @@ interface MessageRepository {
 
     /** Current occupancy per tier, for Settings' storage breakdown. */
     fun observeTierCounts(): Flow<Map<Tier, Int>>
-
-    /** Count of threads with an unread message, per feed tab, for Home's tab badges. */
-    fun observeUnreadCountsByTab(): Flow<Map<FeedTab, Int>>
 
     /** Most recent message timestamp from this author — a "last heard from" reachability signal. */
     fun observeLastMessageFrom(author: AuthorId): Flow<Long?>
@@ -146,16 +171,33 @@ class RoomMessageRepository internal constructor(
 
     override fun observeHasAnyMessage(): Flow<Boolean> = messages.observeHasAnyMessage()
 
-    override fun pagedThreads(
-        tab: FeedTab,
-        unreadOnly: Boolean,
+    override fun pagedFeed(authorFilter: AuthorId?, textQuery: String?): Flow<PagingData<ThreadSummary>> =
+        pagedThreadsIn(listOf(ThreadClass.FOLLOWING.name, ThreadClass.CONTEXT.name), authorFilter, textQuery)
+
+    override fun pagedDiscover(authorFilter: AuthorId?, textQuery: String?): Flow<PagingData<ThreadSummary>> =
+        pagedThreadsIn(listOf(ThreadClass.OTHER.name), authorFilter, textQuery)
+
+    private fun pagedThreadsIn(
+        tabs: List<String>,
         authorFilter: AuthorId?,
         textQuery: String?,
     ): Flow<PagingData<ThreadSummary>> {
         val myAuthor = runCatching { identity.publicKey() }.getOrNull()
         return Pager(PagingConfig(pageSize = THREAD_PAGE_SIZE, prefetchDistance = THREAD_PREFETCH, enablePlaceholders = false)) {
-            messages.pagedThreads(myAuthor, tab.name, unreadOnly, authorFilter, textQuery)
+            messages.pagedThreads(myAuthor, tabs, authorFilter, textQuery)
         }.flow.map { page -> page.map { it.toThreadSummary() } }
+    }
+
+    override fun pagedActivity(): Flow<PagingData<ActivityItem>> {
+        val myAuthor = runCatching { identity.publicKey() }.getOrNull()
+        return Pager(PagingConfig(pageSize = THREAD_PAGE_SIZE, prefetchDistance = THREAD_PREFETCH, enablePlaceholders = false)) {
+            messages.pagedActivity(myAuthor)
+        }.flow.map { page -> page.map { it.toActivityItem() } }
+    }
+
+    override fun observeActivityUnreadCount(): Flow<Int> {
+        val myAuthor = runCatching { identity.publicKey() }.getOrNull()
+        return messages.observeActivityUnreadCount(myAuthor)
     }
 
     override fun observeThread(rootId: MessageId): Flow<ThreadView> =
@@ -169,13 +211,6 @@ class RoomMessageRepository internal constructor(
 
     override fun observeTierCounts(): Flow<Map<Tier, Int>> =
         messages.observeTierCounts().map { rows -> rows.associate { it.tier to it.count } }
-
-    override fun observeUnreadCountsByTab(): Flow<Map<FeedTab, Int>> {
-        val myAuthor = runCatching { identity.publicKey() }.getOrNull()
-        return messages.observeUnreadCountsByTab(myAuthor).map { rows ->
-            rows.associate { FeedTab.valueOf(it.tab) to it.count }
-        }
-    }
 
     override fun observeLastMessageFrom(author: AuthorId): Flow<Long?> =
         messages.observeLastMessageTimestamp(author)
@@ -354,6 +389,17 @@ internal fun ThreadSummaryRow.toThreadSummary() = ThreadSummary(
     secondKnownUnreadReplyText = secondKnownUnreadReplyText,
     secondKnownUnreadReplyTimestamp = secondKnownUnreadReplyTimestamp,
     isPinned = isPinned,
+)
+
+internal fun ActivityRow.toActivityItem() = ActivityItem(
+    replyId = replyId,
+    replyAuthor = replyAuthor,
+    replyText = replyText,
+    timestamp = replyTimestamp,
+    isUnread = !read,
+    threadRoot = threadRoot,
+    repliedToRoot = parentIsRoot,
+    rootText = rootText,
 )
 
 internal fun MessageEntity.toHeldMessage() = HeldMessage(

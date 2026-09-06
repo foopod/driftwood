@@ -20,7 +20,7 @@ import com.jonoshields.driftwood.ui.compose.ComposeScreen
 import com.jonoshields.driftwood.ui.contact.ContactScreen
 import com.jonoshields.driftwood.ui.contacts.ContactsScreen
 import com.jonoshields.driftwood.ui.firstrun.FirstRunScreen
-import com.jonoshields.driftwood.ui.home.HomeScreen
+import com.jonoshields.driftwood.ui.shell.MainShell
 import com.jonoshields.driftwood.ui.settings.SettingsScreen
 import com.jonoshields.driftwood.ui.sync.SyncScreen
 import com.jonoshields.driftwood.ui.thread.ThreadScreen
@@ -65,8 +65,9 @@ private fun MainNavigation(startInIntroMode: Boolean = false) {
         onBack = { backStack.removeLastOrNull() },
         entryProvider = entryProvider {
             entry<Main> {
-                HomeScreen(
+                MainShell(
                     onOpenThread = { backStack.add(Thread(it.toHex())) },
+                    onOpenActivityThread = { root, focus -> backStack.add(Thread(root.toHex(), focus.toHex())) },
                     onOpenContact = { backStack.add(Contact(it.toHex())) },
                     onCompose = { backStack.add(Compose()) },
                     onSettings = { backStack.add(Settings) },
@@ -88,6 +89,7 @@ private fun MainNavigation(startInIntroMode: Boolean = false) {
             entry<Thread> { key ->
                 ThreadScreen(
                     rootId = MessageId.fromHex(key.rootId),
+                    focusMessageId = key.focusMessageId?.let(MessageId::fromHex),
                     onReply = { root, parent ->
                         backStack.add(Compose(root.toHex(), parent?.toHex()))
                     },

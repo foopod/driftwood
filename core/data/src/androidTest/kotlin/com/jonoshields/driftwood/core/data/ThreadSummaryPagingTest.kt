@@ -14,7 +14,6 @@ import com.jonoshields.driftwood.core.model.MessageId
 import com.jonoshields.driftwood.core.store.Clock
 import com.jonoshields.driftwood.core.store.StorageConfig
 import com.jonoshields.driftwood.core.sync.PhaseOutcome
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -68,22 +67,19 @@ class ThreadSummaryPagingTest {
     }
 
     private suspend fun refresh(
-        tab: FeedTab = FeedTab.FOLLOWING,
-        unreadOnly: Boolean = false,
+        tab: ThreadClass = ThreadClass.FOLLOWING,
         authorFilter: AuthorId? = null,
         textQuery: String? = null,
     ): List<ThreadSummaryRow> {
         val source: PagingSource<Int, ThreadSummaryRow> =
-            database.messages().pagedThreads(me.key, tab.name, unreadOnly, authorFilter, textQuery)
+            database.messages().pagedThreads(me.key, listOf(tab.name), authorFilter, textQuery)
         val page = TestPager(config, source).refresh() as PagingSource.LoadResult.Page
         return page.data
     }
 
-    private suspend fun contextTab(unreadOnly: Boolean = false): List<ThreadSummaryRow> =
-        refresh(tab = FeedTab.CONTEXT, unreadOnly = unreadOnly)
+    private suspend fun contextTab(): List<ThreadSummaryRow> = refresh(tab = ThreadClass.CONTEXT)
 
-    private suspend fun otherTab(unreadOnly: Boolean = false): List<ThreadSummaryRow> =
-        refresh(tab = FeedTab.OTHER, unreadOnly = unreadOnly)
+    private suspend fun otherTab(): List<ThreadSummaryRow> = refresh(tab = ThreadClass.OTHER)
 
     @Test
     fun aRootFromSomeoneListenedToLandsInFollowing() = runTest {
@@ -285,19 +281,12 @@ class ThreadSummaryPagingTest {
     }
 
     @Test
-    fun unreadOnlyHidesThreadsWithNothingUnread() = runTest {
-        val readRoot = me.root("already read", now - 1_000)
-        given(readRoot)
-        // RoomSyncStore.apply always inserts unread=false, regardless of author — mark it
-        // explicitly to set up the "nothing unread" case this test needs.
-        database.messages().markThreadRead(readRoot.id)
+    fun markingAThreadReadDoesNotDropItFromTheFeed() = runTest {
+        val root = me.root("still here after read", now - 1_000)
+        given(root)
+        database.messages().markThreadRead(root.id)
 
-        val unreadRoot = me.root("still unread", now - 500)
-        given(unreadRoot)
-
-        val rows = refresh(unreadOnly = true)
-
-        assertEquals(listOf(unreadRoot.id), rows.map { it.rootId })
+        assertEquals(listOf(root.id), refresh().map { it.rootId })
     }
 
     // ---- search box: authorFilter / textQuery -------------------------------------------
@@ -403,44 +392,19 @@ class ThreadSummaryPagingTest {
         assertFalse(refresh().single().rootUnread)
     }
 
-    private suspend fun unreadCountsByTab(): Map<String, Int> =
-        database.messages().observeUnreadCountsByTab(me.key).first().associate { it.tab to it.count }
-
     @Test
-    fun unreadCountsByTabGroupsByFeedTabAndCountsDistinctThreads() = runTest {
+    fun feedMergesFollowingAndContextIntoOneList() = runTest {
         follow(alice.key)
-        // FOLLOWING: alice's own root, unread by default via given().
         given(alice.root("alice's post", now - 3_000))
-        // CONTEXT: a stranger's root that I replied to, still unread.
         val strangersRoot = carol.root("stranger's post", now - 2_000)
         given(strangersRoot, me.reply(strangersRoot.id, strangersRoot.id, "joining in", now - 1_500))
-        // OTHER: a stranger's root with no involvement from me or alice.
+        // OTHER: a stranger's root with no involvement — stays out of the feed.
         given(carol.root("unrelated stranger post", now - 1_000))
 
-        val counts = unreadCountsByTab()
+        val feed = database.messages()
+            .let { dao -> TestPager(config, dao.pagedThreads(me.key, listOf("FOLLOWING", "CONTEXT"), null, null)) }
+            .refresh().let { (it as PagingSource.LoadResult.Page).data }
 
-        assertEquals(1, counts["FOLLOWING"])
-        assertEquals(1, counts["CONTEXT"])
-        assertEquals(1, counts["OTHER"])
-    }
-
-    @Test
-    fun unreadCountsByTabExcludesThreadsWithNothingUnread() = runTest {
-        val root = me.root("read this", now - 1_000)
-        given(root)
-        database.messages().markThreadRead(root.id)
-
-        assertTrue(unreadCountsByTab().isEmpty())
-    }
-
-    @Test
-    fun unreadCountsByTabCountsAThreadOnceEvenWithMultipleUnreadReplies() = runTest {
-        follow(alice.key)
-        val root = alice.root("alice's post", now - 3_000)
-        val reply1 = alice.reply(root.id, root.id, "reply one", now - 2_000)
-        val reply2 = alice.reply(root.id, root.id, "reply two", now - 1_000)
-        given(root, reply1, reply2)
-
-        assertEquals(1, unreadCountsByTab()["FOLLOWING"])
+        assertEquals(setOf(alice.root("alice's post", now - 3_000).id, strangersRoot.id), feed.map { it.rootId }.toSet())
     }
 }

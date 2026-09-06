@@ -1,4 +1,4 @@
-package com.jonoshields.driftwood.ui.home
+package com.jonoshields.driftwood.ui.feed
 
 import com.jonoshields.driftwood.core.data.ThreadSummary
 import com.jonoshields.driftwood.core.model.AuthorId

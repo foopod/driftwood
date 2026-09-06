@@ -89,4 +89,35 @@ class DriftwoodMigrationTest {
             assertEquals(0, it.getInt(1))
         }
     }
+
+    @Test
+    fun migration5To6AddsIndexesWithoutLosingRows() {
+        helper.createDatabase(testDbName, 5).apply {
+            execSQL(
+                "INSERT INTO messages (id, version, author, root, parent, thread_root, " +
+                    "timestamp_millis, text, signature, first_received_time, effective_time, read, tier, unsent) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                arrayOf<Any?>(
+                    ByteArray(32) { 1 }, 1, ByteArray(32) { 2 }, null, null, ByteArray(32) { 1 },
+                    1000L, "hello", ByteArray(64) { 3 }, 1000L, 1000L, 1, "GOSSIP", 0,
+                ),
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(testDbName, 6, true, MIGRATION_5_6)
+
+        migrated.query("SELECT text FROM messages").use {
+            assertEquals(1, it.count)
+            it.moveToFirst()
+            assertEquals("hello", it.getString(0))
+        }
+        val indexes = mutableSetOf<String>()
+        migrated.query("PRAGMA index_list(messages)").use {
+            val nameCol = it.getColumnIndex("name")
+            while (it.moveToNext()) indexes += it.getString(nameCol)
+        }
+        assertEquals(true, indexes.contains("index_messages_parent"))
+        assertEquals(true, indexes.contains("index_messages_first_received_time"))
+    }
 }

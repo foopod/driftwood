@@ -80,6 +80,8 @@ fun ThreadScreen(
     onBack: () -> Unit,
     onSettings: () -> Unit,
     modifier: Modifier = Modifier,
+    /** When set (opened from Activity), the list jumps straight to this message. */
+    focusMessageId: MessageId? = null,
     viewModel: ThreadViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(rootId) { viewModel.bind(rootId) }
@@ -90,6 +92,7 @@ fun ThreadScreen(
     ThreadContent(
         state = state,
         unreadIds = unreadIds,
+        focusMessageId = focusMessageId,
         myAuthor = viewModel.myAuthor,
         onReply = onReply,
         onBack = onBack,
@@ -112,6 +115,7 @@ fun ThreadScreen(
 internal fun ThreadContent(
     state: ThreadUiState,
     unreadIds: Set<MessageId> = emptySet(),
+    focusMessageId: MessageId? = null,
     myAuthor: AuthorId?,
     onReply: (MessageId, MessageId?) -> Unit,
     onBack: () -> Unit,
@@ -140,8 +144,12 @@ internal fun ThreadContent(
     // and the index computed against a since-changed set of blocked authors etc. is deliberately
     // not re-derived once the thread is open — this is "jump to what was new", not a live tracker).
     if (state is ThreadUiState.Loaded) {
-        LaunchedEffect(state.thread.rootId, unreadIds) {
-            if (unreadIds.isNotEmpty()) {
+        LaunchedEffect(state.thread.rootId, unreadIds, focusMessageId) {
+            // An explicit focus target (opened from Activity) wins over "jump to first unread".
+            if (focusMessageId != null) {
+                findMessageIndex(state.thread, state.pinned, state.blockedAuthors) { it == focusMessageId }
+                    ?.let { index -> listState.scrollToItem(index) }
+            } else if (unreadIds.isNotEmpty()) {
                 findFirstUnreadIndex(state.thread, state.pinned, state.blockedAuthors, unreadIds)
                     ?.let { index -> listState.scrollToItem(index) }
             }
@@ -386,19 +394,28 @@ private fun findFirstUnreadIndex(
     pinned: Boolean,
     blockedAuthors: Set<AuthorId>,
     unreadIds: Set<MessageId>,
+): Int? = findMessageIndex(thread, pinned, blockedAuthors) { it in unreadIds }
+
+/** As [findFirstUnreadIndex], but for the first rendered message [match] accepts — used to jump
+ * straight to a specific reply when the thread is opened from the Activity list. */
+private fun findMessageIndex(
+    thread: ThreadView,
+    pinned: Boolean,
+    blockedAuthors: Set<AuthorId>,
+    match: (MessageId) -> Boolean,
 ): Int? {
     var index = if (pinned) 1 else 0
     var found: Int? = null
 
     val rootId = thread.root?.id
-    if (rootId != null && rootId in unreadIds) found = index
+    if (rootId != null && match(rootId)) found = index
     index++
 
     fun walk(nodes: List<ThreadNode>) {
         for (node in nodes) {
             if (found != null) return
             if (node.message.body.author !in blockedAuthors) {
-                if (node.message.id in unreadIds) found = index
+                if (match(node.message.id)) found = index
                 index++
             }
             walk(node.children)

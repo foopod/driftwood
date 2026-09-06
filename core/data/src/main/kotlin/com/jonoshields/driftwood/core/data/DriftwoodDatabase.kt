@@ -226,10 +226,7 @@ internal interface MessageDao {
                     LIMIT 1
                 )
             END
-        ) = :tab
-        AND (:unreadOnly = 0 OR EXISTS(
-            SELECT 1 FROM messages u2 WHERE u2.thread_root = m.thread_root AND u2.read = 0
-        ))
+        ) IN (:tabs)
         AND (:authorFilter IS NULL OR EXISTS(
             SELECT 1 FROM messages af WHERE af.thread_root = m.thread_root AND af.author = :authorFilter
         ))
@@ -246,62 +243,59 @@ internal interface MessageDao {
     )
     fun pagedThreads(
         myAuthor: AuthorId?,
-        /** One of [FeedTab]'s names — `Room` binds a `String` here, not the enum itself. */
-        tab: String,
-        unreadOnly: Boolean,
+        /** One or more [ThreadClass] names — Feed passes FOLLOWING+CONTEXT, Discover passes OTHER. */
+        tabs: List<String>,
         authorFilter: AuthorId?,
         textQuery: String?,
         followTier: Tier = Tier.FOLLOW,
     ): PagingSource<Int, ThreadSummaryRow>
 
+    // ---- Activity: one row per reply to a message I authored, newest-arrived first.
+
     /**
-     * Count of threads with at least one unread message, grouped by feed tab — same
-     * tab-classification `CASE` and unread condition as [pagedThreads], but aggregated rather
-     * than projected per-thread, for the Home tab badges.
+     * Every non-root message whose immediate [MessageEntity.parent] is a message I wrote — replies
+     * to my roots and to my mid-thread messages alike. Ordered by `first_received_time` (this
+     * device's wall-clock receive time) so a backfilled old reply that only just arrived still
+     * lands at the top. A reply whose parent this device doesn't hold can't be proven to be
+     * addressed to me and is left out (v1 limitation).
      */
     @Query(
         """
-        SELECT tab, COUNT(*) AS count FROM (
-            SELECT DISTINCT m.thread_root,
-                (
-                    CASE
-                        WHEN root.author = :myAuthor THEN 'FOLLOWING'
-                        WHEN root.id IS NOT NULL AND root.tier = 'LISTEN' THEN 'FOLLOWING'
-                        WHEN root.id IS NOT NULL AND root.tier = 'CONTEXT' THEN 'CONTEXT'
-                        WHEN root.id IS NOT NULL AND EXISTS(
-                            SELECT 1 FROM messages p WHERE p.thread_root = m.thread_root AND p.author = :myAuthor
-                        ) THEN 'CONTEXT'
-                        WHEN root.id IS NOT NULL THEN 'OTHER'
-                        ELSE (
-                            SELECT
-                                CASE
-                                    WHEN best.author = :myAuthor OR best.tier = 'LISTEN' THEN 'FOLLOWING'
-                                    WHEN best.tier = 'CONTEXT' THEN 'CONTEXT'
-                                    WHEN EXISTS(
-                                        SELECT 1 FROM messages p2 WHERE p2.thread_root = m.thread_root AND p2.author = :myAuthor
-                                    ) THEN 'CONTEXT'
-                                    ELSE 'OTHER'
-                                END
-                            FROM messages best
-                            WHERE best.thread_root = m.thread_root
-                            ORDER BY
-                                CASE
-                                    WHEN best.author = :myAuthor OR best.tier = 'LISTEN' THEN 0
-                                    WHEN best.tier = 'CONTEXT' THEN 1
-                                    ELSE 2
-                                END
-                            LIMIT 1
-                        )
-                    END
-                ) AS tab
-            FROM messages m
-            LEFT JOIN messages root ON root.id = m.thread_root
-            WHERE EXISTS(SELECT 1 FROM messages u WHERE u.thread_root = m.thread_root AND u.read = 0)
-        )
-        GROUP BY tab
+        SELECT
+            r.id AS reply_id,
+            r.author AS reply_author,
+            r.text AS reply_text,
+            r.effective_time AS reply_timestamp,
+            r.read AS read,
+            r.thread_root AS thread_root,
+            (par.id = r.thread_root) AS parent_is_root,
+            root.text AS root_text
+        FROM messages r
+        JOIN messages par ON par.id = r.parent AND par.author = :myAuthor
+        LEFT JOIN messages root ON root.id = r.thread_root
+        WHERE r.id != r.thread_root
+          AND r.author != :myAuthor
+          AND NOT EXISTS(SELECT 1 FROM blocklist b WHERE b.author = r.author)
+          AND NOT EXISTS(SELECT 1 FROM blocked_roots br WHERE br.root = r.thread_root)
+        ORDER BY r.first_received_time DESC, r.effective_time DESC, r.id ASC
         """
     )
-    fun observeUnreadCountsByTab(myAuthor: AuthorId?): Flow<List<TabUnreadCountRow>>
+    fun pagedActivity(myAuthor: AuthorId?): PagingSource<Int, ActivityRow>
+
+    /** Count of unread replies to my messages — the Activity nav badge. */
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM messages r
+        JOIN messages par ON par.id = r.parent AND par.author = :myAuthor
+        WHERE r.id != r.thread_root
+          AND r.author != :myAuthor
+          AND r.read = 0
+          AND NOT EXISTS(SELECT 1 FROM blocklist b WHERE b.author = r.author)
+          AND NOT EXISTS(SELECT 1 FROM blocked_roots br WHERE br.root = r.thread_root)
+        """
+    )
+    fun observeActivityUnreadCount(myAuthor: AuthorId?): Flow<Int>
 }
 
 @Dao
@@ -439,7 +433,7 @@ internal interface WantDao {
         ContactEntity::class,
     ],
     // Bump this and add a Migration(N, N+1) to Migrations.kt for every schema change — see that file.
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

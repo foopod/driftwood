@@ -1,11 +1,10 @@
-package com.jonoshields.driftwood.ui.home
+package com.jonoshields.driftwood.ui.feed
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import com.jonoshields.driftwood.core.data.DirectoryRepository
-import com.jonoshields.driftwood.core.data.FeedTab
 import com.jonoshields.driftwood.core.data.MessageRepository
 import com.jonoshields.driftwood.core.data.ThreadSummary
 import com.jonoshields.driftwood.core.identity.IdentityStore
@@ -24,16 +23,15 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 
-/** The search box's resolved filter, shared across both tabs; [authorFilter]/[textQuery] are mutually exclusive in the UI. */
+/** The search box's resolved filter, shared across both lists; [authorFilter]/[textQuery] are mutually exclusive in the UI. */
 data class ThreadListParams(
-    val unreadOnly: Boolean = false,
     val authorFilter: AuthorId? = null,
     val textQuery: String? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 @HiltViewModel
-class HomeViewModel @Inject constructor(
+class FeedViewModel @Inject constructor(
     private val repository: MessageRepository,
     private val directory: DirectoryRepository,
     identity: IdentityStore,
@@ -41,41 +39,36 @@ class HomeViewModel @Inject constructor(
 
     val myAuthor = runCatching { identity.publicKey() }.getOrNull()
 
-    val uiState: StateFlow<HomeUiState> = combine(
+    val uiState: StateFlow<FeedUiState> = combine(
         repository.observeHasAnyMessage(),
         directory.observeFollowList(),
         directory.observeNames(),
     ) { hasAnyMessage, followList, names ->
         if (!hasAnyMessage) {
-            HomeUiState.Empty
+            FeedUiState.Empty
         } else {
-            HomeUiState.Threads(names = names, followList = followList)
+            FeedUiState.Threads(names = names, followList = followList)
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState.Loading)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FeedUiState.Loading)
 
-    private val unreadOnly = MutableStateFlow(false)
     private val authorFilter = MutableStateFlow<AuthorId?>(null)
     private val rawSearchText = MutableStateFlow("")
 
-    // A shared, hot StateFlow so the debounce below runs once for both tabs, not per collector.
+    // A shared, hot StateFlow so the debounce below runs once for both lists, not per collector.
     private val params: StateFlow<ThreadListParams> = combine(
-        unreadOnly,
         authorFilter,
         rawSearchText.debounce(SEARCH_DEBOUNCE_MILLIS).distinctUntilChanged(),
-    ) { unread, author, text ->
-        ThreadListParams(unreadOnly = unread, authorFilter = author, textQuery = text.ifBlank { null })
+    ) { author, text ->
+        ThreadListParams(authorFilter = author, textQuery = text.ifBlank { null })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ThreadListParams())
 
-    val followingThreads: Flow<PagingData<ThreadSummary>> = pagedThreadsFor(FeedTab.FOLLOWING)
-    val contextThreads: Flow<PagingData<ThreadSummary>> = pagedThreadsFor(FeedTab.CONTEXT)
-    val otherThreads: Flow<PagingData<ThreadSummary>> = pagedThreadsFor(FeedTab.OTHER)
+    val feed: Flow<PagingData<ThreadSummary>> =
+        params.flatMapLatest { p -> repository.pagedFeed(p.authorFilter, p.textQuery) }
+            .cachedIn(viewModelScope)
 
-    val unreadCountsByTab: StateFlow<Map<FeedTab, Int>> = repository.observeUnreadCountsByTab()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
-
-    fun setUnreadOnly(value: Boolean) {
-        unreadOnly.value = value
-    }
+    val discover: Flow<PagingData<ThreadSummary>> =
+        params.flatMapLatest { p -> repository.pagedDiscover(p.authorFilter, p.textQuery) }
+            .cachedIn(viewModelScope)
 
     /** Every keystroke; also clears any selected author, since the two are mutually exclusive. */
     fun setSearchText(text: String) {
@@ -93,11 +86,6 @@ class HomeViewModel @Inject constructor(
     fun clearAuthorFilter() {
         authorFilter.value = null
     }
-
-    private fun pagedThreadsFor(tab: FeedTab) =
-        params
-            .flatMapLatest { p -> repository.pagedThreads(tab, p.unreadOnly, p.authorFilter, p.textQuery) }
-            .cachedIn(viewModelScope)
 }
 
 private const val SEARCH_DEBOUNCE_MILLIS = 300L

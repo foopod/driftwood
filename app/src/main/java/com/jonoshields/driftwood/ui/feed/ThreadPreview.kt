@@ -1,4 +1,4 @@
-package com.jonoshields.driftwood.ui.home
+package com.jonoshields.driftwood.ui.feed
 
 import android.util.Patterns
 import com.jonoshields.driftwood.core.data.ThreadSummary

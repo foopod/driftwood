@@ -14,8 +14,8 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
             defaultConfig {
                 minSdk = ProjectConfig.MIN_SDK
                 targetSdk = ProjectConfig.TARGET_SDK
-                versionCode = 6
-                versionName = "0.1.0"
+                versionCode = 7
+                versionName = "0.1.1"
             }
 
             compileOptions {

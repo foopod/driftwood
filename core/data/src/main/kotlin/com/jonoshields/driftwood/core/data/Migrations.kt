@@ -39,4 +39,18 @@ val MIGRATION_4_5: Migration = object : Migration(4, 5) {
     }
 }
 
-internal val DRIFTWOOD_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_3_4, MIGRATION_4_5)
+// Index-only: no column or data change (`first_received_time` and `parent` already exist as
+// columns). Both indexes back the Activity list query — the `par.id = r.parent` self-join and the
+// `ORDER BY r.first_received_time DESC`. Index names match Room's `index_messages_<col>` convention
+// so the generated schema and this migration agree.
+val MIGRATION_5_6: Migration = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_messages_parent` ON `messages` (`parent`)")
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_messages_first_received_time` ON `messages` (`first_received_time`)"
+        )
+    }
+}
+
+internal val DRIFTWOOD_MIGRATIONS: Array<Migration> =
+    arrayOf(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
