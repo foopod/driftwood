@@ -101,12 +101,14 @@ Everything below is local-only: it reads data already on the device or changes h
 ## Thread / message view (`ui/thread/`)
 
 9. **Long-press to copy a URL specifically**, separate from "Copy text" for the whole message.
-    Now that `LinkifiedText` (`ui/common/LinkifiedText.kt`) renders detected URLs as
-    `LinkAnnotation.Url` spans, a `LinkAnnotation.Url` can carry a custom
-    `linkInteractionListener` — wiring a long-press-on-link to show a small "Copy link / Open
-    link" menu (instead of only tap-to-open) matches what most Android text-linkification affords
-    and avoids forcing "Copy text" then manually extracting the URL from the full message body.
-    *Small.*
+    — done `LinkifiedText` (`ui/common/LinkifiedText.kt`) now tracks each detected URL's character
+    range alongside the annotated string; an `awaitEachGesture` overlay hit-tests the press
+    position against those ranges and, on a long-press over a link, opens a small "Copy link /
+    Open link" `DropdownMenu` (swallowing the rest of the gesture on the Initial pass so the
+    link's own tap-to-open doesn't also fire). A long-press that lands off any link is left
+    unconsumed, so an enclosing card menu still sees it. Tap-to-open is unchanged. Covered by
+    `app/src/test/.../ui/LinkifiedTextTest.kt` (needs `@GraphicsMode(NATIVE)` for real glyph
+    metrics — LEGACY Robolectric maps every x to the string end).
 
 10. **A "back to top" FAB once you've scrolled off-screen.** — done Simpler than a per-card jump affordance:
     show a small FAB (à la most feed/thread UIs) once the `LazyColumn`'s (`ThreadScreen.kt:257`)
