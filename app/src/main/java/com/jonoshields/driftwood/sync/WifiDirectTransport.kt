@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.net.NetworkInfo
 import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pGroup
 import android.net.wifi.p2p.WifiP2pInfo
@@ -28,7 +27,7 @@ private const val GROUP_FORMATION_TIMEOUT_MILLIS = 65_000L
 /** Drives Wi-Fi Direct group formation and hands back a plain socket [Connection] once a group exists. */
 @Singleton
 class WifiDirectTransport @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val wifiDirectChannel: WifiDirectChannel,
     private val syncLog: SyncLog,
 ) {
@@ -159,16 +158,11 @@ class WifiDirectTransport @Inject constructor(
             override fun onReceive(receiverContext: Context, intent: Intent) {
                 when (intent.action) {
                     WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
-                        @Suppress("DEPRECATION") // The only extra Wi-Fi Direct's own broadcast offers.
-                        val networkInfo = intent.getParcelableExtra(
-                            WifiP2pManager.EXTRA_NETWORK_INFO,
-                            NetworkInfo::class.java,
-                        )
-                        // isConnected == false fires transiently mid-negotiation; the timeout backstop catches real failures.
-                        if (networkInfo?.isConnected == true) {
-                            manager.requestConnectionInfo(channel) { info ->
-                                if (info.groupFormed && cont.isActive) finish { cont.resume(info) }
-                            }
+                        // Ask for the connection info on every change rather than gating on the deprecated
+                        // NetworkInfo extra: groupFormed is false until negotiation really finishes, so the
+                        // transient mid-negotiation broadcasts are ignored; the timeout backstop catches real failures.
+                        manager.requestConnectionInfo(channel) { info ->
+                            if (info.groupFormed && cont.isActive) finish { cont.resume(info) }
                         }
                     }
                     WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION -> {

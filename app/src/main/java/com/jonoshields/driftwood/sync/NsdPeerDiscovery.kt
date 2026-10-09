@@ -21,7 +21,7 @@ private const val SERVICE_TYPE = "_gossip._tcp."
 /** Advertise-and-discover over mDNS/NSD, so devices on the same Wi-Fi network find each other. */
 @Singleton
 class NsdPeerDiscovery @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val syncLog: SyncLog,
 ) {
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
