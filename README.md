@@ -58,8 +58,10 @@ trust/security — is the source of truth at [`site/undertow.html`](site/underto
 messages (roots and replies); the windowed, three-tier, fair-share-pruned local store; sync
 over both LAN TCP and Wi-Fi Direct, with hash-list reconciliation, priority + gossip phases,
 and an ambient want-list for opportunistic gap backfill; a local, never-shared blocklist; local
-deletion of your own messages while they're still unsent; and the core UI — feed (circle /
-everything else), thread view, compose, contacts, listen, favourite, block.
+deletion of your own messages while they're still unsent; and the core UI — a bottom nav of
+Feed (your people plus the threads around them), Activity (replies to your posts, the only place
+unread state lives) and Discover (strangers' gossip-tier threads), plus thread view, compose,
+contacts, listen, favourite and block.
 
 **Not yet implemented** — see below.
 
@@ -119,7 +121,7 @@ mechanism.
 5. **Hiding posts locally.** A pure display-layer filter for curating your own feed — never
    touches storage, never affects what you relay to others. Deliberately distinct from both
    deletion and blocking: it's a personal view preference, not a lever over what the network
-   carries.
+   carries. Design in [`feature-local-hiding.md`](feature-local-hiding.md).
 
 6. **Sybil-resistant fair-share.** Identity is free — a keypair costs nothing to generate — so
    equal per-author storage shares are gameable: one attacker minting hundreds of keys can
