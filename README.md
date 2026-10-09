@@ -102,8 +102,8 @@ mechanism.
    render, a client that understands chaining stitches the chain back into one piece; a client
    that doesn't just sees an ordinary, readable sequence of replies. A chunk that hasn't
    arrived yet renders the fragments that have, matching how any partial thread already
-   behaves. A continuation character of "->" is used to mark a message which is a continuation 
-   of another.
+   behaves. A continuation character of "->" is used to mark a message which is a continuation
+   of another. Design in [`feature-long-messages.md`](feature-long-messages.md).
 
 2. **Mentions.** Referencing another identity from within a message. Needs a parsing/display
    convention and a decision on whether a mention should have any effect on delivery or
@@ -169,3 +169,14 @@ mechanism.
    present to do anything — rather than working as designed. A short, skippable walkthrough
    covering those points, not just the compose flow, is worth doing before the app is handed to
    anyone who didn't help build it.
+
+9. **Protocol negotiation.** Today `HELLO` carries one version byte and any mismatch refuses to
+   sync, so every protocol addition cuts old and new clients off from each other. A version range
+   plus a capability list agreed in `HELLO` lets optional features (new record types, new message
+   formats) be added without that. It's one last breaking change, best made while the install base
+   is small. Design in [`feature-protocol-negotiation.md`](feature-protocol-negotiation.md).
+
+10. **Profile homepages.** A small, author-curated page attached to an identity: Markdown, not
+    HTML, so it can never load anything remote, with frontmatter for theme hints. It's carried as
+    its own signed record behind a negotiated capability, and kept for yourself, the people you
+    follow and your contacts. Design in [`feature-homepages.md`](feature-homepages.md).
