@@ -36,7 +36,7 @@ class SyncCoordinator @Inject constructor(
     private val wifiDirectDiscovery: WifiDirectPeerDiscovery,
     private val wifiDirectTransport: WifiDirectTransport,
     private val syncLog: SyncLog,
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 

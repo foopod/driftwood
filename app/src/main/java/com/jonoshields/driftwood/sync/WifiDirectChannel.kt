@@ -9,7 +9,7 @@ import javax.inject.Singleton
 /** The one [WifiP2pManager.Channel] discovery and transport share — separate channels interfere. */
 @Singleton
 class WifiDirectChannel @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
 ) {
     val manager: WifiP2pManager = context.getSystemService(Context.WIFI_P2P_SERVICE) as WifiP2pManager
 
