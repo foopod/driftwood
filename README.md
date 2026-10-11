@@ -58,9 +58,10 @@ trust/security — is the source of truth at [`site/undertow.html`](site/underto
 messages (roots and replies); the windowed, three-tier, fair-share-pruned local store; sync
 over both LAN TCP and Wi-Fi Direct, with hash-list reconciliation, priority + gossip phases,
 and an ambient want-list for opportunistic gap backfill; a local, never-shared blocklist; local
-deletion of your own messages while they're still unsent; and the core UI — a **Feed** of what's
-relevant to you, an **Activity** list of replies to your posts, a **Discover** stream for the
-gossip tier, plus thread view, compose, contacts, listen, favourite, block.
+deletion of your own messages while they're still unsent; and the core UI — a bottom nav of
+Feed (your people plus the threads around them), Activity (replies to your posts, the only place
+unread state lives) and Discover (strangers' gossip-tier threads), plus thread view, compose,
+contacts, listen, favourite and block.
 
 **Not yet implemented** — see below, and `NEXT.md` for what's queued.
 
@@ -101,8 +102,8 @@ mechanism.
    render, a client that understands chaining stitches the chain back into one piece; a client
    that doesn't just sees an ordinary, readable sequence of replies. A chunk that hasn't
    arrived yet renders the fragments that have, matching how any partial thread already
-   behaves. A continuation character of "->" is used to mark a message which is a continuation 
-   of another.
+   behaves. A continuation character of "->" is used to mark a message which is a continuation
+   of another. Design in [`feature-long-messages.md`](feature-long-messages.md).
 
 2. **Mentions.** Referencing another identity from within a message. Needs a parsing/display
    convention and a decision on whether a mention should have any effect on delivery or
@@ -120,7 +121,7 @@ mechanism.
 5. **Hiding posts locally.** A pure display-layer filter for curating your own feed — never
    touches storage, never affects what you relay to others. Deliberately distinct from both
    deletion and blocking: it's a personal view preference, not a lever over what the network
-   carries.
+   carries. Design in [`feature-local-hiding.md`](feature-local-hiding.md).
 
 6. **Sybil-resistant fair-share.** Identity is free — a keypair costs nothing to generate — so
    equal per-author storage shares are gameable: one attacker minting hundreds of keys can
@@ -168,3 +169,14 @@ mechanism.
    present to do anything — rather than working as designed. A short, skippable walkthrough
    covering those points, not just the compose flow, is worth doing before the app is handed to
    anyone who didn't help build it.
+
+9. **Protocol negotiation.** Today `HELLO` carries one version byte and any mismatch refuses to
+   sync, so every protocol addition cuts old and new clients off from each other. A version range
+   plus a capability list agreed in `HELLO` lets optional features (new record types, new message
+   formats) be added without that. It's one last breaking change, best made while the install base
+   is small. Design in [`feature-protocol-negotiation.md`](feature-protocol-negotiation.md).
+
+10. **Profile homepages.** A small, author-curated page attached to an identity: Markdown, not
+    HTML, so it can never load anything remote, with frontmatter for theme hints. It's carried as
+    its own signed record behind a negotiated capability, and kept for yourself, the people you
+    follow and your contacts. Design in [`feature-homepages.md`](feature-homepages.md).

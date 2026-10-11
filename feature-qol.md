@@ -24,6 +24,12 @@ features:
 
 Everything below is local-only: it reads data already on the device or changes how it's displayed.
 
+> **Note on references.** Line numbers and file names below are from the original survey and have
+> drifted. In particular, the Feed / Activity revamp (0.1.1) replaced `HomeScreen` /
+> `HomeViewModel` with `ui/feed/FeedScreen.kt` (`FeedPane`) / `FeedViewModel` and moved the
+> scaffold, search and navigation into `ui/shell/MainShell.kt`. Treat the cited line numbers as
+> pointers to the *idiom*, not exact locations; items marked done are kept for the record.
+
 ## Contacts (`ui/contacts/`, `ui/contact/`)
 
 1. **Search/filter the Contacts list.** — done `ContactsScreen.kt` renders a flat `LazyColumn` with no
@@ -174,12 +180,15 @@ Everything below is local-only: it reads data already on the device or changes h
     is a bare `Text` with no `contentDescription`/semantics, so TalkBack never announces it
     changing as you type toward the 320-char limit. *Trivial.*
 
-## Home / feed (`ui/home/`)
+## Feed (`ui/feed/`, `ui/shell/`)
+
+Items 20–23 were written against the pre-revamp Home screen (`HomeScreen.kt`, Following /
+Context / Other tabs); the notes under each say where the logic lives now.
 
 20. **Search by message content, not just author name.** — done. Turned out to already be fully
     implemented and wired end-to-end (`MessageDao.pagedThreads`'s `textQuery` param does a `LIKE`
-    match across every message in a thread, reachable from `HomeScreen`'s existing search box via
-    `HomeViewModel`), shipped in commit `d58f042` before this doc's original survey. What that
+    match across every message in a thread, reachable from the shared search box — now hosted in
+    `MainShell` and fed to `FeedPane` — via `FeedViewModel`), shipped in commit `d58f042` before this doc's original survey. What that
     survey saw at `HomeScreen.kt:370-423` was only the author-name autocomplete dropdown sitting on
     top of it, which is cosmetic — the typed text was already filtering by content underneath.
 
@@ -191,21 +200,24 @@ Everything below is local-only: it reads data already on the device or changes h
     word boundary before the text ever reaches `LinkifiedText`. *Trivial* if it already does this;
     *small* if it needs a boundary-aware truncation.
 
-22. **Per-tab unread indicators.** — done. The `TabRow` (`HomeScreen.kt:279-295`) for Following/Context/Other
+22. **Per-tab unread indicators.** — done, then superseded by the Feed / Activity revamp (0.1.1):
+    the provenance tabs are gone and the Feed deliberately has no unread dots or counts. Unread
+    state now lives only in Activity, whose nav item carries the badge
+    (`MessageRepository.observeActivityUnreadCount`). Original note: the `TabRow` (`HomeScreen.kt:279-295`) for Following/Context/Other
     shows no unread signal — parked on "Following", there's no way to tell "Context" or "Other" has
     unread threads without switching to check. A dot or count badge per tab (the "Unread only"
     toggle at `HomeScreen.kt:208-221` already implies the underlying unread state exists somewhere
     close to `pagedThreads`) would close this. *Small* — likely needs one small per-tab count query.
 
-23. **Broaden home search to fingerprint, not just display name.** — done `HomeSearchField`
-    (`HomeScreen.kt:347-423`) filters only on `name.label` (`HomeScreen.kt:378`) — a contact with no
+23. **Broaden feed search to fingerprint, not just display name.** — done `FeedSearchField`
+    (formerly `HomeSearchField`, now in `FeedScreen.kt`) filters only on `name.label` (`HomeScreen.kt:378`) — a contact with no
     label set can't be found by searching their fingerprint, even though that's the one thing
     guaranteed to be unique and present. *Trivial* — broaden the filter predicate to also check
     `name.fingerprint`.
 
 ## Not investigated but worth a follow-up pass
 
-Time-boxed this survey to the screens above (contacts/settings/sync/thread/compose/home). Two
+Time-boxed this survey to the screens above (contacts/settings/sync/thread/compose/feed). Two
 areas that likely have their own list and weren't opened: `ui/firstrun/` (the guided intro flow —
 README item 8 already flags no way to *re-trigger* it later) and `ui/blocklist/`'s empty-state
 copy vs. `ContactsScreen`'s (worth a consistency pass since both are short, similar list screens).
